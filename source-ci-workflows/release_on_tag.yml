@@ -1,0 +1,30 @@
+name: Release G30 NativeDash on tag
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build G30P
+        uses: docker://wsbu/stm32cubeide:latest
+        with:
+          entrypoint: /opt/stm32cubeide/stm32cubeide
+          args: --launcher.suppressErrors -nosplash -application org.eclipse.cdt.managedbuilder.core.headlessbuild -build g30p/Debug -importAll /github/workspace/
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: SmartESC G30 NativeDash ${{ github.ref_name }}
+          generate_release_notes: true
+          prerelease: true
+          files: |
+            g30p/STM32CubeIDE/Debug/g30p.bin
