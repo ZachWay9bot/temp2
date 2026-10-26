@@ -31,7 +31,9 @@ jobs:
             echo "::error::Source branch moved; refusing to import a different version: $ACTUAL"
             exit 1
           fi
-          rsync -a --delete --exclude='/.git/' /tmp/smartesc-source/ ./
+          rsync -a --delete --exclude='/.git/' --exclude='/.github/workflows/**' /tmp/smartesc-source/ ./
+          mkdir -p source-ci-workflows
+          cp -a /tmp/smartesc-source/.github/workflows/. source-ci-workflows/
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add -A
