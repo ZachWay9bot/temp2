@@ -1,0 +1,39 @@
+name: Import SmartESC v21b source snapshot once
+
+on:
+  push:
+    paths:
+      - '.github/workflows/import-smartesc-once.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  import-source:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout temp2 destination
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: true
+          fetch-depth: 1
+
+      - name: Import exactly approved SmartESC source SHA
+        shell: bash
+        run: |
+          set -euo pipefail
+          SOURCE_SHA=533e64412dca30adfcb02f8f54a8ea82e6573f4c
+          git clone --quiet --depth 1 --branch feature/g30-iot-vesc-fwdrwd-20261026 \
+            https://github.com/ZachWay9bot/SmartESC_STM32_v21b.git /tmp/smartesc-source
+          ACTUAL="$(git -C /tmp/smartesc-source rev-parse HEAD)"
+          if [[ "$ACTUAL" != "$SOURCE_SHA" ]]; then
+            echo "::error::Source branch moved; refusing to import a different version: $ACTUAL"
+            exit 1
+          fi
+          rsync -a --delete --exclude='/.git/' /tmp/smartesc-source/ ./
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Import complete SmartESC v21b G30 project from $SOURCE_SHA"
+          git push origin HEAD:main
