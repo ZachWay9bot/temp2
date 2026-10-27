@@ -1,0 +1,124 @@
+diff --git a/common_files/src/defines.h b/common_files/src/defines.h
+index ad8f5ac..a7c1f3d 100644
+--- a/common_files/src/defines.h
++++ b/common_files/src/defines.h
+@@ -2,7 +2,7 @@
+ #define DEFINES_H_
+ 
+ #ifdef G30P
+-#define HW_NAME "G30D-FO76-TAKEOVER-R3G"
++#define HW_NAME "G30D-FO76-TAKEOVER-R3G1-DIAG"
+ #else
+ #define HW_NAME "40"
+ #endif
+diff --git a/common_files/src/g30_fo76_shadow.c b/common_files/src/g30_fo76_shadow.c
+index 8ea3a00..6c13cad 100644
+--- a/common_files/src/g30_fo76_shadow.c
++++ b/common_files/src/g30_fo76_shadow.c
+@@ -60,6 +60,11 @@ static uint16_t takeover_control_phase, takeover_last_hall_phase;
+ static int16_t takeover_step_foc_q4, takeover_blend_offset;
+ static uint8_t takeover_phase_history;
+ static uint32_t takeover_entries, takeover_fallbacks;
++/* R3G1: diagnostic-only takeover gate capture. These variables never select
++ * an angle and never alter an entry/fallback threshold. */
++static uint16_t takeover_max_speed_dpp, takeover_max_vth_speed_dpp;
++static uint16_t takeover_min_pred_err_vths=0xffffu;
++static uint8_t takeover_mask_at_max_speed, takeover_diag_decim;
+ 
+ static uint16_t abs_phase16(int16_t x) {
+     return (uint16_t)(x<0 ? -(int32_t)x : (int32_t)x);
+@@ -69,7 +74,15 @@ static uint16_t abs_i16_u(int16_t x) {
+ }
+ 
+ void g30_fo76_request_takeover(uint8_t enable) {
+-    takeover_enable_request=enable?1u:0u;
++    uint8_t en=enable?1u:0u;
++    if(en && !takeover_enable_request){
++        takeover_max_speed_dpp=0u;
++        takeover_max_vth_speed_dpp=0u;
++        takeover_min_pred_err_vths=0xffffu;
++        takeover_mask_at_max_speed=0u;
++        takeover_diag_decim=0u;
++    }
++    takeover_enable_request=en;
+ }
+ 
+ /* Called when the 1 kHz observer publishes a new physical rotor angle.
+@@ -129,6 +142,26 @@ uint16_t g30_fo76_control_angle(int16_t hall_angle, int16_t hall_speed_dpp) {
+     uint16_t speed=abs_i16_u(hall_speed_dpp);
+ 
+     if(takeover_state==G30_TK_ARMED_WAIT){
++        /* R3G1 diagnostics sample the same gate inputs at ~1 kHz, but do not
++         * participate in the control decision below. */
++        if(++takeover_diag_decim>=16u){
++            takeover_diag_decim=0u;
++            uint16_t ape=abs_phase16(pred_err);
++            uint8_t mask=0u;
++            if(d.valid) mask|=1u;
++            if(d.tracking) mask|=2u;
++            if(takeover_phase_history) mask|=4u;
++            if(speed>=G30_R3G_TAKEOVER_MIN_DPP) mask|=8u;
++            if(ape<G30_R3G_ENTRY_ERR_COUNTS) mask|=16u;
++            if(speed>takeover_max_speed_dpp){
++                takeover_max_speed_dpp=speed;
++                takeover_mask_at_max_speed=mask;
++            }
++            if((mask&7u)==7u && speed>takeover_max_vth_speed_dpp)
++                takeover_max_vth_speed_dpp=speed;
++            if((mask&15u)==15u && ape<takeover_min_pred_err_vths)
++                takeover_min_pred_err_vths=ape;
++        }
+         /* d.valid already means >=200 consecutive clean 1 kHz evaluations. */
+         if(d.valid && d.tracking && takeover_phase_history &&
+            speed>=G30_R3G_TAKEOVER_MIN_DPP &&
+@@ -447,6 +480,10 @@ g30_fo76_diag_t g30_fo76_get_diag(void){
+             snap.observer_step_foc_q4=takeover_step_foc_q4;
+             snap.takeover_entries=takeover_entries;
+             snap.takeover_fallbacks=takeover_fallbacks;
++            snap.takeover_max_speed_dpp=takeover_max_speed_dpp;
++            snap.takeover_max_vth_speed_dpp=takeover_max_vth_speed_dpp;
++            snap.takeover_min_pred_err_vths=takeover_min_pred_err_vths;
++            snap.takeover_mask_at_max_speed=takeover_mask_at_max_speed;
+             return snap;
+         }
+     }
+@@ -464,5 +501,9 @@ g30_fo76_diag_t g30_fo76_get_diag(void){
+     snap.observer_step_foc_q4=takeover_step_foc_q4;
+     snap.takeover_entries=takeover_entries;
+     snap.takeover_fallbacks=takeover_fallbacks;
++    snap.takeover_max_speed_dpp=takeover_max_speed_dpp;
++    snap.takeover_max_vth_speed_dpp=takeover_max_vth_speed_dpp;
++    snap.takeover_min_pred_err_vths=takeover_min_pred_err_vths;
++    snap.takeover_mask_at_max_speed=takeover_mask_at_max_speed;
+     return snap;
+ }
+diff --git a/common_files/src/g30_fo76_shadow.h b/common_files/src/g30_fo76_shadow.h
+index 0bf1218..744a5c7 100644
+--- a/common_files/src/g30_fo76_shadow.h
++++ b/common_files/src/g30_fo76_shadow.h
+@@ -46,6 +46,11 @@ typedef struct {
+     uint16_t takeover_control_phase, takeover_observer_phase, takeover_hall_phase;
+     int16_t takeover_pred_error, takeover_blend_offset, observer_step_foc_q4;
+     uint32_t takeover_entries, takeover_fallbacks;
++    /* R3G1 diagnostic-only gate capture. No control-policy change.
++     * mask bits: 0 valid, 1 tracking, 2 phase history, 3 speed>=64, 4 |pred_err|<20deg. */
++    uint16_t takeover_max_speed_dpp, takeover_max_vth_speed_dpp;
++    uint16_t takeover_min_pred_err_vths;
++    uint8_t takeover_mask_at_max_speed;
+ } g30_fo76_diag_t;
+ void g30_fo76_configure(float r_ohm, float l_h, float lambda_wb,
+                           uint16_t current_ua_per_count, uint32_t vbus_mv_per_count_q16,
+diff --git a/common_files/src/terminal.c b/common_files/src/terminal.c
+index e2e62bf..03cefa4 100644
+--- a/common_files/src/terminal.c
++++ b/common_files/src/terminal.c
+@@ -168,6 +168,9 @@ void terminal_process_string(char *str, PACKET_STATE_t * phandle) {
+         commands_printf(phandle,"control=%u observer=%u hall=%u pred_err=%d blend=%d step_q4=%d",
+             (unsigned)tk.takeover_control_phase,(unsigned)tk.takeover_observer_phase,(unsigned)tk.takeover_hall_phase,
+             (int)tk.takeover_pred_error,(int)tk.takeover_blend_offset,(int)tk.observer_step_foc_q4);
++        commands_printf(phandle,"R3G1 gates maxspd=%u mask_at_max=0x%02X maxspd_vth=%u minpred_vths=%u",
++            (unsigned)tk.takeover_max_speed_dpp,(unsigned)tk.takeover_mask_at_max_speed,
++            (unsigned)tk.takeover_max_vth_speed_dpp,(unsigned)tk.takeover_min_pred_err_vths);
+ 	}else if (strcmp(argv[0], "top") == 0){
+ 		terminal_top(phandle);
+ 	}
