@@ -110,6 +110,9 @@ jobs:
           sha256sum "$BIN" > OUTPUT/SHA256_BIN.txt
           arm-none-eabi-size "$ELF" > OUTPUT/SIZE.txt
           arm-none-eabi-nm -S --size-sort "$ELF" | tail -40 > OUTPUT/LARGEST_SYMBOLS.txt
+          tar -czf OUTPUT/SOURCE_KOXX3_R3I_EXACT.tgz SOURCE_KOXX3
+          cp ci/apply_r3i.py OUTPUT/APPLY_R3I_EXACT.py
+          cp .github/workflows/r3-build.yml OUTPUT/R3I_BUILD_WORKFLOW.yml
           python3 - <<'PY' | tee OUTPUT/R3I_STATIC_GATES.txt
           from pathlib import Path
           shadow=Path('SOURCE_KOXX3/common_files/src/g30_fo76_shadow.c').read_text()
@@ -166,6 +169,9 @@ jobs:
             OUTPUT/SHA256_BIN.txt
             OUTPUT/SIZE.txt
             OUTPUT/LARGEST_SYMBOLS.txt
+            OUTPUT/SOURCE_KOXX3_R3I_EXACT.tgz
+            OUTPUT/APPLY_R3I_EXACT.py
+            OUTPUT/R3I_BUILD_WORKFLOW.yml
             OUTPUT/R3I_STATIC_GATES.txt
             OUTPUT/build.log
             OUTPUT/compile.log
