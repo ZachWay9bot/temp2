@@ -1,5 +1,3 @@
-diff --git a/common_files/src/defines.h b/common_files/src/defines.h
-index ad8f5ac..5b6a1cf 100644
 --- a/common_files/src/defines.h
 +++ b/common_files/src/defines.h
 @@ -2,7 +2,7 @@
@@ -11,22 +9,19 @@ index ad8f5ac..5b6a1cf 100644
  #else
  #define HW_NAME "40"
  #endif
-diff --git a/common_files/src/mc_tasks.c b/common_files/src/mc_tasks.c
-index 5ad31e2..b8b2ad9 100644
 --- a/common_files/src/mc_tasks.c
 +++ b/common_files/src/mc_tasks.c
-@@ -786,7 +786,13 @@ inline uint16_t FOC_CurrControllerM1(void)
+@@ -786,7 +786,14 @@
  
    speedHandle = STC_GetSpeedSensor(pSTC[M1]);
    hElAngle = SPD_GetElAngle(speedHandle);
--  hElSpeedDpp = SPD_GetInstElSpeedDpp(speedHandle);
 +#ifdef G30P
 +  /* R3G2: Hall implementation updates hElSpeedDpp, but does not populate
 +   * InstantaneousElSpeedDpp in this MCSDK tree. Use the same valid Hall speed
 +   * source that the FO76 observer already consumes. */
 +  hElSpeedDpp = SPD_GetElSpeedDpp(speedHandle);
 +#else
-+  hElSpeedDpp = SPD_GetInstElSpeedDpp(speedHandle);
+   hElSpeedDpp = SPD_GetInstElSpeedDpp(speedHandle);
 +#endif
  #ifdef G30P
    /* R3G: Hall is still the default. This fast selector can return the
