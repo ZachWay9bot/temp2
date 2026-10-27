@@ -223,6 +223,10 @@ anchor='''uint8_t g30_fo76_coast_requested(void) {
 }
 '''
 rep=anchor+r'''
+static uint16_t hall_to_flux(int16_t hall);
+static int32_t cos_q15(uint16_t phase);
+static int32_t sin_phase_q15(uint16_t phase);
+
 void g30_fo76_sensorless_seed(uint16_t control_phase, int16_t speed_dpp) {
     int32_t psi0=(int32_t)(d.lambda_uwb?d.lambda_uwb:G30_FO76_LAMBDA_PROVEN_UWB)*Q8;
     uint16_t flux_phase=hall_to_flux((int16_t)control_phase);
