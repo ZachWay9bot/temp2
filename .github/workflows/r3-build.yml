@@ -1,8 +1,8 @@
-name: G30D R3H observer-only FWD compile
+name: G30D R3I passive-BEMF push-start compile
 on:
   push:
     branches:
-      - r3h-observer-only-20261027
+      - r3i-pushstart-20261028
   workflow_dispatch:
 
 jobs:
@@ -75,6 +75,14 @@ jobs:
           grep -q 'g30_fo76_coast_requested()' SOURCE_KOXX3/common_files/src/mc_tasks.c
           sed -i 's/FO76_TAKEOVER_R3G2/FO76_OBSERVER_ONLY_R3H/g' tools/build_native.py tools/validate_image.py
           sed -i 's/G30D-FO76-TAKEOVER-R3G2/G30D-FO76-OBSERVER-ONLY-R3H/g' tools/validate_image.py
+          python3 ci/apply_r3i.py
+          grep -q 'G30D-FO76-PUSHSTART-R3I' SOURCE_KOXX3/common_files/src/defines.h
+          grep -q 'PB1 = BEMF_C / ADC9' SOURCE_KOXX3/g30p/Src/stm32f1xx_hal_msp.c
+          grep -q 'g30_r3i_block_pwm_start()' SOURCE_KOXX3/common_files/src/VescToSTM.c
+          grep -q 'g30_fo76_sensorless_seed' SOURCE_KOXX3/common_files/src/g30_fo76_shadow.c
+          grep -q 'g30_pushstart' SOURCE_KOXX3/common_files/src/terminal.c
+          sed -i 's/FO76_OBSERVER_ONLY_R3H/FO76_PUSHSTART_R3I/g' tools/build_native.py tools/validate_image.py
+          sed -i 's/G30D-FO76-OBSERVER-ONLY-R3H/G30D-FO76-PUSHSTART-R3I/g' tools/validate_image.py
 
       - name: Install ARM GNU GCC 13.2.1
         shell: bash
@@ -89,7 +97,7 @@ jobs:
           tar -xzf "$FILE"
           echo "/tmp/xpack-arm-none-eabi-gcc-13.2.1-1.1/bin" >> "$GITHUB_PATH"
 
-      - name: Compile and validate R3H
+      - name: Compile and validate R3I
         shell: bash
         run: |
           set -euo pipefail
@@ -97,12 +105,12 @@ jobs:
           mkdir -p OUTPUT
           python3 tools/build_native.py | tee OUTPUT/build.log
           python3 tools/validate_image.py | tee OUTPUT/validation.log
-          BIN=OUTPUT/SmartESC_v2_G30D_FO76_OBSERVER_ONLY_R3H_STLINK_APP_0x08001000.bin
-          ELF=OUTPUT/SmartESC_v2_G30D_FO76_OBSERVER_ONLY_R3H.elf
+          BIN=OUTPUT/SmartESC_v2_G30D_FO76_PUSHSTART_R3I_STLINK_APP_0x08001000.bin
+          ELF=OUTPUT/SmartESC_v2_G30D_FO76_PUSHSTART_R3I.elf
           sha256sum "$BIN" > OUTPUT/SHA256_BIN.txt
           arm-none-eabi-size "$ELF" > OUTPUT/SIZE.txt
           arm-none-eabi-nm -S --size-sort "$ELF" | tail -40 > OUTPUT/LARGEST_SYMBOLS.txt
-          python3 - <<'PY' | tee OUTPUT/R3H_STATIC_GATES.txt
+          python3 - <<'PY' | tee OUTPUT/R3I_STATIC_GATES.txt
           from pathlib import Path
           shadow=Path('SOURCE_KOXX3/common_files/src/g30_fo76_shadow.c').read_text()
           mc=Path('SOURCE_KOXX3/common_files/src/mc_tasks.c').read_text()
@@ -127,29 +135,36 @@ jobs:
             'observer_speed_from_predictor':'abs_i16_u(takeover_step_foc_q4)>>4' in shadow,
             'coast_request_latched':'takeover_coast_request=1u' in shadow,
             'coast_uses_motor_stop':'g30_fo76_coast_requested()' in mc and 'MCI_StopMotor( pMCI[M1] )' in mc,
+            'r3i_passive_adc':'RCM_ExecRegularConv' in Path('SOURCE_KOXX3/common_files/src/g30_r3i_pushstart.c').read_text(),
+            'r3i_adc_6_7_9':'RegConv_t ca={ADC1,6u' in Path('SOURCE_KOXX3/common_files/src/g30_r3i_pushstart.c').read_text() and 'RegConv_t cc={ADC1,9u' in Path('SOURCE_KOXX3/common_files/src/g30_r3i_pushstart.c').read_text(),
+            'r3i_forward_step5':'step==5u' in Path('SOURCE_KOXX3/common_files/src/g30_r3i_pushstart.c').read_text(),
+            'r3i_min_dpp64':'R3I_MIN_DPP 64' in Path('SOURCE_KOXX3/common_files/src/g30_r3i_pushstart.c').read_text(),
+            'r3i_pwm_block':'g30_r3i_block_pwm_start()' in vesc,
+            'r3i_virtual_speed':'g30_fo76_sensorless_active()' in mc and 'HALL_M1.AvrElSpeedDpp=odpp' in mc,
+            'r3i_observer_self_valid':'if(sensorless_external)' in shadow and 'sdpp<=-G30_FO76_MIN_TRACK_DPP' in shadow,
           }
           for k,v in gates.items():
               print(f'{k}={int(v)}')
           assert all(gates.values()), gates
-          print('R3H_STATIC_GATES=PASS')
+          print('R3I_STATIC_GATES=PASS')
           PY
 
-      - name: Upload R3H observer-only FWD candidate
+      - name: Upload R3I passive-BEMF push-start candidate
         uses: actions/upload-artifact@v4
         with:
-          name: G30D_R3H_OBSERVER_ONLY_COMPILED
+          name: G30D_R3I_PUSHSTART_COMPILED
           if-no-files-found: error
           retention-days: 7
           path: |
-            OUTPUT/SmartESC_v2_G30D_FO76_OBSERVER_ONLY_R3H.elf
-            OUTPUT/SmartESC_v2_G30D_FO76_OBSERVER_ONLY_R3H.map
-            OUTPUT/SmartESC_v2_G30D_FO76_OBSERVER_ONLY_R3H_STLINK_APP_0x08001000.bin
-            OUTPUT/SmartESC_v2_G30D_FO76_OBSERVER_ONLY_R3H_STLINK_APP_0x08001000.hex
+            OUTPUT/SmartESC_v2_G30D_FO76_PUSHSTART_R3I.elf
+            OUTPUT/SmartESC_v2_G30D_FO76_PUSHSTART_R3I.map
+            OUTPUT/SmartESC_v2_G30D_FO76_PUSHSTART_R3I_STLINK_APP_0x08001000.bin
+            OUTPUT/SmartESC_v2_G30D_FO76_PUSHSTART_R3I_STLINK_APP_0x08001000.hex
             OUTPUT/VERIFICATION.json
             OUTPUT/SHA256_BIN.txt
             OUTPUT/SIZE.txt
             OUTPUT/LARGEST_SYMBOLS.txt
-            OUTPUT/R3H_STATIC_GATES.txt
+            OUTPUT/R3I_STATIC_GATES.txt
             OUTPUT/build.log
             OUTPUT/compile.log
             OUTPUT/validation.log
