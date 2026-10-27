@@ -1,0 +1,79 @@
+name: G30D R3 compile
+on:
+  push:
+    branches:
+      - r3-build-20261027
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Restore build payload
+        shell: bash
+        run: |
+          set -euo pipefail
+          base64 -d ci/r3_payload.tgz.b64 > /tmp/r3_payload.tgz
+          mkdir -p /tmp/r3payload
+          tar -xzf /tmp/r3_payload.tgz -C /tmp/r3payload
+          cp /tmp/r3payload/G30D_R2_changes.patch .
+          cp /tmp/r3payload/R3_FROM_R2.patch .
+          mkdir -p tools
+          cp /tmp/r3payload/build_native.py tools/
+          cp /tmp/r3payload/validate_image.py tools/
+
+      - name: Reconstruct frozen R2 and apply R3 observer patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          git clone --no-tags https://github.com/Koxx3/SmartESC_STM32_v2.git SOURCE_KOXX3
+          git -C SOURCE_KOXX3 checkout --detach 272bdb99d75484dcc377e1cf3e6a20e53a6fd8de
+          git -C SOURCE_KOXX3 apply ../G30D_R2_changes.patch
+          patch -d SOURCE_KOXX3 -p2 < R3_FROM_R2.patch
+          test -f SOURCE_KOXX3/common_files/src/g30_fo76_shadow.c
+          grep -q 'G30D-FO76-SHADOW-R3' SOURCE_KOXX3/common_files/src/defines.h
+
+      - name: Install ARM GNU GCC 13.2.1
+        shell: bash
+        run: |
+          set -euo pipefail
+          URL=https://github.com/xpack-dev-tools/arm-none-eabi-gcc-xpack/releases/download/v13.2.1-1.1
+          FILE=xpack-arm-none-eabi-gcc-13.2.1-1.1-linux-x64.tar.gz
+          curl -fL "$URL/$FILE" -o "/tmp/$FILE"
+          curl -fL "$URL/$FILE.sha" -o "/tmp/$FILE.sha"
+          cd /tmp
+          sha256sum -c "$FILE.sha"
+          tar -xzf "$FILE"
+          echo "/tmp/xpack-arm-none-eabi-gcc-13.2.1-1.1/bin" >> "$GITHUB_PATH"
+
+      - name: Compile and validate
+        shell: bash
+        run: |
+          set -euo pipefail
+          arm-none-eabi-gcc --version
+          python3 tools/build_native.py | tee OUTPUT/build.log
+          python3 tools/validate_image.py | tee OUTPUT/validation.log
+          sha256sum OUTPUT/SmartESC_v2_G30D_FO76_SHADOW_R3_STLINK_APP_0x08001000.bin > OUTPUT/SHA256_BIN.txt
+          arm-none-eabi-size OUTPUT/SmartESC_v2_G30D_FO76_SHADOW_R3.elf > OUTPUT/SIZE.txt
+
+      - name: Upload R3 compiled files
+        uses: actions/upload-artifact@v4
+        with:
+          name: G30D_R3_COMPILED
+          if-no-files-found: error
+          retention-days: 7
+          path: |
+            OUTPUT/SmartESC_v2_G30D_FO76_SHADOW_R3.elf
+            OUTPUT/SmartESC_v2_G30D_FO76_SHADOW_R3.map
+            OUTPUT/SmartESC_v2_G30D_FO76_SHADOW_R3_STLINK_APP_0x08001000.bin
+            OUTPUT/SmartESC_v2_G30D_FO76_SHADOW_R3_STLINK_APP_0x08001000.hex
+            OUTPUT/VERIFICATION.json
+            OUTPUT/SHA256_BIN.txt
+            OUTPUT/SIZE.txt
+            OUTPUT/build.log
+            OUTPUT/compile.log
+            OUTPUT/validation.log
