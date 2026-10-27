@@ -1,0 +1,59 @@
+--- a/common_files/src/defines.h
++++ b/common_files/src/defines.h
+@@ -2,7 +2,7 @@
+ #define DEFINES_H_
+ 
+ #ifdef G30P
+-#define HW_NAME "G30D-FO76-SHADOW-R3A"
++#define HW_NAME "G30D-FO76-SHADOW-R3B"
+ #else
+ #define HW_NAME "40"
+ #endif
+--- a/common_files/src/mc_tasks.c
++++ b/common_files/src/mc_tasks.c
+@@ -797,24 +797,26 @@
+   Vqd = Circle_Limitation(pCLM[M1], Vqd);
+   hElAngle += SPD_GetInstElSpeedDpp(speedHandle)*REV_PARK_ANGLE_COMPENSATION_FACTOR;
+   Valphabeta = MCM_Rev_Park(Vqd, hElAngle);
+-  /* Observer must see the PWM that produced the current sample, not the
+-   * voltage command being scheduled for the next interval. At this point
+-   * CntPhA/B/C still contain the just-applied compare values. */
++  /* Capture the PWM that produced the current sample, then complete the
++   * time-critical PWM update BEFORE running the heavier shadow observer.
++   * This preserves sample/PWM alignment without risking MC_FOC_DURATION. */
++  uint16_t g30_old_ca = pwmcHandle[M1]->CntPhA;
++  uint16_t g30_old_cb = pwmcHandle[M1]->CntPhB;
++  uint16_t g30_old_cc = pwmcHandle[M1]->CntPhC;
++  hCodeError = PWMC_SetPhaseVoltage(pwmcHandle[M1], Valphabeta);
+   g30_fo76_shadow_step(Iab.a, Iab.b, HALL_M1._Super.hElAngle,
+                        pBusSensorM1->_Super.AvBusVoltage_d,
+-                       pwmcHandle[M1]->CntPhA, pwmcHandle[M1]->CntPhB,
+-                       pwmcHandle[M1]->CntPhC, PWM_Handle_M1.Half_PWMPeriod,
++                       g30_old_ca, g30_old_cb, g30_old_cc,
++                       PWM_Handle_M1.Half_PWMPeriod,
+                        (uint16_t)(DEAD_TIME_COUNTS/2u),
+                        HALL_M1._Super.hElSpeedDpp);
+-  hCodeError = PWMC_SetPhaseVoltage(pwmcHandle[M1], Valphabeta);
+   FOCVars[M1].Vqd = Vqd;
+   FOCVars[M1].Iab = Iab;
+   FOCVars[M1].Ialphabeta = Ialphabeta;
+   FOCVars[M1].Iqd = Iqd;
+   FOCVars[M1].Valphabeta = Valphabeta;
+   FOCVars[M1].hElAngle = hElAngle;
+-  /* FO76 R3A shadow call moved before PWMC_SetPhaseVoltage so its PWM
+-   * reconstruction is time-aligned to the measured current sample. */
++  /* FO76 R3B: PWM update is committed first; shadow uses captured old PWM. */
+   FW_DataProcess(pFW[M1], Vqd, Iqd);
+   return(hCodeError);
+ }
+--- a/common_files/src/terminal.c
++++ b/common_files/src/terminal.c
+@@ -87,7 +87,7 @@
+             (unsigned)HALL_M1.HallState, (unsigned)xPortGetFreeHeapSize());
+     }else if (strcmp(argv[0], "g30_observer") == 0){
+         g30_fo76_diag_t obs = g30_fo76_get_diag();
+-        commands_printf(phandle, "FO76_R3A shadow_only=1 seeded=%u valid=%u samples4k=%lu eval1k=%lu",
++        commands_printf(phandle, "FO76_R3B shadow_only=1 seeded=%u valid=%u samples4k=%lu eval1k=%lu",
+             (unsigned)obs.seeded, (unsigned)obs.valid,
+             (unsigned long)obs.samples_4k, (unsigned long)obs.evaluated_1k);
+         commands_printf(phandle, "phase=%u error=%d maxabs=%u avgabs=%lu within30=%u over90=%u clamps=%u",
