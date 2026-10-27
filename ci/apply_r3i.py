@@ -92,6 +92,8 @@ static RegConv_t cc={ADC1,9u,M1_VBUS_SAMPLING_TIME};
 static uint8_t ha=255u,hb=255u,hc=255u,init_done,divn,last_sector=R3I_NO_SECTOR;
 static uint32_t last_edge_cycles,avg_edge_cycles,start_tick;
 static int32_t cal_sum;
+static uint8_t cal_persist_valid,arm_had_cal;
+static int16_t cal_persist_offset;
 
 static uint16_t abs16(int16_t x){return (uint16_t)(x<0?-(int32_t)x:(int32_t)x);}
 static uint16_t atan2_u16(int32_t y,int32_t x){
@@ -124,7 +126,7 @@ static uint16_t base_control_phase(uint16_t a,uint16_t b,uint16_t c){
 static void reset_roll(void){
     d.a=d.b=d.c=d.span=0;d.frames=0;d.forward_edges=d.reverse_edges=d.bad_jumps=0;
     d.cal_samples=0;d.phase_base=d.phase_cal=d.hall=0;d.phase_error=0;d.speed_dpp=0;d.erpm=0;
-    d.cal_valid=0;d.sensorless_started=0;d.sector=R3I_NO_SECTOR;d.cal_offset=0;
+    d.cal_valid=cal_persist_valid;d.sensorless_started=0;d.sector=R3I_NO_SECTOR;d.cal_offset=cal_persist_offset;
     last_sector=R3I_NO_SECTOR;last_edge_cycles=avg_edge_cycles=0;cal_sum=0;divn=0;
 }
 static void init_once(void){
@@ -135,6 +137,7 @@ static void init_once(void){
 void g30_r3i_request_arm(uint8_t enable){
     request_arm=enable?1u:0u;
     if(!enable){d.mode=0u;d.sensorless_started=0u;return;}
+    arm_had_cal=cal_persist_valid;
     reset_roll();d.mode=1u;
 }
 uint8_t g30_r3i_block_pwm_start(void){return (uint8_t)(d.mode==1u && !d.sensorless_started);}
@@ -191,11 +194,15 @@ void g30_r3i_tick(uint8_t pwm_off,uint16_t hall_angle,int16_t hall_speed_dpp){
             if(d.cal_samples>=R3I_CAL_SAMPLES){
                 d.cal_offset=(int16_t)(cal_sum/(int32_t)d.cal_samples);
                 d.cal_valid=1u;
+                cal_persist_offset=d.cal_offset;
+                cal_persist_valid=1u;
             }
         }
         if(d.cal_valid){
             d.phase_cal=(uint16_t)(d.phase_base+(uint16_t)d.cal_offset);
-            if(abs16((int16_t)(d.phase_cal-hall_angle))<3641u){
+            /* First arm validates the learned fixed frame against Hall.
+             * On every later arm in the same boot, Hall is no longer a start gate. */
+            if(arm_had_cal || abs16((int16_t)(d.phase_cal-hall_angle))<3641u){
                 g30_fo76_sensorless_seed(d.phase_cal,d.speed_dpp);
                 d.sensorless_started=1u;d.mode=2u;d.starts++;start_tick=HAL_GetTick();
             }
@@ -420,7 +427,7 @@ block=r'''	}else if (strcmp(argv[0], "g30_pushstart") == 0){
         if(argc==2 && strcmp(argv[1],"arm")==0){
             g30_r3i_request_arm(1u);
             g30_fo76_request_takeover(0u);
-            commands_printf(phandle,"R3I pushstart ARM: PWM held off until passive FWD BEMF >=64 DPP; first run calibrates fixed BEMF frame from Hall reference");
+            commands_printf(phandle,"R3I pushstart ARM: first arm calibrates fixed BEMF frame from Hall; later arms in same boot start from passive BEMF without Hall gate");
         }else if(argc==2 && strcmp(argv[1],"off")==0){
             g30_r3i_request_arm(0u);
             g30_fo76_request_takeover(0u);
