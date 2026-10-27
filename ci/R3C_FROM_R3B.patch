@@ -1,0 +1,125 @@
+--- a/common_files/src/defines.h
++++ b/common_files/src/defines.h
+@@ -2,7 +2,7 @@
+ #define DEFINES_H_
+ 
+ #ifdef G30P
+-#define HW_NAME "G30D-FO76-SHADOW-R3B"
++#define HW_NAME "G30D-FO76-SHADOW-R3C"
+ #else
+ #define HW_NAME "40"
+ #endif
+--- a/common_files/src/g30_fo76_shadow.h
++++ b/common_files/src/g30_fo76_shadow.h
+@@ -18,9 +18,12 @@
+     uint8_t seeded;
+     uint8_t valid;
+     uint16_t r_mohm, l_uh, lambda_uwb;
+-    uint16_t lambda_cfg_uwb;
++    uint16_t r_cfg_mohm, l_cfg_uh, lambda_cfg_uwb;
+     uint16_t latest_vbus_mv;
+     uint32_t moving_eval_1k;
++    int32_t signed_phase_error_sum;
++    int16_t last_moving_error;
++    int16_t dt_k_q15;
+ } g30_fo76_diag_t;
+ void g30_fo76_configure(float r_ohm, float l_h, float lambda_wb,
+                           uint16_t current_ua_per_count, uint32_t vbus_mv_per_count_q16);
+--- a/common_files/src/g30_fo76_shadow.c
++++ b/common_files/src/g30_fo76_shadow.c
+@@ -18,7 +18,10 @@
+ static volatile uint32_t seq;
+ static uint16_t current_ua_per_count;
+ static uint32_t vbus_mv_per_count_q16;
+-#define G30_FO76_LAMBDA_FALLBACK_UWB 12100u
++#define G30_FO76_R_PROVEN_MOHM 583u
++#define G30_FO76_L_PROVEN_UH 640u
++#define G30_FO76_LAMBDA_PROVEN_UWB 12100u
++#define G30_FO76_DT_K_Q15 (-22528) /* FO76 Observer C: -0.6875, hardware-proven */
+ #define G30_FO76_MIN_TRACK_DPP 40
+ 
+ static int32_t norm_q8(int32_t a, int32_t b) {
+@@ -57,12 +60,14 @@
+     if(lambda_wb>0.00005f && lambda_wb<0.060f) lam=(uint16_t)(lambda_wb*1000000.f+0.5f);
+     ++seq;
+     for (unsigned n=0;n<sizeof(d);n++) ((volatile uint8_t *)&d)[n]=0;
+-    d.r_mohm=r;d.l_uh=l;d.lambda_cfg_uwb=lam;
+-    /* Flux detect requires real rotor motion. The R2 detect that produced
+-     * 1.438 mWb did not rotate the rotor, so values below 5 mWb are not
+-     * allowed to destabilise the shadow observer. This does NOT change the
+-     * user's saved VESC mcconf; it is observer-local only. */
+-    d.lambda_uwb=(lam>=5000u && lam<=30000u)?lam:G30_FO76_LAMBDA_FALLBACK_UWB;
++    d.r_cfg_mohm=r; d.l_cfg_uh=l; d.lambda_cfg_uwb=lam;
++    /* R3C reproduces the parameter set of the hardware-proven FO74/FO76
++     * observer. The VESC/Koxx3 detected values remain untouched and continue
++     * to drive the proven Hall FOC. These constants are observer-local only. */
++    d.r_mohm=G30_FO76_R_PROVEN_MOHM;
++    d.l_uh=G30_FO76_L_PROVEN_UH;
++    d.lambda_uwb=G30_FO76_LAMBDA_PROVEN_UWB;
++    d.dt_k_q15=G30_FO76_DT_K_Q15;
+     current_ua_per_count=i_ua_per_count;vbus_mv_per_count_q16=vbus_mv_q16;
+     x_a_q8=x_b_q8=0; decim16=decim4=0;
+     ++seq;
+@@ -90,8 +95,13 @@
+         int32_t da=(vdt*dt_blend_q15(ia))>>15;
+         int32_t db=(vdt*dt_blend_q15(ib))>>15;
+         int32_t dc=(vdt*dt_blend_q15(ic))>>15;
+-        valpha-=(2*da-db-dc)/3;
+-        vbeta-=(((db-dc)*INV_SQRT3_Q15)>>15);
++        int32_t corr_alpha=(2*da-db-dc)/3;
++        int32_t corr_beta=(((db-dc)*INV_SQRT3_Q15)>>15);
++        /* FO76 v0.4.7/FO74 hardware result: Observer C k=-0.6875 won.
++         * Model convention is v_actual = v_ideal - k*C, so negative k
++         * intentionally ADDS 0.6875 of the nominal textbook DT vector. */
++        valpha-=((corr_alpha*(int32_t)G30_FO76_DT_K_Q15)/32768);
++        vbeta -=((corr_beta *(int32_t)G30_FO76_DT_K_Q15)/32768);
+     }
+     /* FO76 4 kHz model: Q8 micro-Wb += e_mV * 64 per 250 us. */
+     int32_t lia_q8=((int32_t)d.l_uh*ialpha/1000)*Q8;
+@@ -150,6 +160,8 @@
+             if(ape>16384)d.over90_count++;
+             if(ape<5461)d.within30_count++;
+             d.phase_abs_sum+=ape;
++            d.signed_phase_error_sum+=(int16_t)d.error;
++            d.last_moving_error=d.error;
+             ++d.evaluated_1k;
+             ++d.moving_eval_1k;
+             /* A diagnostic confidence bit only. Does NOT enable takeover. */
+--- a/common_files/src/mc_tasks.c
++++ b/common_files/src/mc_tasks.c
+@@ -808,7 +808,7 @@
+                        pBusSensorM1->_Super.AvBusVoltage_d,
+                        g30_old_ca, g30_old_cb, g30_old_cc,
+                        PWM_Handle_M1.Half_PWMPeriod,
+-                       (uint16_t)(DEAD_TIME_COUNTS/2u),
++                       (uint16_t)DEAD_TIME_COUNTS,
+                        HALL_M1._Super.hElSpeedDpp);
+   FOCVars[M1].Vqd = Vqd;
+   FOCVars[M1].Iab = Iab;
+--- a/common_files/src/terminal.c
++++ b/common_files/src/terminal.c
+@@ -87,16 +87,20 @@
+             (unsigned)HALL_M1.HallState, (unsigned)xPortGetFreeHeapSize());
+     }else if (strcmp(argv[0], "g30_observer") == 0){
+         g30_fo76_diag_t obs = g30_fo76_get_diag();
+-        commands_printf(phandle, "FO76_R3B shadow_only=1 seeded=%u valid=%u samples4k=%lu eval1k=%lu",
++        commands_printf(phandle, "FO76_R3C shadow_only=1 seeded=%u valid=%u samples4k=%lu eval1k=%lu",
+             (unsigned)obs.seeded, (unsigned)obs.valid,
+             (unsigned long)obs.samples_4k, (unsigned long)obs.evaluated_1k);
+         commands_printf(phandle, "phase=%u error=%d maxabs=%u avgabs=%lu within30=%u over90=%u clamps=%u",
+             (unsigned)obs.phase, (int)obs.error, (unsigned)obs.max_abs_error,
+             (unsigned long)(obs.evaluated_1k ? obs.phase_abs_sum/obs.evaluated_1k : 0),
+             (unsigned)obs.within30_count, (unsigned)obs.over90_count, (unsigned)obs.clamp_count);
+-        commands_printf(phandle, "R=%umOhm L=%uuH lambda_eff=%uuWb lambda_cfg=%uuWb flux=%uuWb vbus=%umV moving=%lu",
+-            (unsigned)obs.r_mohm, (unsigned)obs.l_uh, (unsigned)obs.lambda_uwb, (unsigned)obs.lambda_cfg_uwb,
+-            (unsigned)obs.magnitude_uwb, (unsigned)obs.latest_vbus_mv, (unsigned long)obs.moving_eval_1k);
++        commands_printf(phandle, "R_eff=%umOhm L_eff=%uuH lambda_eff=%uuWb cfg=%u/%u/%u dt_k=%d",
++            (unsigned)obs.r_mohm, (unsigned)obs.l_uh, (unsigned)obs.lambda_uwb,
++            (unsigned)obs.r_cfg_mohm, (unsigned)obs.l_cfg_uh, (unsigned)obs.lambda_cfg_uwb, (int)obs.dt_k_q15);
++        commands_printf(phandle, "flux=%uuWb vbus=%umV moving=%lu signedavg=%ld lastmove=%d",
++            (unsigned)obs.magnitude_uwb, (unsigned)obs.latest_vbus_mv, (unsigned long)obs.moving_eval_1k,
++            (long)(obs.moving_eval_1k ? obs.signed_phase_error_sum/(int32_t)obs.moving_eval_1k : 0),
++            (int)obs.last_moving_error);
+ 	}else if (strcmp(argv[0], "top") == 0){
+ 		terminal_top(phandle);
+ 	}
