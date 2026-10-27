@@ -41,24 +41,27 @@ jobs:
           sed -i 's/FO76_SHADOW_R3/FO76_SHADOW_R3C/g' tools/build_native.py tools/validate_image.py
           sed -i 's/G30D-FO76-SHADOW-R3/G30D-FO76-SHADOW-R3C/g' tools/validate_image.py
 
-      - name: Apply exact cumulative R3C to R3G patch
+      - name: Overlay exact R3G source files
         shell: bash
         run: |
           set -euo pipefail
-          base64 -d ci/R3G_FROM_R3C_CUMULATIVE.patch.gz.b64 | gzip -dc > /tmp/R3G_FROM_R3C_CUMULATIVE.patch
-          echo '034875b798d42a5d795fa0cdc7323ee797b54bb994c499a515ab4011c5d09dee  /tmp/R3G_FROM_R3C_CUMULATIVE.patch' | sha256sum -c -
-          patch -p1 --dry-run < /tmp/R3G_FROM_R3C_CUMULATIVE.patch
-          patch -p1 < /tmp/R3G_FROM_R3C_CUMULATIVE.patch
+          cat ci/r3g_override.part00 ci/r3g_override.part01 ci/r3g_override.part02 ci/r3g_override.part03 > /tmp/r3g_override.b64
+          base64 -d /tmp/r3g_override.b64 > /tmp/R3G_OVERRIDE_FILES.tgz
+          echo '42d3cfd176a95a6ad475d614fbeeb278815b43133a27682b6cf38d9e1dbfcb21  /tmp/R3G_OVERRIDE_FILES.tgz' | sha256sum -c -
+          tar -xzf /tmp/R3G_OVERRIDE_FILES.tgz -C SOURCE_KOXX3
           grep -q 'G30D-FO76-TAKEOVER-R3G' SOURCE_KOXX3/common_files/src/defines.h
           grep -q 'G30_FO76_LAMBDA_PROVEN_UWB 24200u' SOURCE_KOXX3/common_files/src/g30_fo76_shadow.c
-          grep -q 'G30_TAKEOVER_ENTRY_DPP 64' SOURCE_KOXX3/common_files/src/g30_fo76_shadow.c
-          grep -q 'G30_TAKEOVER_FALLBACK_DPP 48' SOURCE_KOXX3/common_files/src/g30_fo76_shadow.c
+          grep -q 'G30_R3G_TAKEOVER_MIN_DPP 64' SOURCE_KOXX3/common_files/src/g30_fo76_shadow.c
+          grep -q 'G30_R3G_FALLBACK_MIN_DPP 48' SOURCE_KOXX3/common_files/src/g30_fo76_shadow.c
+          grep -q 'G30_R3G_ENTRY_ERR_COUNTS 3641u' SOURCE_KOXX3/common_files/src/g30_fo76_shadow.c
+          grep -q 'G30_R3G_FALLBACK_ERR_COUNTS 5461u' SOURCE_KOXX3/common_files/src/g30_fo76_shadow.c
           grep -q 'g30_fo76_control_angle(hElAngle' SOURCE_KOXX3/common_files/src/mc_tasks.c
           grep -q 'g30_fo76_request_takeover(0u)' SOURCE_KOXX3/common_files/src/VescToSTM.c
           grep -q 'g30_takeover' SOURCE_KOXX3/common_files/src/terminal.c
           sed -i 's/FO76_SHADOW_R3C/FO76_TAKEOVER_R3G/g' tools/build_native.py tools/validate_image.py
           sed -i 's/G30D-FO76-SHADOW-R3C/G30D-FO76-TAKEOVER-R3G/g' tools/validate_image.py
           sed -i 's/compact FO76 shadow observer; no angle takeover/compact FO76 observer with explicit guarded Hall-to-observer takeover/g' tools/validate_image.py
+          sed -i "s/'observer_mode':'shadow_only'/'observer_mode':'guarded_hall_to_observer_takeover'/g" tools/validate_image.py
 
       - name: Install ARM GNU GCC 13.2.1
         shell: bash
@@ -91,16 +94,20 @@ jobs:
           shadow=Path('SOURCE_KOXX3/common_files/src/g30_fo76_shadow.c').read_text()
           mc=Path('SOURCE_KOXX3/common_files/src/mc_tasks.c').read_text()
           vesc=Path('SOURCE_KOXX3/common_files/src/VescToSTM.c').read_text()
+          pwm=mc.find('PWMC_SetPhaseVoltage(pwmcHandle[M1], Valphabeta)')
+          obs=mc.find('g30_fo76_shadow_step(', pwm)
+          sel=mc.find('g30_fo76_control_angle(hElAngle')
+          park=mc.find('MCM_Park(Ialphabeta, hElAngle)', sel)
           gates={
             'lambda_24200':'G30_FO76_LAMBDA_PROVEN_UWB 24200u' in shadow,
-            'takeover_default_off':'static volatile uint8_t takeover_request;' in shadow,
-            'entry_speed_64':'G30_TAKEOVER_ENTRY_DPP 64' in shadow,
-            'fallback_speed_48':'G30_TAKEOVER_FALLBACK_DPP 48' in shadow,
-            'entry_20deg':'G30_TAKEOVER_ENTRY_ERR_COUNTS 3641' in shadow,
-            'fallback_30deg':'G30_TAKEOVER_FALLBACK_ERR_COUNTS 5461' in shadow,
-            'park_uses_selector':mc.find('g30_fo76_control_angle(hElAngle') < mc.find('MCM_Park(Ialphabeta, hElAngle)'),
+            'takeover_default_off':'static volatile uint8_t takeover_enable_request;' in shadow,
+            'entry_speed_64':'G30_R3G_TAKEOVER_MIN_DPP 64' in shadow,
+            'fallback_speed_48':'G30_R3G_FALLBACK_MIN_DPP 48' in shadow,
+            'entry_20deg':'G30_R3G_ENTRY_ERR_COUNTS 3641u' in shadow,
+            'fallback_30deg':'G30_R3G_FALLBACK_ERR_COUNTS 5461u' in shadow,
+            'park_uses_selector':sel >= 0 and park > sel,
             'pwm_stop_disarms':'g30_fo76_request_takeover(0u)' in vesc,
-            'observer_after_pwm_commit':mc.find('PWMC_SetPhaseVoltage(pwmcHandle[M1], Valphabeta)') < mc.find('g30_fo76_shadow_step('),
+            'observer_after_pwm_commit':pwm >= 0 and obs > pwm,
           }
           for k,v in gates.items():
               print(f'{k}={int(v)}')
