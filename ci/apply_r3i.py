@@ -433,4 +433,16 @@ s=s.replace(anchor,block,1)
 s=s.replace('FO76_R3H observer_only_fwd=1','FO76_R3I pushstart_sensorless=1',1)
 p.write_text(s)
 
+# Reproducible native builder has an explicit source allow-list. Mirror the
+# existing FO76 observer entry so the new R3I module is compiled and linked.
+bp=Path("tools/build_native.py")
+bs=bp.read_text().splitlines()
+hits=[i for i,line in enumerate(bs) if "g30_fo76_shadow.c" in line]
+if len(hits)!=1:
+    raise SystemExit(f"build_native g30_fo76_shadow source anchor count={len(hits)}")
+i=hits[0]
+newline=bs[i].replace("g30_fo76_shadow.c","g30_r3i_pushstart.c")
+bs.insert(i+1,newline)
+bp.write_text("\n".join(bs)+"\n")
+
 print("R3I transform applied")
