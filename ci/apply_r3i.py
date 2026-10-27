@@ -149,6 +149,7 @@ void g30_r3i_tick(uint8_t pwm_off,uint16_t hall_angle,int16_t hall_speed_dpp){
     if(!request_arm || !init_done)return;
     if(g30_r3i_sensorless_active())return;
     if(!pwm_off)return;
+    if(d.mode==1u && g30_fo76_sensorless_active()) g30_fo76_sensorless_clear();
     if(++divn<R3I_SAMPLE_DIV)return;
     divn=0;
 
@@ -210,6 +211,7 @@ void g30_fo76_shadow_step'''
 rep='''uint8_t g30_fo76_coast_requested(void);
 void g30_fo76_sensorless_seed(uint16_t control_phase, int16_t speed_dpp);
 uint8_t g30_fo76_sensorless_active(void);
+void g30_fo76_sensorless_clear(void);
 int16_t g30_fo76_control_speed_dpp(void);
 void g30_fo76_shadow_step'''
 if anchor not in s: raise SystemExit("shadow h anchor")
@@ -245,6 +247,16 @@ void g30_fo76_sensorless_seed(uint16_t control_phase, int16_t speed_dpp) {
     ++seq;
 }
 uint8_t g30_fo76_sensorless_active(void){return sensorless_external;}
+void g30_fo76_sensorless_clear(void){
+    sensorless_external=0u;
+    takeover_enable_request=0u;
+    takeover_coast_request=0u;
+    takeover_state=G30_TK_HALL_OFF;
+    takeover_fallback_reason=G30_TK_FB_NONE;
+    takeover_phase_history=0u;
+    takeover_blend_offset=0;
+    d.valid=0u;d.tracking=0u;d.seeded=0u;d.good_eval_1k=0u;
+}
 int16_t g30_fo76_control_speed_dpp(void){
     if(sensorless_external || takeover_state==G30_TK_OBSERVER)
         return (int16_t)(takeover_step_foc_q4/16);
