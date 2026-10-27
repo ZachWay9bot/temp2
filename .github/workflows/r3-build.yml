@@ -1,8 +1,8 @@
-name: G30D R3G takeover compile
+name: G30D R3G1 diagnostic takeover compile
 on:
   push:
     branches:
-      - r3g-build-20261027
+      - r3g1-diag-20261027
   workflow_dispatch:
 
 jobs:
@@ -63,6 +63,14 @@ jobs:
           sed -i 's/compact FO76 shadow observer; no angle takeover/compact FO76 observer with explicit guarded Hall-to-observer takeover/g' tools/validate_image.py
           sed -i "s/'observer_mode':'shadow_only'/'observer_mode':'guarded_hall_to_observer_takeover'/g" tools/validate_image.py
 
+          patch -d SOURCE_KOXX3 -p1 --dry-run < ci/R3G1_DIAG_FROM_R3G.patch
+          patch -d SOURCE_KOXX3 -p1 < ci/R3G1_DIAG_FROM_R3G.patch
+          grep -q 'G30D-FO76-TAKEOVER-R3G1-DIAG' SOURCE_KOXX3/common_files/src/defines.h
+          grep -q 'takeover_max_speed_dpp' SOURCE_KOXX3/common_files/src/g30_fo76_shadow.c
+          grep -q 'R3G1 gates maxspd=' SOURCE_KOXX3/common_files/src/terminal.c
+          sed -i 's/FO76_TAKEOVER_R3G/FO76_TAKEOVER_R3G1_DIAG/g' tools/build_native.py tools/validate_image.py
+          sed -i 's/G30D-FO76-TAKEOVER-R3G/G30D-FO76-TAKEOVER-R3G1-DIAG/g' tools/validate_image.py
+
       - name: Install ARM GNU GCC 13.2.1
         shell: bash
         run: |
@@ -76,7 +84,7 @@ jobs:
           tar -xzf "$FILE"
           echo "/tmp/xpack-arm-none-eabi-gcc-13.2.1-1.1/bin" >> "$GITHUB_PATH"
 
-      - name: Compile and validate R3G
+      - name: Compile and validate R3G1 diagnostic
         shell: bash
         run: |
           set -euo pipefail
@@ -84,12 +92,12 @@ jobs:
           mkdir -p OUTPUT
           python3 tools/build_native.py | tee OUTPUT/build.log
           python3 tools/validate_image.py | tee OUTPUT/validation.log
-          BIN=OUTPUT/SmartESC_v2_G30D_FO76_TAKEOVER_R3G_STLINK_APP_0x08001000.bin
-          ELF=OUTPUT/SmartESC_v2_G30D_FO76_TAKEOVER_R3G.elf
+          BIN=OUTPUT/SmartESC_v2_G30D_FO76_TAKEOVER_R3G1_DIAG_STLINK_APP_0x08001000.bin
+          ELF=OUTPUT/SmartESC_v2_G30D_FO76_TAKEOVER_R3G1_DIAG.elf
           sha256sum "$BIN" > OUTPUT/SHA256_BIN.txt
           arm-none-eabi-size "$ELF" > OUTPUT/SIZE.txt
           arm-none-eabi-nm -S --size-sort "$ELF" | tail -40 > OUTPUT/LARGEST_SYMBOLS.txt
-          python3 - <<'PY' | tee OUTPUT/R3G_STATIC_GATES.txt
+          python3 - <<'PY' | tee OUTPUT/R3G1_STATIC_GATES.txt
           from pathlib import Path
           shadow=Path('SOURCE_KOXX3/common_files/src/g30_fo76_shadow.c').read_text()
           mc=Path('SOURCE_KOXX3/common_files/src/mc_tasks.c').read_text()
@@ -108,29 +116,30 @@ jobs:
             'park_uses_selector':sel >= 0 and park > sel,
             'pwm_stop_disarms':'g30_fo76_request_takeover(0u)' in vesc,
             'observer_after_pwm_commit':pwm >= 0 and obs > pwm,
+            'diag_only_gate_capture':'takeover_max_speed_dpp' in shadow and 'takeover_min_pred_err_vths' in shadow,
           }
           for k,v in gates.items():
               print(f'{k}={int(v)}')
           assert all(gates.values()), gates
-          print('R3G_STATIC_GATES=PASS')
+          print('R3G1_STATIC_GATES=PASS')
           PY
 
-      - name: Upload R3G compiled test candidate
+      - name: Upload R3G1 diagnostic candidate
         uses: actions/upload-artifact@v4
         with:
-          name: G30D_R3G_TAKEOVER_COMPILED
+          name: G30D_R3G1_DIAG_COMPILED
           if-no-files-found: error
           retention-days: 7
           path: |
-            OUTPUT/SmartESC_v2_G30D_FO76_TAKEOVER_R3G.elf
-            OUTPUT/SmartESC_v2_G30D_FO76_TAKEOVER_R3G.map
-            OUTPUT/SmartESC_v2_G30D_FO76_TAKEOVER_R3G_STLINK_APP_0x08001000.bin
-            OUTPUT/SmartESC_v2_G30D_FO76_TAKEOVER_R3G_STLINK_APP_0x08001000.hex
+            OUTPUT/SmartESC_v2_G30D_FO76_TAKEOVER_R3G1_DIAG.elf
+            OUTPUT/SmartESC_v2_G30D_FO76_TAKEOVER_R3G1_DIAG.map
+            OUTPUT/SmartESC_v2_G30D_FO76_TAKEOVER_R3G1_DIAG_STLINK_APP_0x08001000.bin
+            OUTPUT/SmartESC_v2_G30D_FO76_TAKEOVER_R3G1_DIAG_STLINK_APP_0x08001000.hex
             OUTPUT/VERIFICATION.json
             OUTPUT/SHA256_BIN.txt
             OUTPUT/SIZE.txt
             OUTPUT/LARGEST_SYMBOLS.txt
-            OUTPUT/R3G_STATIC_GATES.txt
+            OUTPUT/R3G1_STATIC_GATES.txt
             OUTPUT/build.log
             OUTPUT/compile.log
             OUTPUT/validation.log
