@@ -129,7 +129,7 @@ jobs:
             'park_uses_selector':sel >= 0 and park > sel,
             'pwm_stop_disarms':'g30_fo76_request_takeover(0u)' in vesc,
             'observer_after_pwm_commit':pwm >= 0 and obs > pwm,
-            'takeover_speed_uses_populated_hall_dpp':'hElSpeedDpp = SPD_GetElSpeedDpp(speedHandle);' in mc,
+            'takeover_speed_uses_valid_source':'hElSpeedDpp = g30_fo76_sensorless_active()?g30_fo76_control_speed_dpp():SPD_GetElSpeedDpp(speedHandle);' in mc,
             'r3h_fwd_only_entry':'hall_speed_dpp<=-(int16_t)G30_R3G_TAKEOVER_MIN_DPP' in shadow,
             'observer_coast_speed_64':'G30_R3H_OBSERVER_COAST_MIN_DPP 64' in shadow,
             'observer_speed_from_predictor':'abs_i16_u(takeover_step_foc_q4)>>4' in shadow,
