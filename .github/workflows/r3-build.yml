@@ -1,8 +1,8 @@
-name: G30D R3C compile
+name: G30D R3G source reconstruction
 on:
   push:
     branches:
-      - r3c-build-20261027
+      - r3g-build-20261027
   workflow_dispatch:
 
 jobs:
@@ -37,48 +37,18 @@ jobs:
           patch -d SOURCE_KOXX3 -p2 < ci/R3A_FIX_FROM_R3.patch
           patch -d SOURCE_KOXX3 -p1 < ci/R3B_TIMING_FIX_FROM_R3A.patch
           patch -d SOURCE_KOXX3 -p1 < ci/R3C_FROM_R3B.patch
-          grep -q 'G30D-FO76-SHADOW-R3C' SOURCE_KOXX3/common_files/src/defines.h
-          sed -i 's/FO76_SHADOW_R3/FO76_SHADOW_R3C/g' tools/build_native.py tools/validate_image.py
-          sed -i 's/G30D-FO76-SHADOW-R3/G30D-FO76-SHADOW-R3C/g' tools/validate_image.py
 
-      - name: Install ARM GNU GCC 13.2.1
+      - name: Dump reconstructed R3C source
         shell: bash
         run: |
           set -euo pipefail
-          URL=https://github.com/xpack-dev-tools/arm-none-eabi-gcc-xpack/releases/download/v13.2.1-1.1
-          FILE=xpack-arm-none-eabi-gcc-13.2.1-1.1-linux-x64.tar.gz
-          curl -fL "$URL/$FILE" -o "/tmp/$FILE"
-          curl -fL "$URL/$FILE.sha" -o "/tmp/$FILE.sha"
-          cd /tmp
-          sha256sum -c "$FILE.sha"
-          tar -xzf "$FILE"
-          echo "/tmp/xpack-arm-none-eabi-gcc-13.2.1-1.1/bin" >> "$GITHUB_PATH"
-
-      - name: Compile and validate
-        shell: bash
-        run: |
-          set -euo pipefail
-          arm-none-eabi-gcc --version
-          mkdir -p OUTPUT
-          python3 tools/build_native.py | tee OUTPUT/build.log
-          python3 tools/validate_image.py | tee OUTPUT/validation.log
-          sha256sum OUTPUT/SmartESC_v2_G30D_FO76_SHADOW_R3C_STLINK_APP_0x08001000.bin > OUTPUT/SHA256_BIN.txt
-          arm-none-eabi-size OUTPUT/SmartESC_v2_G30D_FO76_SHADOW_R3C.elf > OUTPUT/SIZE.txt
-
-      - name: Upload R3C compiled files
-        uses: actions/upload-artifact@v4
-        with:
-          name: G30D_R3C_COMPILED
-          if-no-files-found: error
-          retention-days: 7
-          path: |
-            OUTPUT/SmartESC_v2_G30D_FO76_SHADOW_R3C.elf
-            OUTPUT/SmartESC_v2_G30D_FO76_SHADOW_R3C.map
-            OUTPUT/SmartESC_v2_G30D_FO76_SHADOW_R3C_STLINK_APP_0x08001000.bin
-            OUTPUT/SmartESC_v2_G30D_FO76_SHADOW_R3C_STLINK_APP_0x08001000.hex
-            OUTPUT/VERIFICATION.json
-            OUTPUT/SHA256_BIN.txt
-            OUTPUT/SIZE.txt
-            OUTPUT/build.log
-            OUTPUT/compile.log
-            OUTPUT/validation.log
+          echo '===== defines.h ====='
+          sed -n '1,40p' SOURCE_KOXX3/common_files/src/defines.h
+          echo '===== g30_fo76_shadow.h ====='
+          cat SOURCE_KOXX3/common_files/src/g30_fo76_shadow.h
+          echo '===== g30_fo76_shadow.c ====='
+          cat SOURCE_KOXX3/common_files/src/g30_fo76_shadow.c
+          echo '===== mc_tasks.c relevant ====='
+          sed -n '760,850p' SOURCE_KOXX3/common_files/src/mc_tasks.c
+          echo '===== terminal.c relevant ====='
+          sed -n '60,150p' SOURCE_KOXX3/common_files/src/terminal.c
