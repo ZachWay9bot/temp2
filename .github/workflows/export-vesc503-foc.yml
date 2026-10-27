@@ -1,0 +1,35 @@
+name: Export VESC 5.03 legacy FOC
+on:
+  push:
+    branches:
+      - export-foc-sensorless-20261028
+
+jobs:
+  export503:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - name: Fetch exact VESC 5.03 and package legacy FOC
+        shell: bash
+        run: |
+          set -euo pipefail
+          git clone --depth 1 --branch 5.03 https://github.com/vedderb/bldc.git VESC_503
+          mkdir -p EXPORT/VESC_5.03
+          for f in mcpwm_foc.c mcpwm_foc.h mc_interface.c mc_interface.h utils.c utils.h datatypes.h conf_general.c conf_general.h CHANGELOG.md README.md LICENSE; do
+            if [ -f "VESC_503/$f" ]; then cp "VESC_503/$f" EXPORT/VESC_5.03/; fi
+          done
+          find VESC_503 -maxdepth 1 -type f \( -name '*foc*' -o -name '*observer*' -o -name '*sensor*' \) -exec cp {} EXPORT/VESC_5.03/ \;
+          git -C VESC_503 rev-parse HEAD > EXPORT/VESC_5.03/COMMIT.txt
+          grep -RniE 'observer|ortega|sensorless|flux.link|pll' EXPORT/VESC_5.03 --include='*.c' --include='*.h' > EXPORT/VESC_5.03/OBSERVER_HITS.txt || true
+          (cd EXPORT && zip -qr ../VESC_5.03_LEGACY_FOC_SENSORLESS.zip .)
+          sha256sum VESC_5.03_LEGACY_FOC_SENSORLESS.zip > VESC_5.03_LEGACY_FOC_SENSORLESS.zip.sha256
+      - name: Upload
+        uses: actions/upload-artifact@v4
+        with:
+          name: VESC_5.03_LEGACY_FOC_SENSORLESS
+          retention-days: 7
+          path: |
+            VESC_5.03_LEGACY_FOC_SENSORLESS.zip
+            VESC_5.03_LEGACY_FOC_SENSORLESS.zip.sha256
