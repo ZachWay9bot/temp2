@@ -124,12 +124,12 @@ p.write_text(s.replace(old,new,1))
 # Split voltage-integrator preparation from direct PWM switching so the normal
 # MCSDK state-machine restart can use the same rolling-start preload.
 p=SRC/"VescToSTM.h"; s=p.read_text()
-old='''void VescToSTM_pwm_start(void);
-void VescToSTM_pwm_stop(void);
+old='''void VescToSTM_pwm_stop(void);
+void VescToSTM_pwm_start(void);
 '''
-new='''void VescToSTM_pwm_start(void);
+new='''void VescToSTM_pwm_stop(void);
+void VescToSTM_pwm_start(void);
 void VescToSTM_prepare_sensorless_start(void);
-void VescToSTM_pwm_stop(void);
 '''
 if old not in s: raise SystemExit("VescToSTM header anchor")
 p.write_text(s.replace(old,new,1))
