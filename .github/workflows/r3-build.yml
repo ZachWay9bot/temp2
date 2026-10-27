@@ -55,6 +55,7 @@ jobs:
         run: |
           set -euo pipefail
           arm-none-eabi-gcc --version
+          mkdir -p OUTPUT
           python3 tools/build_native.py | tee OUTPUT/build.log
           python3 tools/validate_image.py | tee OUTPUT/validation.log
           sha256sum OUTPUT/SmartESC_v2_G30D_FO76_SHADOW_R3_STLINK_APP_0x08001000.bin > OUTPUT/SHA256_BIN.txt
