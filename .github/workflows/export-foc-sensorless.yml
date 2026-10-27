@@ -1,0 +1,131 @@
+name: Export G30D FOC sensorless observers
+on:
+  push:
+    branches:
+      - export-foc-sensorless-20261028
+
+jobs:
+  export:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Reconstruct exact SmartESC R3G source
+        shell: bash
+        run: |
+          set -euo pipefail
+          base64 -d ci/r3_payload.tgz.b64 > /tmp/r3_payload.tgz
+          mkdir -p /tmp/r3payload
+          tar -xzf /tmp/r3_payload.tgz -C /tmp/r3payload
+          cp /tmp/r3payload/G30D_R2_changes.patch .
+          cp /tmp/r3payload/R3_FROM_R2.patch .
+          git clone --no-tags https://github.com/Koxx3/SmartESC_STM32_v2.git SOURCE_KOXX3
+          git -C SOURCE_KOXX3 checkout --detach 272bdb99d75484dcc377e1cf3e6a20e53a6fd8de
+          git -C SOURCE_KOXX3 apply ../G30D_R2_changes.patch
+          patch -d SOURCE_KOXX3 -p2 < R3_FROM_R2.patch
+          patch -d SOURCE_KOXX3 -p2 < ci/R3A_FIX_FROM_R3.patch
+          patch -d SOURCE_KOXX3 -p1 < ci/R3B_TIMING_FIX_FROM_R3A.patch
+          patch -d SOURCE_KOXX3 -p1 < ci/R3C_FROM_R3B.patch
+          cat ci/r3g_override.part00 ci/r3g_override.part01 ci/r3g_override.part02 ci/r3g_override.part03 > /tmp/r3g_override.b64
+          base64 -d /tmp/r3g_override.b64 > /tmp/R3G_OVERRIDE_FILES.tgz
+          echo '42d3cfd176a95a6ad475d614fbeeb278815b43133a27682b6cf38d9e1dbfcb21  /tmp/R3G_OVERRIDE_FILES.tgz' | sha256sum -c -
+          tar -xzf /tmp/R3G_OVERRIDE_FILES.tgz -C SOURCE_KOXX3
+          grep -q 'G30D-FO76-TAKEOVER-R3G' SOURCE_KOXX3/common_files/src/defines.h
+
+      - name: Fetch VESC observer reference snapshots
+        shell: bash
+        run: |
+          set -euo pipefail
+          git clone --depth 1 --branch 5.03 https://github.com/vedderb/bldc.git VESC_503
+          git init VESC_CURRENT
+          git -C VESC_CURRENT remote add origin https://github.com/vedderb/bldc.git
+          git -C VESC_CURRENT fetch --depth 1 origin aa8a9c0ec64bcb4404b3c61106b58e11925424da
+          git -C VESC_CURRENT checkout --detach FETCH_HEAD
+          if git clone --depth 1 --branch 6.00 https://github.com/vedderb/bldc.git VESC_600; then
+            echo "VESC 6.00 fetched"
+          else
+            mkdir -p VESC_600
+            echo "VESC 6.00 tag fetch failed" > VESC_600/FETCH_FAILED.txt
+          fi
+
+      - name: Assemble focused source export
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p EXPORT/SMARTESC_R3G EXPORT/SMARTESC_REPO_REFERENCE EXPORT/VESC_5.03 EXPORT/VESC_6.00 EXPORT/VESC_CURRENT EXPORT/PROVENANCE
+
+          cp -a SOURCE_KOXX3/common_files/src EXPORT/SMARTESC_R3G/
+          cp -a SOURCE_KOXX3/common_files/inc EXPORT/SMARTESC_R3G/
+          if [ -d SOURCE_KOXX3/common_files/MotorControl/MCSDK/MCLib ]; then
+            mkdir -p EXPORT/SMARTESC_R3G/common_files/MotorControl/MCSDK
+            cp -a SOURCE_KOXX3/common_files/MotorControl/MCSDK/MCLib EXPORT/SMARTESC_R3G/common_files/MotorControl/MCSDK/
+          fi
+          if [ -f SOURCE_KOXX3/common_files/MotorControl/lib/libmc-gcc_M3.lib ]; then
+            mkdir -p EXPORT/SMARTESC_R3G/common_files/MotorControl/lib
+            cp SOURCE_KOXX3/common_files/MotorControl/lib/libmc-gcc_M3.lib EXPORT/SMARTESC_R3G/common_files/MotorControl/lib/
+          fi
+          if [ -d SOURCE_KOXX3/g30p ]; then cp -a SOURCE_KOXX3/g30p EXPORT/SMARTESC_R3G/; fi
+          cp -f SOURCE_KOXX3/README.md EXPORT/SMARTESC_R3G/ 2>/dev/null || true
+
+          mkdir -p EXPORT/SMARTESC_REPO_REFERENCE/common_files/src EXPORT/SMARTESC_REPO_REFERENCE/tools/tests EXPORT/SMARTESC_REPO_REFERENCE/ci
+          cp common_files/src/g30_sensorless* EXPORT/SMARTESC_REPO_REFERENCE/common_files/src/ 2>/dev/null || true
+          cp tools/tests/test_g30_foc_contract.py tools/tests/test_g30_foc_integration.py tools/tests/test_g30_observer_dynamics.py EXPORT/SMARTESC_REPO_REFERENCE/tools/tests/ 2>/dev/null || true
+          cp ci/R3A_FIX_FROM_R3.patch ci/R3B_TIMING_FIX_FROM_R3A.patch ci/R3C_FROM_R3B.patch ci/R3G_FROM_R3C_CUMULATIVE.patch.gz.b64 EXPORT/SMARTESC_REPO_REFERENCE/ci/ 2>/dev/null || true
+          cp .github/workflows/r3-build.yml EXPORT/SMARTESC_REPO_REFERENCE/ 2>/dev/null || true
+
+          for SRC in VESC_503 VESC_600 VESC_CURRENT; do
+            case "$SRC" in
+              VESC_503) DST=EXPORT/VESC_5.03 ;;
+              VESC_600) DST=EXPORT/VESC_6.00 ;;
+              VESC_CURRENT) DST=EXPORT/VESC_CURRENT ;;
+            esac
+            if [ -d "$SRC/motor" ]; then cp -a "$SRC/motor" "$DST/"; fi
+            for f in datatypes.h conf_general.c conf_general.h CHANGELOG.md README.md LICENSE; do
+              if [ -f "$SRC/$f" ]; then cp "$SRC/$f" "$DST/"; fi
+            done
+          done
+
+          {
+            echo "SmartESC temp2 export commit: 4f4188e84f0bf808881fcf19f7240195951e954b"
+            echo "SmartESC upstream base: 272bdb99d75484dcc377e1cf3e6a20e53a6fd8de"
+            echo "R3G override tgz SHA256: 42d3cfd176a95a6ad475d614fbeeb278815b43133a27682b6cf38d9e1dbfcb21"
+            echo "VESC 5.03 commit: $(git -C VESC_503 rev-parse HEAD)"
+            if [ -d VESC_600/.git ]; then echo "VESC 6.00 commit: $(git -C VESC_600 rev-parse HEAD)"; fi
+            echo "VESC current reference commit: $(git -C VESC_CURRENT rev-parse HEAD)"
+          } > EXPORT/PROVENANCE/COMMITS.txt
+
+          grep -RniE 'mxlemm|ortega|observer|flux[_ -]?link|sensorless|sto_pll|sto_cordic|bemf' EXPORT             --include='*.c' --include='*.h' --include='*.md' > EXPORT/PROVENANCE/OBSERVER_HITS.txt || true
+
+          find EXPORT -type f -print0 | sort -z | xargs -0 sha256sum > EXPORT/PROVENANCE/SHA256_ALL_FILES.txt
+          find EXPORT -type f | sort > EXPORT/PROVENANCE/FILELIST.txt
+
+          python3 - <<'PY'
+          from pathlib import Path
+          root=Path("EXPORT")
+          terms=["mxlemm","ortega","observer","sensorless","sto_pll","sto_cordic"]
+          out=[]
+          for base in ["VESC_5.03","VESC_6.00","VESC_CURRENT","SMARTESC_R3G","SMARTESC_REPO_REFERENCE"]:
+              p=root/base
+              txt=""
+              for f in p.rglob("*"):
+                  if f.is_file() and f.suffix.lower() in {".c",".h",".md",".txt"}:
+                      try: txt += "\n"+f.read_text(errors="ignore").lower()
+                      except: pass
+              out.append(base+": "+", ".join(f"{t}={txt.count(t)}" for t in terms))
+          (root/"PROVENANCE"/"TERM_COUNTS.txt").write_text("\n".join(out)+"\n")
+          PY
+
+          (cd EXPORT && zip -qr ../G30D_FOC_SENSORLESS_OBSERVERS_SOURCE_EXPORT.zip .)
+          sha256sum G30D_FOC_SENSORLESS_OBSERVERS_SOURCE_EXPORT.zip > G30D_FOC_SENSORLESS_OBSERVERS_SOURCE_EXPORT.zip.sha256
+
+      - name: Upload source export
+        uses: actions/upload-artifact@v4
+        with:
+          name: G30D_FOC_SENSORLESS_OBSERVERS_SOURCE_EXPORT
+          if-no-files-found: error
+          retention-days: 7
+          path: |
+            G30D_FOC_SENSORLESS_OBSERVERS_SOURCE_EXPORT.zip
+            G30D_FOC_SENSORLESS_OBSERVERS_SOURCE_EXPORT.zip.sha256
