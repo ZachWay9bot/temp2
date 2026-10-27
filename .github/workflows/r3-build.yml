@@ -1,8 +1,8 @@
-name: G30D R3A compile
+name: G30D R3B compile
 on:
   push:
     branches:
-      - r3a-build-20261027
+      - r3b-build-20261027
   workflow_dispatch:
 
 jobs:
@@ -26,7 +26,7 @@ jobs:
           cp /tmp/r3payload/build_native.py tools/
           cp /tmp/r3payload/validate_image.py tools/
 
-      - name: Reconstruct frozen R2, R3 and apply R3A fixes
+      - name: Reconstruct frozen R2, R3, R3A and apply R3B timing fix
         shell: bash
         run: |
           set -euo pipefail
@@ -35,10 +35,10 @@ jobs:
           git -C SOURCE_KOXX3 apply ../G30D_R2_changes.patch
           patch -d SOURCE_KOXX3 -p2 < R3_FROM_R2.patch
           patch -d SOURCE_KOXX3 -p2 < ci/R3A_FIX_FROM_R3.patch
-          test -f SOURCE_KOXX3/common_files/src/g30_fo76_shadow.c
-          grep -q 'G30D-FO76-SHADOW-R3A' SOURCE_KOXX3/common_files/src/defines.h
-          sed -i 's/FO76_SHADOW_R3/FO76_SHADOW_R3A/g' tools/build_native.py tools/validate_image.py
-          sed -i 's/G30D-FO76-SHADOW-R3/G30D-FO76-SHADOW-R3A/g' tools/validate_image.py
+          patch -d SOURCE_KOXX3 -p1 < ci/R3B_TIMING_FIX_FROM_R3A.patch
+          grep -q 'G30D-FO76-SHADOW-R3B' SOURCE_KOXX3/common_files/src/defines.h
+          sed -i 's/FO76_SHADOW_R3/FO76_SHADOW_R3B/g' tools/build_native.py tools/validate_image.py
+          sed -i 's/G30D-FO76-SHADOW-R3/G30D-FO76-SHADOW-R3B/g' tools/validate_image.py
 
       - name: Install ARM GNU GCC 13.2.1
         shell: bash
@@ -61,20 +61,20 @@ jobs:
           mkdir -p OUTPUT
           python3 tools/build_native.py | tee OUTPUT/build.log
           python3 tools/validate_image.py | tee OUTPUT/validation.log
-          sha256sum OUTPUT/SmartESC_v2_G30D_FO76_SHADOW_R3A_STLINK_APP_0x08001000.bin > OUTPUT/SHA256_BIN.txt
-          arm-none-eabi-size OUTPUT/SmartESC_v2_G30D_FO76_SHADOW_R3A.elf > OUTPUT/SIZE.txt
+          sha256sum OUTPUT/SmartESC_v2_G30D_FO76_SHADOW_R3B_STLINK_APP_0x08001000.bin > OUTPUT/SHA256_BIN.txt
+          arm-none-eabi-size OUTPUT/SmartESC_v2_G30D_FO76_SHADOW_R3B.elf > OUTPUT/SIZE.txt
 
-      - name: Upload R3A compiled files
+      - name: Upload R3B compiled files
         uses: actions/upload-artifact@v4
         with:
-          name: G30D_R3A_COMPILED
+          name: G30D_R3B_COMPILED
           if-no-files-found: error
           retention-days: 7
           path: |
-            OUTPUT/SmartESC_v2_G30D_FO76_SHADOW_R3A.elf
-            OUTPUT/SmartESC_v2_G30D_FO76_SHADOW_R3A.map
-            OUTPUT/SmartESC_v2_G30D_FO76_SHADOW_R3A_STLINK_APP_0x08001000.bin
-            OUTPUT/SmartESC_v2_G30D_FO76_SHADOW_R3A_STLINK_APP_0x08001000.hex
+            OUTPUT/SmartESC_v2_G30D_FO76_SHADOW_R3B.elf
+            OUTPUT/SmartESC_v2_G30D_FO76_SHADOW_R3B.map
+            OUTPUT/SmartESC_v2_G30D_FO76_SHADOW_R3B_STLINK_APP_0x08001000.bin
+            OUTPUT/SmartESC_v2_G30D_FO76_SHADOW_R3B_STLINK_APP_0x08001000.hex
             OUTPUT/VERIFICATION.json
             OUTPUT/SHA256_BIN.txt
             OUTPUT/SIZE.txt
