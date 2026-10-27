@@ -47,8 +47,8 @@ jobs:
           set -euo pipefail
           base64 -d ci/R3G_FROM_R3C_CUMULATIVE.patch.gz.b64 | gzip -dc > /tmp/R3G_FROM_R3C_CUMULATIVE.patch
           echo '034875b798d42a5d795fa0cdc7323ee797b54bb994c499a515ab4011c5d09dee  /tmp/R3G_FROM_R3C_CUMULATIVE.patch' | sha256sum -c -
-          patch -d SOURCE_KOXX3 -p1 --dry-run < /tmp/R3G_FROM_R3C_CUMULATIVE.patch
-          patch -d SOURCE_KOXX3 -p1 < /tmp/R3G_FROM_R3C_CUMULATIVE.patch
+          patch -p1 --dry-run < /tmp/R3G_FROM_R3C_CUMULATIVE.patch
+          patch -p1 < /tmp/R3G_FROM_R3C_CUMULATIVE.patch
           grep -q 'G30D-FO76-TAKEOVER-R3G' SOURCE_KOXX3/common_files/src/defines.h
           grep -q 'G30_FO76_LAMBDA_PROVEN_UWB 24200u' SOURCE_KOXX3/common_files/src/g30_fo76_shadow.c
           grep -q 'G30_TAKEOVER_ENTRY_DPP 64' SOURCE_KOXX3/common_files/src/g30_fo76_shadow.c
