@@ -1,0 +1,217 @@
+diff -ruN '--exclude=.git' common_files/src/defines.h common_files/src/defines.h
+--- common_files/src/defines.h	2026-10-28 22:29:57.000000000 +0000
++++ common_files/src/defines.h	2026-10-28 23:10:25.641511578 +0000
+@@ -2,7 +2,7 @@
+ #define DEFINES_H_
+ 
+ #ifdef G30P
+-#define HW_NAME "G30D-FO76-PUSHSTART-R3I15"
++#define HW_NAME "G30D-FO76-PUSHSTART-R3I15HF1"
+ #else
+ #define HW_NAME "40"
+ #endif
+diff -ruN '--exclude=.git' common_files/src/g30_r3i_pushstart.c common_files/src/g30_r3i_pushstart.c
+--- common_files/src/g30_r3i_pushstart.c	2026-10-28 22:29:57.000000000 +0000
++++ common_files/src/g30_r3i_pushstart.c	2026-10-28 23:10:52.284582137 +0000
+@@ -11,9 +11,9 @@
+ #define R3I_MIN_SPAN 40u
+ #define R3I_MIN_DPP 64
+ #define R3I_MIN_EDGES 4u
+-#define R3I_CAL_SAMPLES 12u
+ #define R3I_SAMPLE_DIV 3u
+ #define R3I_PHASE60 10923u
++#define R3I_FIXED_BEMF_TO_CONTROL_OFFSET 0 /* G30 Gen1: Hall-validation logs cluster within +/-313 counts (~1.7 deg); base_control_phase is already aligned. */
+ 
+ static volatile uint8_t request_arm;
+ static volatile uint8_t start_request;
+@@ -23,10 +23,8 @@
+ static RegConv_t cc={ADC1,9u,M1_VBUS_SAMPLING_TIME};
+ static uint8_t ha=255u,hb=255u,hc=255u,init_done,divn,last_sector=R3I_NO_SECTOR,last_cal_hall_valid;
+ static uint32_t last_edge_cycles,avg_edge_cycles,start_tick;
+-static int32_t cal_sum;
+-static uint16_t last_cal_hall;
+-static uint8_t cal_persist_valid,arm_had_cal;
+-static int16_t cal_persist_offset;
++static uint8_t cal_persist_valid=1u;
++static int16_t cal_persist_offset=R3I_FIXED_BEMF_TO_CONTROL_OFFSET;
+ 
+ static uint16_t abs16(int16_t x){return (uint16_t)(x<0?-(int32_t)x:(int32_t)x);}
+ static uint16_t atan2_u16(int32_t y,int32_t x){
+@@ -60,7 +58,7 @@
+     d.a=d.b=d.c=d.span=0;d.frames=0;d.forward_edges=d.reverse_edges=d.bad_jumps=0;
+     d.cal_samples=0;d.phase_base=d.phase_cal=d.hall=0;d.phase_error=0;d.speed_dpp=0;d.erpm=0;
+     d.cal_valid=cal_persist_valid;d.sensorless_started=0;d.sector=R3I_NO_SECTOR;d.cal_offset=cal_persist_offset;
+-    last_sector=R3I_NO_SECTOR;last_edge_cycles=avg_edge_cycles=0;cal_sum=0;divn=0;last_cal_hall=0u;last_cal_hall_valid=0u;
++    last_sector=R3I_NO_SECTOR;last_edge_cycles=avg_edge_cycles=0;divn=0;
+ }
+ static void init_once(void){
+     if(init_done)return;
+@@ -71,7 +69,10 @@
+     request_arm=enable?1u:0u;
+     start_request=0u;
+     if(!enable){d.mode=0u;d.sensorless_started=0u;return;}
+-    arm_had_cal=cal_persist_valid;
++    /* HF1: true Hall-free sensorless. The G30 Gen1 BEMF frame is fixed by hardware/wiring;
++     * do not relearn or validate it from Hall inputs. */
++    cal_persist_valid=1u;
++    cal_persist_offset=R3I_FIXED_BEMF_TO_CONTROL_OFFSET;
+     reset_roll();d.mode=1u;
+ }
+ uint8_t g30_r3i_block_pwm_start(void){return (uint8_t)(d.mode==1u && !d.sensorless_started);}
+@@ -88,6 +89,8 @@
+ g30_r3i_diag_t g30_r3i_get_diag(void){return d;}
+ 
+ void g30_r3i_tick(uint8_t pwm_off,uint16_t hall_angle,int16_t hall_speed_dpp){
++    (void)hall_angle;
++    (void)hall_speed_dpp;
+     init_once();
+     if(!request_arm || !init_done)return;
+     if(g30_r3i_sensorless_active())return;
+@@ -100,11 +103,11 @@
+     for(unsigned i=0;i<3u;i++){sa+=RCM_ExecRegularConv(ha);sb+=RCM_ExecRegularConv(hb);sc+=RCM_ExecRegularConv(hc);}
+     uint16_t a=(uint16_t)((sa+1u)/3u),b=(uint16_t)((sb+1u)/3u),c=(uint16_t)((sc+1u)/3u);
+     uint16_t hi=a,lo=a;if(b>hi)hi=b;if(c>hi)hi=c;if(b<lo)lo=b;if(c<lo)lo=c;
+-    d.a=a;d.b=b;d.c=c;d.span=(uint16_t)(hi-lo);d.hall=hall_angle;if(d.frames<65535u)d.frames++;
++    d.a=a;d.b=b;d.c=c;d.span=(uint16_t)(hi-lo);d.hall=0u;if(d.frames<65535u)d.frames++;
+     if(d.span<R3I_MIN_SPAN){last_sector=R3I_NO_SECTOR;d.sector=R3I_NO_SECTOR;d.forward_edges=0;d.speed_dpp=0;return;}
+     uint8_t sec=sector_from_abc(a,b,c);d.sector=sec;
+     d.phase_base=base_control_phase(a,b,c);
+-    d.phase_error=(int16_t)(d.phase_base-hall_angle);
++    d.phase_error=0;
+ 
+     uint32_t now=DWT->CYCCNT;
+     if(last_sector==R3I_NO_SECTOR){last_sector=sec;last_edge_cycles=now;return;}
+@@ -126,46 +129,25 @@
+     }
+ 
+     if(d.forward_edges>=R3I_MIN_EDGES && d.speed_dpp<=-R3I_MIN_DPP){
+-        /* Development calibration only: establish the fixed board/wiring frame
+-         * offset from the connected Hall reference. It is not used after seed. */
+-        if(!d.cal_valid && hall_speed_dpp<=-40){
+-            /* R3I9: hall_angle is the live capture angle (MeasuredElAngle),
+-             * not the FOC-integrated _Super.hElAngle which freezes while PWM
+-             * is off. Take one calibration sample per new Hall position so
+-             * twelve samples cover two electrical revolutions. */
+-            if(!last_cal_hall_valid || hall_angle!=last_cal_hall){
+-                cal_sum+=(int16_t)(hall_angle-d.phase_base);
+-                last_cal_hall=hall_angle;
+-                last_cal_hall_valid=1u;
+-                if(d.cal_samples<65535u)d.cal_samples++;
+-                if(d.cal_samples>=R3I_CAL_SAMPLES){
+-                    d.cal_offset=(int16_t)(cal_sum/(int32_t)d.cal_samples);
+-                    d.cal_valid=1u;
+-                    cal_persist_offset=d.cal_offset;
+-                    cal_persist_valid=1u;
+-                }
+-            }
+-        }
+-        if(d.cal_valid){
+-            d.phase_cal=(uint16_t)(d.phase_base+(uint16_t)d.cal_offset);
+-            /* First arm validates the learned fixed frame against Hall.
+-             * On every later arm in the same boot, Hall is no longer a start gate. */
+-            if(arm_had_cal || abs16((int16_t)(d.phase_cal-hall_angle))<3641u){
+-                g30_fo76_sensorless_seed(d.phase_cal,d.speed_dpp);
+-                g30_fo76_capture_probe_t probe=g30_fo76_capture_probe();
+-                g30_hall_trace_sample_t seed={
+-                    .cycles=DWT->CYCCNT,.hall=hall_angle,
+-                    .control=probe.control,.observer=probe.observer,
+-                    .control_dpp=probe.control_dpp,
+-                    .vbus_adc=RealBusVoltageSensorParamsM1._Super.AvBusVoltage_d,
+-                    .hall_code=HALL_M1.HallState,
+-                    .flags=(uint8_t)((HALL_M1.SensorIsReliable?G30_HT_RELIABLE:0u)|
+-                        (probe.coherent?G30_HT_COHERENT:0u))
+-                };
+-                g30_hall_trace_begin(&seed);
+-                d.sensorless_started=1u;d.mode=2u;d.starts++;start_tick=HAL_GetTick();
+-                start_request=1u;
+-            }
+-        }
++        /* HF1: Hall-free seed. base_control_phase() is already in the validated
++         * G30 control frame; successful Hall-reference runs measured only a tiny
++         * residual offset (-313..-45 counts), so zero is the deterministic
++         * hardware value and avoids floating Hall pins corrupting the seed. */
++        d.cal_valid=1u;
++        d.cal_offset=R3I_FIXED_BEMF_TO_CONTROL_OFFSET;
++        d.phase_cal=(uint16_t)(d.phase_base+(uint16_t)d.cal_offset);
++        g30_fo76_sensorless_seed(d.phase_cal,d.speed_dpp);
++        g30_fo76_capture_probe_t probe=g30_fo76_capture_probe();
++        g30_hall_trace_sample_t seed={
++            .cycles=DWT->CYCCNT,.hall=0u,
++            .control=probe.control,.observer=probe.observer,
++            .control_dpp=probe.control_dpp,
++            .vbus_adc=RealBusVoltageSensorParamsM1._Super.AvBusVoltage_d,
++            .hall_code=0u,
++            .flags=(uint8_t)(probe.coherent?G30_HT_COHERENT:0u)
++        };
++        g30_hall_trace_begin(&seed);
++        d.sensorless_started=1u;d.mode=2u;d.starts++;start_tick=HAL_GetTick();
++        start_request=1u;
+     }
+ }
+diff -ruN '--exclude=.git' common_files/src/mc_tasks.c common_files/src/mc_tasks.c
+--- common_files/src/mc_tasks.c	2026-10-28 22:29:57.000000000 +0000
++++ common_files/src/mc_tasks.c	2026-10-28 23:10:52.285117430 +0000
+@@ -362,6 +362,7 @@
+ 
+   bool IsSpeedReliable;
+ #ifdef G30P
++  g30_r3i_diag_t r3i_diag=g30_r3i_get_diag();
+   if(g30_fo76_sensorless_active()){
+     int16_t odpp=g30_fo76_control_speed_dpp();
+     /* R3I14: validated physical FWD observer rotation is negative DPP, while
+@@ -374,6 +375,16 @@
+     HALL_M1.AvrElSpeedDpp=odpp;
+     HALL_M1._Super.hAvrMecSpeedUnit=wAux;
+     IsSpeedReliable=true;
++  }else if(r3i_diag.mode==1u){
++    /* HF1: while waiting for the Hall-free pushstart, do not let missing/floating
++     * Hall inputs trip MC_SPEED_FDBK. Use passive BEMF speed when available. */
++    int16_t bdpp=g30_r3i_speed_dpp();
++    wAux=(int16_t)(((-(int32_t)bdpp)*(int32_t)HALL_M1._Super.hMeasurementFrequency*(int32_t)SPEED_UNIT)/
++                   (int32_t)HALL_M1._Super.DPPConvFactor);
++    HALL_M1._Super.hElSpeedDpp=bdpp;
++    HALL_M1.AvrElSpeedDpp=bdpp;
++    HALL_M1._Super.hAvrMecSpeedUnit=wAux;
++    IsSpeedReliable=true;
+   }else
+ #endif
+   {
+diff -ruN '--exclude=.git' common_files/src/terminal.c common_files/src/terminal.c
+--- common_files/src/terminal.c	2026-10-28 22:29:57.000000000 +0000
++++ common_files/src/terminal.c	2026-10-28 23:10:52.284827926 +0000
+@@ -138,7 +138,7 @@
+             return;
+         }
+         g30_fo76_diag_t obs = g30_fo76_get_diag();
+-        commands_printf(phandle, "FO76_R3I15 pushstart_sensorless=1 seeded=%u valid=%u samples4k=%lu eval1k=%lu",
++        commands_printf(phandle, "FO76_R3I15HF1 pushstart_sensorless=1 seeded=%u valid=%u samples4k=%lu eval1k=%lu",
+             (unsigned)obs.seeded, (unsigned)obs.valid,
+             (unsigned long)obs.samples_4k, (unsigned long)obs.evaluated_1k);
+         commands_printf(phandle, "phase=%u error=%d maxabs=%u avgabs=%lu within30=%lu over90=%lu clamps=%lu",
+@@ -181,7 +181,7 @@
+             (unsigned)obs.takeover_control_phase,(unsigned)obs.takeover_observer_phase,(unsigned)obs.takeover_hall_phase,
+             (int)obs.takeover_pred_error,(int)obs.takeover_blend_offset,(int)obs.observer_step_foc_q4);
+         g30_start_preload_diag_t pre=VescToSTM_get_start_preload();
+-        commands_printf(phandle,"R3I15 preload n=%lu lambda=%uuWb vbus=%umV dpp=%d",
++        commands_printf(phandle,"R3I15HF1 preload n=%lu lambda=%uuWb vbus=%umV dpp=%d",
+             (unsigned long)pre.count,(unsigned)pre.lambda_uwb,(unsigned)pre.vbus_mv,(int)pre.speed_dpp);
+         commands_printf(phandle,"preload vq_counts=%d vd_counts=%d bemf_mV=%ld scale=Vbus/sqrt3",
+             (int)pre.vq_counts,(int)pre.vd_counts,(long)pre.bemf_mv);
+@@ -192,7 +192,7 @@
+             int32_t erpm=(int32_t)atoi(argv[1]);
+             VescToSTM_set_speed(erpm);
+             VescToSTM_timeout_reset();
+-            commands_printf(phandle,"R3I15 drive vesc_erpm=%ld pwm_off=%u sensorless=%u control_erpm=%ld",
++            commands_printf(phandle,"R3I15HF1 drive vesc_erpm=%ld pwm_off=%u sensorless=%u control_erpm=%ld",
+                 (long)erpm,(unsigned)PWM_Handle_M1._Super.PWM_off,
+                 (unsigned)g30_fo76_sensorless_active(),
+                 (long)((int64_t)g30_fo76_control_speed_dpp()*16000*60/65536));
+@@ -227,7 +227,7 @@
+                 MCI_ExecSpeedRamp(pMCI[M1],0,0);
+                 (void)MCI_StartMotor(pMCI[M1]);
+             }
+-            commands_printf(phandle,"R3I15 ARM: live Hall calibration + one-shot observer-lambda voltage preload");
++            commands_printf(phandle,"R3I15HF1 ARM: fixed BEMF frame + one-shot observer-lambda voltage preload");
+         }else if(argc==2 && strcmp(argv[1],"off")==0){
+             g30_r3i_request_arm(0u);
+             g30_fo76_request_takeover(0u);
