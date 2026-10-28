@@ -29,37 +29,3 @@
                  sensorless_catch_state=2u;
              }
              takeover_control_phase=catch_phase;
---- a/common_files/src/defines.h
-+++ b/common_files/src/defines.h
-@@ -2,7 +2,7 @@
- #define DEFINES_H_
- 
- #ifdef G30P
--#define HW_NAME "G30D-FO76-PUSHSTART-R3I11"
-+#define HW_NAME "G30D-FO76-PUSHSTART-R3I12"
- #else
- #define HW_NAME "40"
- #endif
---- a/common_files/src/terminal.c
-+++ b/common_files/src/terminal.c
-@@ -138,7 +138,7 @@
-             return;
-         }
-         g30_fo76_diag_t obs = g30_fo76_get_diag();
--        commands_printf(phandle, "FO76_R3I11 pushstart_sensorless=1 seeded=%u valid=%u samples4k=%lu eval1k=%lu",
-+        commands_printf(phandle, "FO76_R3I12 pushstart_sensorless=1 seeded=%u valid=%u samples4k=%lu eval1k=%lu",
-             (unsigned)obs.seeded, (unsigned)obs.valid,
-             (unsigned long)obs.samples_4k, (unsigned long)obs.evaluated_1k);
-@@ -181,7 +181,7 @@
-             (unsigned)obs.takeover_control_phase,(unsigned)obs.takeover_observer_phase,(unsigned)obs.takeover_hall_phase,
-             (int)obs.takeover_pred_error,(int)obs.takeover_blend_offset,(int)obs.observer_step_foc_q4);
-         g30_start_preload_diag_t pre=VescToSTM_get_start_preload();
--        commands_printf(phandle,"R3I11 preload n=%lu lambda=%uuWb vbus=%umV dpp=%d",
-+        commands_printf(phandle,"R3I12 preload n=%lu lambda=%uuWb vbus=%umV dpp=%d",
-             (unsigned long)pre.count,(unsigned)pre.lambda_uwb,(unsigned)pre.vbus_mv,(int)pre.speed_dpp);
-@@ -215,7 +215,7 @@
-                 MCI_ExecSpeedRamp(pMCI[M1],0,0);
-                 (void)MCI_StartMotor(pMCI[M1]);
-             }
--            commands_printf(phandle,"R3I11 ARM: live Hall calibration + one-shot observer-lambda voltage preload");
-+            commands_printf(phandle,"R3I12 ARM: live Hall calibration + one-shot observer-lambda voltage preload");
