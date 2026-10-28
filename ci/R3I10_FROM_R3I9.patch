@@ -1,0 +1,276 @@
+--- a/common_files/src/VescCommand.c
++++ b/common_files/src/VescCommand.c
+@@ -62,9 +62,11 @@
+ 	len = vsnprintf((char*)print_buffer + 1, PRINTF_STACK_SIZE - 1, format, arg);
+ 	va_end (arg);
+ 
++	/* vsnprintf returns the untruncated length. Send only bytes actually
++     * written into this 128-byte print buffer (plus COMM_PRINT). */
++    if(len >= (int)PRINTF_STACK_SIZE - 1) len = (int)PRINTF_STACK_SIZE - 2;
+ 	if(len > 0) {
+-		commands_send_packet((unsigned char*)send_buffer,
+-				(len < 254) ? len + 1 : 255, phandle);
++		commands_send_packet((unsigned char*)send_buffer, len + 1, phandle);
+ 	}
+ 
+ }
+--- a/common_files/src/VescToSTM.c
++++ b/common_files/src/VescToSTM.c
+@@ -20,6 +20,12 @@
+ #ifdef G30P
+ #include "g30_fo76_shadow.h"
+ #include "g30_r3i_pushstart.h"
++#include "g30_r3i_preload.h"
++#endif
++
++#ifdef G30P
++static g30_start_preload_diag_t startup_preload;
++static volatile uint32_t startup_preload_seq;
+ #endif
+ 
+ static float tacho_scale;
+@@ -341,32 +347,71 @@
+ 
+ void VescToSTM_prepare_sensorless_start(void){
+ #ifdef G30P
+-    if(!g30_r3i_sensorless_active()) return;
+-    int32_t erpm=g30_r3i_erpm();
+-    float rad_s=(float)erpm*((2.0f*(float)M_PI)/60.0f);
+-    motor_voltage=rad_s*mc_conf.foc_motor_flux_linkage;
+-    float fVd = 32768.0 / VescToSTM_get_bus_voltage() * motor_voltage;
+-    utils_truncate_number(&fVd, -32767, 32767);
+-    PIDIqHandle_M1.wIntegralTerm = fVd * TF_KIDIV;
+-    PIDIdHandle_M1.wIntegralTerm = -PIDIqHandle_M1.wIntegralTerm/4;
+-#endif
+-}
++    /* May also be called from MCSDK CLEAR immediately before its direct
++     * SwitchOnPWM. Never overwrite a running current controller. */
++    if(!g30_r3i_sensorless_active() || !PWM_Handle_M1._Super.PWM_off) return;
++    uint16_t lambda=g30_fo76_model_lambda_uwb();
++    int16_t speed=g30_fo76_control_speed_dpp();
++    float bus_v=VescToSTM_get_bus_voltage();
++    uint16_t bus_mv=(bus_v>=0.0f && bus_v<=65.535f)?(uint16_t)(bus_v*1000.0f+0.5f):0u;
++    g30_r3i_preload_result_t initial=g30_r3i_preload_calculate(speed,lambda,bus_mv);
++    PIDIqHandle_M1.wIntegralTerm=g30_r3i_preload_integral(initial.vq_counts,
++        PIDIqHandle_M1.hKiDivisor,PIDIqHandle_M1.wLowerIntegralLimit,PIDIqHandle_M1.wUpperIntegralLimit);
++    PIDIdHandle_M1.wIntegralTerm=g30_r3i_preload_integral(initial.vd_counts,
++        PIDIdHandle_M1.hKiDivisor,PIDIdHandle_M1.wLowerIntegralLimit,PIDIdHandle_M1.wUpperIntegralLimit);
++    motor_voltage=(float)initial.bemf_mv/1000.0f;
++    ++startup_preload_seq;
++    __asm volatile("" ::: "memory");
++    startup_preload.count++;
++    startup_preload.lambda_uwb=lambda;
++    startup_preload.vbus_mv=bus_mv;
++    startup_preload.speed_dpp=speed;
++    startup_preload.vq_counts=initial.vq_counts;
++    startup_preload.vd_counts=initial.vd_counts;
++    startup_preload.bemf_mv=initial.bemf_mv;
++    __asm volatile("" ::: "memory");
++    ++startup_preload_seq;
++#endif
++}
++
++#ifdef G30P
++g30_start_preload_diag_t VescToSTM_get_start_preload(void){
++    g30_start_preload_diag_t snap;
++    for(unsigned tries=0;tries<4u;tries++){
++        uint32_t before=startup_preload_seq;
++        __asm volatile("" ::: "memory");
++        snap=startup_preload;
++        __asm volatile("" ::: "memory");
++        if(!(before&1u) && before==startup_preload_seq) return snap;
++    }
++    return snap;
++}
++#endif
+ 
+ void VescToSTM_pwm_start(void){
+ #ifdef G30P
+     if(g30_r3i_block_pwm_start()) return;
+-    if(g30_r3i_sensorless_active()) VescToSTM_prepare_sensorless_start();
+-#endif
+-	if(PWM_Handle_M1._Super.PWM_off){
+-		float fVd = 32768.0 / VescToSTM_get_bus_voltage() * motor_voltage;
+-		utils_truncate_number(&fVd, -32767, 32767);
+-		PIDIqHandle_M1.wIntegralTerm = fVd * TF_KIDIV;
+-		PIDIdHandle_M1.wIntegralTerm = -PIDIqHandle_M1.wIntegralTerm/4;
+-		HALL_M1._Super.hElAngle = HALL_M1.MeasuredElAngle;
+-		HALL_M1.CompSpeed = 0;
+-		HALL_M1._Super.hAvrMecSpeedUnit = 0;
+-		PWMC_SwitchOnPWM(&PWM_Handle_M1._Super);
+-	}
++#endif
++    /* This guard owns initialization. Repeated calls while PWM is already
++     * running must leave both PI integrators completely untouched. */
++    if(PWM_Handle_M1._Super.PWM_off){
++#ifdef G30P
++        if(g30_r3i_sensorless_active()){
++            VescToSTM_prepare_sensorless_start();
++        }else
++#endif
++        {
++            /* Preserve the established Hall startup path. */
++            float fVd = 32768.0 / VescToSTM_get_bus_voltage() * motor_voltage;
++            utils_truncate_number(&fVd, -32767, 32767);
++            PIDIqHandle_M1.wIntegralTerm = fVd * TF_KIDIV;
++            PIDIdHandle_M1.wIntegralTerm = -PIDIqHandle_M1.wIntegralTerm/4;
++        }
++        HALL_M1._Super.hElAngle = HALL_M1.MeasuredElAngle;
++        HALL_M1.CompSpeed = 0;
++        HALL_M1._Super.hAvrMecSpeedUnit = 0;
++        PWMC_SwitchOnPWM(&PWM_Handle_M1._Super);
++    }
+ }
+ 
+ void VescToSTM_update_torque(int32_t q, int32_t min_erpm, int32_t max_erpm){
+--- a/common_files/src/VescToSTM.h
++++ b/common_files/src/VescToSTM.h
+@@ -50,6 +50,15 @@
+ void VescToSTM_pwm_stop(void);
+ void VescToSTM_pwm_start(void);
+ void VescToSTM_prepare_sensorless_start(void);
++#ifdef G30P
++typedef struct {
++    uint32_t count;
++    uint16_t lambda_uwb, vbus_mv;
++    int16_t speed_dpp, vq_counts, vd_counts;
++    int32_t bemf_mv;
++} g30_start_preload_diag_t;
++g30_start_preload_diag_t VescToSTM_get_start_preload(void);
++#endif
+ void VescToSTM_set_minimum_current(float current);
+ void VescToSTM_pwm_force(bool force, bool update);
+ void VescToSTM_timeout_reset();
+--- a/common_files/src/defines.h
++++ b/common_files/src/defines.h
+@@ -2,7 +2,7 @@
+ #define DEFINES_H_
+ 
+ #ifdef G30P
+-#define HW_NAME "G30D-FO76-PUSHSTART-R3I9"
++#define HW_NAME "G30D-FO76-PUSHSTART-R3I10"
+ #else
+ #define HW_NAME "40"
+ #endif
+--- a/common_files/src/g30_fo76_shadow.c
++++ b/common_files/src/g30_fo76_shadow.c
+@@ -129,6 +129,9 @@
+     sensorless_catch_state=0u;sensorless_catch_ticks=0u;
+     sensorless_catch_error=0;sensorless_catch_blend_offset=0;
+     d.valid=0u;d.tracking=0u;d.seeded=0u;d.good_eval_1k=0u;
++}
++uint16_t g30_fo76_model_lambda_uwb(void){
++    return d.lambda_uwb?d.lambda_uwb:G30_FO76_LAMBDA_PROVEN_UWB;
+ }
+ int16_t g30_fo76_control_speed_dpp(void){
+     if(sensorless_external && sensorless_catch_state)
+--- a/common_files/src/g30_fo76_shadow.h
++++ b/common_files/src/g30_fo76_shadow.h
+@@ -65,6 +65,8 @@
+ uint8_t g30_fo76_sensorless_active(void);
+ void g30_fo76_sensorless_clear(void);
+ int16_t g30_fo76_control_speed_dpp(void);
++/* Atomic 16-bit read of the live observer lambda; foreground startup only. */
++uint16_t g30_fo76_model_lambda_uwb(void);
+ uint8_t g30_fo76_catch_state(void);
+ uint16_t g30_fo76_catch_phase(void);
+ int16_t g30_fo76_catch_error(void);
+--- /dev/null
++++ b/common_files/src/g30_r3i_preload.h
+@@ -0,0 +1,42 @@
++#ifndef G30_R3I_PRELOAD_H
++#define G30_R3I_PRELOAD_H
++#include <stdint.h>
++
++/* Passive catch starts with negligible stator current: Vq = omega_e*lambda,
++ * Vd = 0. MCSDK SVPWM maps 32768 voltage counts to Vbus/sqrt(3), not Vbus.
++ * Speed is electrical phase counts per 16 kHz FOC tick, lambda is micro-Wb.
++ * Consequently Vq_counts = speed_dpp*lambda_uWb*16*pi*sqrt(3)/Vbus_mV.
++ * Integer arithmetic is used only at PWM startup, never in the fast loop. */
++typedef struct {
++    int16_t vq_counts;
++    int16_t vd_counts;
++    int32_t bemf_mv;
++} g30_r3i_preload_result_t;
++
++static inline int64_t g30_r3i_round_div(int64_t numerator, int64_t denominator) {
++    return (numerator + (numerator < 0 ? -denominator/2 : denominator/2))/denominator;
++}
++
++static inline g30_r3i_preload_result_t g30_r3i_preload_calculate(
++        int16_t speed_dpp, uint16_t lambda_uwb, uint16_t vbus_mv) {
++    g30_r3i_preload_result_t out = {0, 0, 0};
++    if (!lambda_uwb || vbus_mv < 4000u || vbus_mv > 60000u) return out;
++    int64_t product = (int64_t)speed_dpp * lambda_uwb;
++    /* 16*pi*sqrt(3) = 87.06236948...; 2*pi*16000/(65536*1000)
++     * = 0.001533980788... mV / (dpp*micro-Wb). */
++    int64_t q = g30_r3i_round_div(product * 8706237, (int64_t)vbus_mv * 100000);
++    if (q > 32767) q = 32767;
++    if (q < -32767) q = -32767;
++    out.vq_counts = (int16_t)q;
++    out.bemf_mv = (int32_t)g30_r3i_round_div(product * 1533981, 1000000000);
++    return out;
++}
++
++static inline int32_t g30_r3i_preload_integral(
++        int16_t voltage, uint16_t ki_divisor, int32_t lower, int32_t upper) {
++    int32_t integral = (int32_t)voltage * ki_divisor;
++    if (integral < lower) integral = lower;
++    if (integral > upper) integral = upper;
++    return integral;
++}
++#endif
+--- a/common_files/src/mc_tasks.c
++++ b/common_files/src/mc_tasks.c
+@@ -381,7 +381,8 @@
+ #ifdef G30P
+   if(g30_r3i_start_pending() && StateM1==RUN)
+   {
+-    VescToSTM_prepare_sensorless_start();
++    /* R3I10: pwm_start initializes the current controllers once, inside its
++     * PWM-off guard. Repeated requests during RUN cannot re-preload them. */
+     VescToSTM_pwm_start();
+     if(!PWM_Handle_M1._Super.PWM_off)
+     {
+--- a/common_files/src/terminal.c
++++ b/common_files/src/terminal.c
+@@ -114,7 +114,7 @@
+             return;
+         }
+         g30_fo76_diag_t obs = g30_fo76_get_diag();
+-        commands_printf(phandle, "FO76_R3I9 pushstart_sensorless=1 seeded=%u valid=%u samples4k=%lu eval1k=%lu",
++        commands_printf(phandle, "FO76_R3I10 pushstart_sensorless=1 seeded=%u valid=%u samples4k=%lu eval1k=%lu",
+             (unsigned)obs.seeded, (unsigned)obs.valid,
+             (unsigned long)obs.samples_4k, (unsigned long)obs.evaluated_1k);
+         commands_printf(phandle, "phase=%u error=%d maxabs=%u avgabs=%lu within30=%lu over90=%lu clamps=%lu",
+@@ -150,11 +150,17 @@
+             (unsigned)g30_fo76_catch_state(),(unsigned)g30_fo76_catch_phase(),
+             (int)g30_fo76_catch_error(),(unsigned)g30_fo76_catch_ticks(),
+             (int)g30_fo76_catch_step_q4());
+-        commands_printf(phandle, "takeover req=%u state=%u reason=%u coast=%u control=%u observer=%u hall=%u pred_err=%d blend=%d step_q4=%d entries=%lu fallbacks=%lu",
++        commands_printf(phandle, "takeover req=%u state=%u reason=%u coast=%u entries=%lu fallbacks=%lu",
+             (unsigned)obs.takeover_requested,(unsigned)obs.takeover_state,(unsigned)obs.takeover_fallback_reason,
+-            (unsigned)obs.takeover_coast_latched,(unsigned)obs.takeover_control_phase,(unsigned)obs.takeover_observer_phase,(unsigned)obs.takeover_hall_phase,
+-            (int)obs.takeover_pred_error,(int)obs.takeover_blend_offset,(int)obs.observer_step_foc_q4,
+-            (unsigned long)obs.takeover_entries,(unsigned long)obs.takeover_fallbacks);
++            (unsigned)obs.takeover_coast_latched,(unsigned long)obs.takeover_entries,(unsigned long)obs.takeover_fallbacks);
++        commands_printf(phandle, "tk_angle control=%u observer=%u hall=%u pred_err=%d blend=%d step_q4=%d",
++            (unsigned)obs.takeover_control_phase,(unsigned)obs.takeover_observer_phase,(unsigned)obs.takeover_hall_phase,
++            (int)obs.takeover_pred_error,(int)obs.takeover_blend_offset,(int)obs.observer_step_foc_q4);
++        g30_start_preload_diag_t pre=VescToSTM_get_start_preload();
++        commands_printf(phandle,"R3I10 preload n=%lu lambda=%uuWb vbus=%umV dpp=%d",
++            (unsigned long)pre.count,(unsigned)pre.lambda_uwb,(unsigned)pre.vbus_mv,(int)pre.speed_dpp);
++        commands_printf(phandle,"preload vq_counts=%d vd_counts=%d bemf_mV=%ld scale=Vbus/sqrt3",
++            (int)pre.vq_counts,(int)pre.vd_counts,(long)pre.bemf_mv);
+     }else if (strcmp(argv[0], "g30_takeover") == 0){
+         if(argc==2 && strcmp(argv[1],"arm")==0){
+             g30_fo76_request_takeover(1u);
+@@ -183,7 +189,7 @@
+                 MCI_ExecSpeedRamp(pMCI[M1],0,0);
+                 (void)MCI_StartMotor(pMCI[M1]);
+             }
+-            commands_printf(phandle,"R3I9 ARM: live Hall-capture calibration + serialized ADC + observer catch");
++            commands_printf(phandle,"R3I10 ARM: live Hall calibration + one-shot observer-lambda voltage preload");
+         }else if(argc==2 && strcmp(argv[1],"off")==0){
+             g30_r3i_request_arm(0u);
+             g30_fo76_request_takeover(0u);
