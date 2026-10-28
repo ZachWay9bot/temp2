@@ -374,6 +374,33 @@ void VescToSTM_enable_timeout(bool enbale){
 }
 
 
+#ifdef G30P
+void VescToSTM_g30_pushstart_command(bool active){
+    if(!active){
+        g30_r3i_request_arm(0u);
+        g30_fo76_sensorless_clear();
+        g30_fo76_request_takeover(0u);
+        return;
+    }
+
+    /* R3I15: R3I14's hardware test explicitly armed pushstart through the
+     * terminal before sending COMM_SET_RPM. VESC Tool does not do that.
+     * Arm once on the first non-zero VESC drive request; repeated packets
+     * must not reset an in-progress or running sensorless start. */
+    g30_r3i_diag_t ps=g30_r3i_get_diag();
+    if(ps.mode!=0u) return;
+
+    VescToSTM_pwm_stop();
+    g30_fo76_sensorless_clear();
+    g30_fo76_request_takeover(0u);
+    g30_r3i_request_arm(1u);
+    if(STM_GetState(&STM[M1])==IDLE){
+        MCI_ExecSpeedRamp(pMCI[M1],0,0);
+        (void)MCI_StartMotor(pMCI[M1]);
+    }
+}
+#endif
+
 void VescToSTM_pwm_stop(void){
 	if(PWM_Handle_M1._Super.PWM_off == false){
 		PWMC_SwitchOffPWM(&PWM_Handle_M1._Super);
