@@ -1,8 +1,8 @@
-name: G30D R3I15HF3 stop restart compile
+name: G30D R3I15HF4 fallback rearm compile
 on:
   push:
     branches:
-      - r3i15hf3-stop-restart-20261029
+      - r3i15hf4-fallback-rearm-20261029
   workflow_dispatch:
 
 jobs:
@@ -181,9 +181,14 @@ jobs:
           grep -q 'if(raw == 0){ VescToSTM_timeout_reset(); break; }' SOURCE_KOXX3/common_files/src/VescCommand.c
           patch -d SOURCE_KOXX3 -p1 --dry-run < ci/R3I15HF3_FROM_R3I15HF2.patch
           patch -d SOURCE_KOXX3 -p1 < ci/R3I15HF3_FROM_R3I15HF2.patch
-          grep -q 'G30D-FO76-PUSHSTART-R3I15HF3' SOURCE_KOXX3/common_files/src/defines.h
+          grep -q 'G30D-FO76-PUSHSTART-R3I15HF4' SOURCE_KOXX3/common_files/src/defines.h
           grep -q 'drive_request && d.forward_edges' SOURCE_KOXX3/common_files/src/g30_r3i_pushstart.c
           grep -q 'g30_r3i_motion_recent()' SOURCE_KOXX3/common_files/src/VescToSTM.c
+          patch -d SOURCE_KOXX3 -p1 --dry-run < ci/R3I15HF4_FROM_R3I15HF3.patch
+          patch -d SOURCE_KOXX3 -p1 < ci/R3I15HF4_FROM_R3I15HF3.patch
+          grep -q 'G30D-FO76-PUSHSTART-R3I15HF4' SOURCE_KOXX3/common_files/src/defines.h
+          grep -q 'if(!g30_fo76_coast_requested()) return;' SOURCE_KOXX3/common_files/src/VescToSTM.c
+          grep -q 'if(STM_GetState(&STM\[M1\])==IDLE)' SOURCE_KOXX3/common_files/src/VescToSTM.c
 
       - name: Install ARM GNU GCC 13.2.1
         shell: bash
@@ -198,24 +203,24 @@ jobs:
           tar -xzf "$FILE"
           echo "/tmp/xpack-arm-none-eabi-gcc-13.2.1-1.1/bin" >> "$GITHUB_PATH"
 
-      - name: Compile and validate R3I15HF3
+      - name: Compile and validate R3I15HF4
         shell: bash
         run: |
           set -euo pipefail
           arm-none-eabi-gcc --version
-          sed -i 's/FO76_PUSHSTART_R3I9/FO76_PUSHSTART_R3I15HF3/g' tools/build_native.py tools/validate_image.py
-          sed -i 's/G30D-FO76-PUSHSTART-R3I9/G30D-FO76-PUSHSTART-R3I15HF3/g' tools/validate_image.py
+          sed -i 's/FO76_PUSHSTART_R3I9/FO76_PUSHSTART_R3I15HF4/g' tools/build_native.py tools/validate_image.py
+          sed -i 's/G30D-FO76-PUSHSTART-R3I9/G30D-FO76-PUSHSTART-R3I15HF4/g' tools/validate_image.py
           mkdir -p OUTPUT
           python3 tools/build_native.py | tee OUTPUT/build.log
           python3 tools/validate_image.py | tee OUTPUT/validation.log
-          BIN=OUTPUT/SmartESC_v2_G30D_FO76_PUSHSTART_R3I15HF3_STLINK_APP_0x08001000.bin
-          ELF=OUTPUT/SmartESC_v2_G30D_FO76_PUSHSTART_R3I15HF3.elf
+          BIN=OUTPUT/SmartESC_v2_G30D_FO76_PUSHSTART_R3I15HF4_STLINK_APP_0x08001000.bin
+          ELF=OUTPUT/SmartESC_v2_G30D_FO76_PUSHSTART_R3I15HF4.elf
           sha256sum "$BIN" > OUTPUT/SHA256_BIN.txt
           arm-none-eabi-size "$ELF" > OUTPUT/SIZE.txt
           arm-none-eabi-nm -S --size-sort "$ELF" | tail -40 > OUTPUT/LARGEST_SYMBOLS.txt
-          tar -czf OUTPUT/SOURCE_KOXX3_R3I15HF3_EXACT.tgz SOURCE_KOXX3
-          cp ci/R3I15HF3_FROM_R3I15HF2.patch OUTPUT/
-          python3 - <<'PY' | tee OUTPUT/R3I15HF3_STATIC_GATES.txt
+          tar -czf OUTPUT/SOURCE_KOXX3_R3I15HF4_EXACT.tgz SOURCE_KOXX3
+          cp ci/R3I15HF4_FROM_R3I15HF3.patch OUTPUT/
+          python3 - <<'PY' | tee OUTPUT/R3I15HF4_STATIC_GATES.txt
           from pathlib import Path
           sh=Path('SOURCE_KOXX3/common_files/src/g30_fo76_shadow.c').read_text()
           vs=Path('SOURCE_KOXX3/common_files/src/VescToSTM.c').read_text()
@@ -223,7 +228,7 @@ jobs:
           te=Path('SOURCE_KOXX3/common_files/src/terminal.c').read_text()
           de=Path('SOURCE_KOXX3/common_files/src/defines.h').read_text()
           gates={
-            'build_id':'G30D-FO76-PUSHSTART-R3I15HF3' in de,
+            'build_id':'G30D-FO76-PUSHSTART-R3I15HF4' in de,
             'r3i12_catch_retained':'sensorless_catch_phase_q4=((int32_t)(uint16_t)obs_pred)<<4;' in sh and 'catch_phase=obs_pred;' in sh,
             'no_command_inversion':'erpm = -erpm;' not in vs,
             'speed_feedback_normalized':'(-(int32_t)odpp)' in mc,
@@ -232,10 +237,10 @@ jobs:
             'timeout_coasts':'timeout_brake_current into regenerative' in vs,
             'brake_coasts':'all brake/zero requests are true coast' in vs and 'VescToSTM_g30_coast_rearm();' in vs,
             'speed_no_braking':'SpeednTorqCtrlM1.PISpeed->wUpperIntegralLimit = 0;' in vs and 'SpeednTorqCtrlM1.PISpeed->wLowerIntegralLimit = 0;' in vs,
-            'drive_diag':'R3I15HF3 drive vesc_erpm=' in te,
+            'drive_diag':'R3I15HF4 drive vesc_erpm=' in te,
             'lambda_retained':'G30_FO76_LAMBDA_PROVEN_UWB 24200u' in sh,
             'vesc_auto_arm':'VescToSTM_g30_pushstart_command(raw != 0)' in Path('SOURCE_KOXX3/common_files/src/VescCommand.c').read_text(),
-            'repeat_packets_do_not_rearm':'if(ps.mode==2u) return;' in vs,
+            'repeat_packets_do_not_rearm':'if(ps.mode==1u)' in vs and 'g30_r3i_request_arm(1u);' not in vs[vs.index('if(ps.mode==1u)'):vs.index('VescToSTM_pwm_stop();', vs.index('if(ps.mode==1u)'))],
             'coast_rearms_sensorless':'g30_r3i_request_arm(1u);' in vs and 'if(ps.mode==1u)' in vs,
             'hallfree_fixed_bemf':'R3I_FIXED_BEMF_TO_CONTROL_OFFSET 0' in Path('SOURCE_KOXX3/common_files/src/g30_r3i_pushstart.c').read_text(),
             'hallfree_no_start_gate':'(void)hall_angle;' in Path('SOURCE_KOXX3/common_files/src/g30_r3i_pushstart.c').read_text(),
@@ -245,32 +250,34 @@ jobs:
             'pwm_off_before_takeover':(lambda stop: stop.index('PWMC_SwitchOffPWM') < stop.index('g30_fo76_request_takeover(0u)'))(vs[vs.index('void VescToSTM_pwm_stop'):vs.index('void VescToSTM_prepare_sensorless_start')]),
             'takeover_requires_drive':'drive_request && d.forward_edges' in Path('SOURCE_KOXX3/common_files/src/g30_r3i_pushstart.c').read_text(),
             'coast_clears_drive_request':'g30_r3i_set_drive_request(0u);' in vs,
-            'stop_restarts_fresh':'if(g30_r3i_motion_recent()) return;' in vs and 'g30_r3i_request_arm(1u);' in vs,
+            'fallback_auto_rearm':'if(!g30_fo76_coast_requested()) return;' in vs and 'ps=g30_r3i_get_diag();' in vs,
+            'mode1_preserves_bemf':'if(STM_GetState(&STM[M1])==IDLE)' in vs,
+            'fallback_returns_armed':'g30_fo76_sensorless_clear();' in vs and 'g30_r3i_request_arm(1u);' in vs,
           }
           for k,v in gates.items(): print(f'{k}={int(v)}')
           assert all(gates.values()), gates
-          print('R3I15HF3_STATIC_GATES=PASS')
+          print('R3I15HF4_STATIC_GATES=PASS')
           PY
 
-      - name: Upload R3I15HF3 candidate
+      - name: Upload R3I15HF4 candidate
         uses: actions/upload-artifact@v4
         with:
-          name: G30D_R3I15HF3_STOP_RESTART_COMPILED
+          name: G30D_R3I15HF4_FALLBACK_REARM_COMPILED
           if-no-files-found: error
           retention-days: 7
           path: |
-            OUTPUT/SmartESC_v2_G30D_FO76_PUSHSTART_R3I15HF3.elf
-            OUTPUT/SmartESC_v2_G30D_FO76_PUSHSTART_R3I15HF3.map
-            OUTPUT/SmartESC_v2_G30D_FO76_PUSHSTART_R3I15HF3_STLINK_APP_0x08001000.bin
-            OUTPUT/SmartESC_v2_G30D_FO76_PUSHSTART_R3I15HF3_STLINK_APP_0x08001000.hex
+            OUTPUT/SmartESC_v2_G30D_FO76_PUSHSTART_R3I15HF4.elf
+            OUTPUT/SmartESC_v2_G30D_FO76_PUSHSTART_R3I15HF4.map
+            OUTPUT/SmartESC_v2_G30D_FO76_PUSHSTART_R3I15HF4_STLINK_APP_0x08001000.bin
+            OUTPUT/SmartESC_v2_G30D_FO76_PUSHSTART_R3I15HF4_STLINK_APP_0x08001000.hex
             OUTPUT/VERIFICATION.json
             OUTPUT/SHA256_BIN.txt
             OUTPUT/SIZE.txt
             OUTPUT/LARGEST_SYMBOLS.txt
-            OUTPUT/SOURCE_KOXX3_R3I15HF3_EXACT.tgz
+            OUTPUT/SOURCE_KOXX3_R3I15HF4_EXACT.tgz
             OUTPUT/APPLY_R3I14_EXACT.py
-            OUTPUT/R3I15HF3_BUILD_WORKFLOW.yml
-            OUTPUT/R3I15HF3_STATIC_GATES.txt
+            OUTPUT/R3I15HF4_BUILD_WORKFLOW.yml
+            OUTPUT/R3I15HF4_STATIC_GATES.txt
             ci/g30_r3i9_pushstart_test.py
             ci/01_AUTO_R3I14_TWO_PUSH_TEST.cmd
             OUTPUT/build.log
