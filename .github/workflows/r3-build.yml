@@ -1,8 +1,8 @@
-name: G30D R3I15 VESC auto-arm compile
+name: G30D R3I15HF1 Hall-free sensorless compile
 on:
   push:
     branches:
-      - r3i15-vesc-auto-arm-20261028
+      - r3i15hf1-hallfree-sensorless-20261028
   workflow_dispatch:
 
 jobs:
@@ -162,11 +162,17 @@ jobs:
           grep -q 'G30D-FO76-PUSHSTART-R3I14' SOURCE_KOXX3/common_files/src/defines.h
           grep -q '(-(int32_t)odpp)' SOURCE_KOXX3/common_files/src/mc_tasks.c
           ! grep -q 'erpm = -erpm;' SOURCE_KOXX3/common_files/src/VescToSTM.c
-          patch -d SOURCE_KOXX3 -p1 --dry-run < ci/R3I15_FROM_R3I14.patch
-          patch -d SOURCE_KOXX3 -p1 < ci/R3I15_FROM_R3I14.patch
-          grep -q 'G30D-FO76-PUSHSTART-R3I15' SOURCE_KOXX3/common_files/src/defines.h
+          patch -d SOURCE_KOXX3 -p1 --dry-run < ci/R3I15HF1_FROM_R3I15.patch
+          patch -d SOURCE_KOXX3 -p1 < ci/R3I15HF1_FROM_R3I15.patch
+          grep -q 'G30D-FO76-PUSHSTART-R3I15HF1' SOURCE_KOXX3/common_files/src/defines.h
           grep -q 'VescToSTM_g30_pushstart_command(raw != 0)' SOURCE_KOXX3/common_files/src/VescCommand.c
           grep -q 'if(ps.mode!=0u) return;' SOURCE_KOXX3/common_files/src/VescToSTM.c
+          patch -d SOURCE_KOXX3 -p1 --dry-run < ci/R3I15HF1_FROM_R3I15.patch
+          patch -d SOURCE_KOXX3 -p1 < ci/R3I15HF1_FROM_R3I15.patch
+          grep -q 'G30D-FO76-PUSHSTART-R3I15HF1HF1' SOURCE_KOXX3/common_files/src/defines.h
+          grep -q 'R3I_FIXED_BEMF_TO_CONTROL_OFFSET 0' SOURCE_KOXX3/common_files/src/g30_r3i_pushstart.c
+          grep -q '(void)hall_angle;' SOURCE_KOXX3/common_files/src/g30_r3i_pushstart.c
+          grep -q 'r3i_diag.mode==1u' SOURCE_KOXX3/common_files/src/mc_tasks.c
 
       - name: Install ARM GNU GCC 13.2.1
         shell: bash
@@ -181,24 +187,24 @@ jobs:
           tar -xzf "$FILE"
           echo "/tmp/xpack-arm-none-eabi-gcc-13.2.1-1.1/bin" >> "$GITHUB_PATH"
 
-      - name: Compile and validate R3I15
+      - name: Compile and validate R3I15HF1
         shell: bash
         run: |
           set -euo pipefail
           arm-none-eabi-gcc --version
-          sed -i 's/FO76_PUSHSTART_R3I9/FO76_PUSHSTART_R3I15/g' tools/build_native.py tools/validate_image.py
-          sed -i 's/G30D-FO76-PUSHSTART-R3I9/G30D-FO76-PUSHSTART-R3I15/g' tools/validate_image.py
+          sed -i 's/FO76_PUSHSTART_R3I9/FO76_PUSHSTART_R3I15HF1/g' tools/build_native.py tools/validate_image.py
+          sed -i 's/G30D-FO76-PUSHSTART-R3I9/G30D-FO76-PUSHSTART-R3I15HF1/g' tools/validate_image.py
           mkdir -p OUTPUT
           python3 tools/build_native.py | tee OUTPUT/build.log
           python3 tools/validate_image.py | tee OUTPUT/validation.log
-          BIN=OUTPUT/SmartESC_v2_G30D_FO76_PUSHSTART_R3I15_STLINK_APP_0x08001000.bin
-          ELF=OUTPUT/SmartESC_v2_G30D_FO76_PUSHSTART_R3I15.elf
+          BIN=OUTPUT/SmartESC_v2_G30D_FO76_PUSHSTART_R3I15HF1HF1_STLINK_APP_0x08001000.bin
+          ELF=OUTPUT/SmartESC_v2_G30D_FO76_PUSHSTART_R3I15HF1HF1.elf
           sha256sum "$BIN" > OUTPUT/SHA256_BIN.txt
           arm-none-eabi-size "$ELF" > OUTPUT/SIZE.txt
           arm-none-eabi-nm -S --size-sort "$ELF" | tail -40 > OUTPUT/LARGEST_SYMBOLS.txt
-          tar -czf OUTPUT/SOURCE_KOXX3_R3I15_EXACT.tgz SOURCE_KOXX3
-          cp ci/R3I15_FROM_R3I14.patch OUTPUT/
-          python3 - <<'PY' | tee OUTPUT/R3I15_STATIC_GATES.txt
+          tar -czf OUTPUT/SOURCE_KOXX3_R3I15HF1_EXACT.tgz SOURCE_KOXX3
+          cp ci/R3I15HF1_FROM_R3I15.patch OUTPUT/
+          python3 - <<'PY' | tee OUTPUT/R3I15HF1_STATIC_GATES.txt
           from pathlib import Path
           sh=Path('SOURCE_KOXX3/common_files/src/g30_fo76_shadow.c').read_text()
           vs=Path('SOURCE_KOXX3/common_files/src/VescToSTM.c').read_text()
@@ -206,7 +212,7 @@ jobs:
           te=Path('SOURCE_KOXX3/common_files/src/terminal.c').read_text()
           de=Path('SOURCE_KOXX3/common_files/src/defines.h').read_text()
           gates={
-            'build_id':'G30D-FO76-PUSHSTART-R3I15' in de,
+            'build_id':'G30D-FO76-PUSHSTART-R3I15HF1' in de,
             'r3i12_catch_retained':'sensorless_catch_phase_q4=((int32_t)(uint16_t)obs_pred)<<4;' in sh and 'catch_phase=obs_pred;' in sh,
             'no_command_inversion':'erpm = -erpm;' not in vs,
             'speed_feedback_normalized':'(-(int32_t)odpp)' in mc,
@@ -215,36 +221,39 @@ jobs:
             'timeout_coasts':'timeout_brake_current into regenerative' in vs,
             'brake_coasts':'all VESC brake requests are Coast on G30' in vs,
             'speed_no_braking':'SpeednTorqCtrlM1.PISpeed->wUpperIntegralLimit = 0;' in vs and 'SpeednTorqCtrlM1.PISpeed->wLowerIntegralLimit = 0;' in vs,
-            'drive_diag':'R3I15 drive vesc_erpm=' in te,
+            'drive_diag':'R3I15HF1 drive vesc_erpm=' in te,
             'lambda_retained':'G30_FO76_LAMBDA_PROVEN_UWB 24200u' in sh,
             'vesc_auto_arm':'VescToSTM_g30_pushstart_command(raw != 0)' in Path('SOURCE_KOXX3/common_files/src/VescCommand.c').read_text(),
             'repeat_packets_do_not_rearm':'if(ps.mode!=0u) return;' in vs,
             'zero_releases_arm':'g30_r3i_request_arm(0u);' in vs,
+            'hallfree_fixed_bemf':'R3I_FIXED_BEMF_TO_CONTROL_OFFSET 0' in Path('SOURCE_KOXX3/common_files/src/g30_r3i_pushstart.c').read_text(),
+            'hallfree_no_start_gate':'(void)hall_angle;' in Path('SOURCE_KOXX3/common_files/src/g30_r3i_pushstart.c').read_text(),
+            'hallfree_armed_speed':'r3i_diag.mode==1u' in mc,
           }
           for k,v in gates.items(): print(f'{k}={int(v)}')
           assert all(gates.values()), gates
-          print('R3I15_STATIC_GATES=PASS')
+          print('R3I15HF1_STATIC_GATES=PASS')
           PY
 
-      - name: Upload R3I15 candidate
+      - name: Upload R3I15HF1 candidate
         uses: actions/upload-artifact@v4
         with:
-          name: G30D_R3I15_PUSHSTART_COMPILED
+          name: G30D_R3I15HF1_HALLFREE_COMPILED
           if-no-files-found: error
           retention-days: 7
           path: |
-            OUTPUT/SmartESC_v2_G30D_FO76_PUSHSTART_R3I15.elf
-            OUTPUT/SmartESC_v2_G30D_FO76_PUSHSTART_R3I15.map
-            OUTPUT/SmartESC_v2_G30D_FO76_PUSHSTART_R3I15_STLINK_APP_0x08001000.bin
-            OUTPUT/SmartESC_v2_G30D_FO76_PUSHSTART_R3I15_STLINK_APP_0x08001000.hex
+            OUTPUT/SmartESC_v2_G30D_FO76_PUSHSTART_R3I15HF1HF1.elf
+            OUTPUT/SmartESC_v2_G30D_FO76_PUSHSTART_R3I15HF1HF1.map
+            OUTPUT/SmartESC_v2_G30D_FO76_PUSHSTART_R3I15HF1HF1_STLINK_APP_0x08001000.bin
+            OUTPUT/SmartESC_v2_G30D_FO76_PUSHSTART_R3I15HF1HF1_STLINK_APP_0x08001000.hex
             OUTPUT/VERIFICATION.json
             OUTPUT/SHA256_BIN.txt
             OUTPUT/SIZE.txt
             OUTPUT/LARGEST_SYMBOLS.txt
-            OUTPUT/SOURCE_KOXX3_R3I15_EXACT.tgz
+            OUTPUT/SOURCE_KOXX3_R3I15HF1_EXACT.tgz
             OUTPUT/APPLY_R3I14_EXACT.py
-            OUTPUT/R3I15_BUILD_WORKFLOW.yml
-            OUTPUT/R3I15_STATIC_GATES.txt
+            OUTPUT/R3I15HF1_BUILD_WORKFLOW.yml
+            OUTPUT/R3I15HF1_STATIC_GATES.txt
             ci/g30_r3i9_pushstart_test.py
             ci/01_AUTO_R3I14_TWO_PUSH_TEST.cmd
             OUTPUT/build.log
