@@ -1,0 +1,165 @@
+--- a/common_files/src/VescToSTM.c	2026-10-28 19:12:52.000000000 +0000
++++ b/common_files/src/VescToSTM.c	2026-10-28 19:44:43.652949618 +0000
+@@ -319,7 +319,13 @@
+ 	}
+ 	if(appconf.timeout_msec){
+ 		if((xTaskGetTickCount() - last_reset) > (appconf.timeout_msec*2)){
++#ifdef G30P
++			/* R3I13: G30 policy is coast-only. A lost VESC command must never
++			 * turn timeout_brake_current into regenerative or braking torque. */
++			VescToSTM_set_brake(0);
++#else
+ 			VescToSTM_set_brake(appconf.timeout_brake_current*1000);
++#endif
+ 			app_adc_stop_output();
+ 			last_reset = xTaskGetTickCount();
+ 			timeout_triggerd = true;
+@@ -455,6 +461,11 @@
+ }
+ 
+ void VescToSTM_set_brake_rel_int(int32_t val){
++#ifdef G30P
++	(void)val;
++	VescToSTM_set_brake(0);
++	return;
++#endif
+ 	VescToSTM_mode = STM_STATE_BRAKE;
+ 	VescToSTM_set_open_loop(false, 0, 0);
+ 
+@@ -477,6 +488,16 @@
+ }
+ 
+ void VescToSTM_set_brake(int32_t current){
++#ifdef G30P
++	/* R3I13: all VESC brake requests are Coast on G30. */
++	(void)current;
++	VescToSTM_mode = STM_STATE_BRAKE;
++	VescToSTM_set_open_loop(false, 0, 0);
++	VescToSTM_set_current(0.0f, 0.0f);
++	SpeednTorqCtrlM1.PISpeed->wIntegralTerm = 0;
++	VescToSTM_pwm_stop();
++	return;
++#endif
+ 	VescToSTM_mode = STM_STATE_BRAKE;
+ 	VescToSTM_set_open_loop(false, 0, 0);
+ 
+@@ -504,6 +525,16 @@
+ 
+ 
+ void VescToSTM_set_speed(int32_t erpm){
++#ifdef G30P
++	/* R3I12 hardware validation: physical FWD observer speed is negative.
++	 * Keep VESC semantics conventional: positive COMM_SET_RPM means FWD.
++	 * m_invert_direction still reverses the user-facing direction. */
++	if(erpm == 0){
++		VescToSTM_set_brake(0);
++		return;
++	}
++	erpm = -erpm;
++#endif
+ 	erpm *= DIR_MUL;
+ 	VescToSTM_mode = STM_STATE_SPEED;
+ 	if(erpm>0){
+@@ -516,17 +547,30 @@
+ 	VescToSTM_set_open_loop(false, 0, 0);
+ 	if(erpm>=0){
+ 		SpeednTorqCtrlM1.PISpeed->wUpperIntegralLimit = (int32_t)SpeednTorqCtrlM1.MaxPositiveTorque * SP_KIDIV;
++#ifdef G30P
++		SpeednTorqCtrlM1.PISpeed->wLowerIntegralLimit = 0;
++		SpeednTorqCtrlM1.PISpeed->hLowerOutputLimit = 0;
++#else
+ 		SpeednTorqCtrlM1.PISpeed->wLowerIntegralLimit = mc_conf.s_pid_allow_braking ? (int32_t)SpeednTorqCtrlM1.MinNegativeTorque * SP_KIDIV: 0;
+-		SpeednTorqCtrlM1.PISpeed->hUpperOutputLimit = SpeednTorqCtrlM1.MaxPositiveTorque;
+ 		SpeednTorqCtrlM1.PISpeed->hLowerOutputLimit = mc_conf.s_pid_allow_braking ? SpeednTorqCtrlM1.MinNegativeTorque : 0;
++#endif
++		SpeednTorqCtrlM1.PISpeed->hUpperOutputLimit = SpeednTorqCtrlM1.MaxPositiveTorque;
+ 	}else{
++#ifdef G30P
++		SpeednTorqCtrlM1.PISpeed->wUpperIntegralLimit = 0;
++		SpeednTorqCtrlM1.PISpeed->hUpperOutputLimit = 0;
++#else
+ 		SpeednTorqCtrlM1.PISpeed->wUpperIntegralLimit = mc_conf.s_pid_allow_braking ? (int32_t)SpeednTorqCtrlM1.MaxPositiveTorque * SP_KIDIV: 0;
+-		SpeednTorqCtrlM1.PISpeed->wLowerIntegralLimit = (int32_t)SpeednTorqCtrlM1.MinNegativeTorque * SP_KIDIV;
+ 		SpeednTorqCtrlM1.PISpeed->hUpperOutputLimit = mc_conf.s_pid_allow_braking ? SpeednTorqCtrlM1.MaxPositiveTorque : 0;
++#endif
++		SpeednTorqCtrlM1.PISpeed->wLowerIntegralLimit = (int32_t)SpeednTorqCtrlM1.MinNegativeTorque * SP_KIDIV;
+ 		SpeednTorqCtrlM1.PISpeed->hLowerOutputLimit = SpeednTorqCtrlM1.MinNegativeTorque;
+ 	}
+ 	int32_t ramp_time = 0;
+-	if(mc_conf.s_pid_ramp_erpms_s) ramp_time = (float)(erpm * 1000) / mc_conf.s_pid_ramp_erpms_s;
++	if(mc_conf.s_pid_ramp_erpms_s){
++		int32_t ramp_erpm = erpm < 0 ? -erpm : erpm;
++		ramp_time = (float)(ramp_erpm * 1000) / mc_conf.s_pid_ramp_erpms_s;
++	}
+ 	MCI_ExecSpeedRamp(pMCI[M1], VescToSTM_erpm_to_speed(erpm), ramp_time);
+ }
+ 
+@@ -804,6 +848,11 @@
+  * The brake current to use.
+  */
+ void VescToSTM_set_handbrake(float current) {
++#ifdef G30P
++	(void)current;
++	VescToSTM_set_brake(0);
++	return;
++#endif
+ 
+ 	int q = abs(current_to_torque(current*1000));
+ 	if(VescToSTM_mode != STM_STATE_HANDBRAKE){
+--- a/common_files/src/defines.h	2026-10-28 19:12:53.000000000 +0000
++++ b/common_files/src/defines.h	2026-10-28 19:43:59.087381482 +0000
+@@ -2,7 +2,7 @@
+ #define DEFINES_H_
+ 
+ #ifdef G30P
+-#define HW_NAME "G30D-FO76-PUSHSTART-R3I12"
++#define HW_NAME "G30D-FO76-PUSHSTART-R3I13"
+ #else
+ #define HW_NAME "40"
+ #endif
+--- a/common_files/src/terminal.c	2026-10-28 19:12:53.000000000 +0000
++++ b/common_files/src/terminal.c	2026-10-28 19:43:59.087495144 +0000
+@@ -138,7 +138,7 @@
+             return;
+         }
+         g30_fo76_diag_t obs = g30_fo76_get_diag();
+-        commands_printf(phandle, "FO76_R3I12 pushstart_sensorless=1 seeded=%u valid=%u samples4k=%lu eval1k=%lu",
++        commands_printf(phandle, "FO76_R3I13 pushstart_sensorless=1 seeded=%u valid=%u samples4k=%lu eval1k=%lu",
+             (unsigned)obs.seeded, (unsigned)obs.valid,
+             (unsigned long)obs.samples_4k, (unsigned long)obs.evaluated_1k);
+         commands_printf(phandle, "phase=%u error=%d maxabs=%u avgabs=%lu within30=%lu over90=%lu clamps=%lu",
+@@ -181,12 +181,24 @@
+             (unsigned)obs.takeover_control_phase,(unsigned)obs.takeover_observer_phase,(unsigned)obs.takeover_hall_phase,
+             (int)obs.takeover_pred_error,(int)obs.takeover_blend_offset,(int)obs.observer_step_foc_q4);
+         g30_start_preload_diag_t pre=VescToSTM_get_start_preload();
+-        commands_printf(phandle,"R3I12 preload n=%lu lambda=%uuWb vbus=%umV dpp=%d",
++        commands_printf(phandle,"R3I13 preload n=%lu lambda=%uuWb vbus=%umV dpp=%d",
+             (unsigned long)pre.count,(unsigned)pre.lambda_uwb,(unsigned)pre.vbus_mv,(int)pre.speed_dpp);
+         commands_printf(phandle,"preload vq_counts=%d vd_counts=%d bemf_mV=%ld scale=Vbus/sqrt3",
+             (int)pre.vq_counts,(int)pre.vd_counts,(long)pre.bemf_mv);
+     }else if (strcmp(argv[0], "g30_halltrace") == 0){
+         terminal_hall_trace(phandle);
++    }else if (strcmp(argv[0], "g30_drive") == 0){
++        if(argc==2){
++            int32_t erpm=(int32_t)atoi(argv[1]);
++            VescToSTM_set_speed(erpm);
++            VescToSTM_timeout_reset();
++            commands_printf(phandle,"R3I13 drive vesc_erpm=%ld pwm_off=%u sensorless=%u control_erpm=%ld",
++                (long)erpm,(unsigned)PWM_Handle_M1._Super.PWM_off,
++                (unsigned)g30_fo76_sensorless_active(),
++                (long)((int64_t)g30_fo76_control_speed_dpp()*16000*60/65536));
++        }else{
++            commands_printf(phandle,"Usage: g30_drive <vesc_erpm>; 0 = Coast");
++        }
+     }else if (strcmp(argv[0], "g30_takeover") == 0){
+         if(argc==2 && strcmp(argv[1],"arm")==0){
+             g30_fo76_request_takeover(1u);
+@@ -215,7 +227,7 @@
+                 MCI_ExecSpeedRamp(pMCI[M1],0,0);
+                 (void)MCI_StartMotor(pMCI[M1]);
+             }
+-            commands_printf(phandle,"R3I12 ARM: live Hall calibration + one-shot observer-lambda voltage preload");
++            commands_printf(phandle,"R3I13 ARM: live Hall calibration + one-shot observer-lambda voltage preload");
+         }else if(argc==2 && strcmp(argv[1],"off")==0){
+             g30_r3i_request_arm(0u);
+             g30_fo76_request_takeover(0u);
