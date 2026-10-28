@@ -1,0 +1,107 @@
+--- a/common_files/src/g30_r3i_pushstart.h
++++ b/common_files/src/g30_r3i_pushstart.h
+@@ -31,4 +31,6 @@
+ uint32_t g30_r3i_active_age_ms(void);
+ int16_t g30_r3i_speed_dpp(void);
+ int32_t g30_r3i_erpm(void);
++void g30_r3i_set_drive_request(uint8_t active);
++uint8_t g30_r3i_motion_recent(void);
+ g30_r3i_diag_t g30_r3i_get_diag(void);
+--- a/common_files/src/g30_r3i_pushstart.c
++++ b/common_files/src/g30_r3i_pushstart.c
+@@ -17,12 +17,13 @@
+ 
+ static volatile uint8_t request_arm;
+ static volatile uint8_t start_request;
++static volatile uint8_t drive_request;
+ static g30_r3i_diag_t d;
+ static RegConv_t ca={ADC1,6u,M1_VBUS_SAMPLING_TIME};
+ static RegConv_t cb={ADC1,7u,M1_VBUS_SAMPLING_TIME};
+ static RegConv_t cc={ADC1,9u,M1_VBUS_SAMPLING_TIME};
+ static uint8_t ha=255u,hb=255u,hc=255u,init_done,divn,last_sector=R3I_NO_SECTOR,last_cal_hall_valid;
+-static uint32_t last_edge_cycles,avg_edge_cycles,start_tick;
++static uint32_t last_edge_cycles,avg_edge_cycles,start_tick,last_motion_tick;
+ static uint8_t cal_persist_valid=1u;
+ static int16_t cal_persist_offset=R3I_FIXED_BEMF_TO_CONTROL_OFFSET;
+ 
+@@ -86,6 +87,10 @@
+ uint32_t g30_r3i_active_age_ms(void){return g30_r3i_sensorless_active()?(uint32_t)(HAL_GetTick()-start_tick):0u;}
+ int16_t g30_r3i_speed_dpp(void){return g30_r3i_sensorless_active()?g30_fo76_control_speed_dpp():d.speed_dpp;}
+ int32_t g30_r3i_erpm(void){return (int32_t)g30_r3i_speed_dpp()*16000*60/65536;}
++void g30_r3i_set_drive_request(uint8_t active){drive_request=active?1u:0u;}
++uint8_t g30_r3i_motion_recent(void){
++    return (uint8_t)(d.mode==1u && d.speed_dpp!=0 && (uint32_t)(HAL_GetTick()-last_motion_tick)<180u);
++}
+ g30_r3i_diag_t g30_r3i_get_diag(void){return d;}
+ 
+ void g30_r3i_tick(uint8_t pwm_off,uint16_t hall_angle,int16_t hall_speed_dpp){
+@@ -116,6 +121,7 @@
+         uint32_t dt=now-last_edge_cycles;last_sector=sec;last_edge_cycles=now;
+         if(step==5u && dt>50000u && dt<8000000u){
+             if(d.forward_edges<65535u)d.forward_edges++;
++            last_motion_tick=HAL_GetTick();
+             avg_edge_cycles=avg_edge_cycles?((avg_edge_cycles*7u+dt)>>3):dt;
+             uint32_t mag=(R3I_PHASE60*(64000000u/16000u)+avg_edge_cycles/2u)/avg_edge_cycles;
+             if(mag>32767u)mag=32767u;
+@@ -128,7 +134,7 @@
+         }
+     }
+ 
+-    if(d.forward_edges>=R3I_MIN_EDGES && d.speed_dpp<=-R3I_MIN_DPP){
++    if(drive_request && d.forward_edges>=R3I_MIN_EDGES && d.speed_dpp<=-R3I_MIN_DPP){
+         /* HF1: Hall-free seed. base_control_phase() is already in the validated
+          * G30 control frame; successful Hall-reference runs measured only a tiny
+          * residual offset (-313..-45 counts), so zero is the deterministic
+--- a/common_files/src/VescToSTM.c
++++ b/common_files/src/VescToSTM.c
+@@ -339,6 +339,7 @@
+ 
+ #ifdef G30P
+ static void VescToSTM_g30_coast_rearm(void){
++    g30_r3i_set_drive_request(0u);
+     /* HF2: electrical coast must happen BEFORE observer/takeover state is
+      * changed. Otherwise a 16 kHz FOC interrupt can run on disconnected Hall
+      * angle data for one or more cycles, which produces the observed hard
+@@ -373,7 +374,16 @@
+      * command. Arm exactly once on the first non-zero VESC drive request.
+      * Repeated control packets must not reset an in-progress/running start. */
+     g30_r3i_diag_t ps=g30_r3i_get_diag();
+-    if(ps.mode!=0u) return;
++    g30_r3i_set_drive_request(1u);
++    if(ps.mode==2u) return;
++    if(ps.mode==1u){
++        /* HF3: rolling re-catch keeps the passive BEMF history. After a true
++         * stop, stale phase/edge history is discarded so the next push starts
++         * exactly like a cold Hall-free start. */
++        if(g30_r3i_motion_recent()) return;
++        g30_r3i_request_arm(1u);
++        return;
++    }
+ 
+     VescToSTM_pwm_stop();
+     g30_fo76_sensorless_clear();
+--- a/common_files/src/defines.h
++++ b/common_files/src/defines.h
+@@ -2,7 +2,7 @@
+ #define DEFINES_H_
+ 
+ #ifdef G30P
+-#define HW_NAME "G30D-FO76-PUSHSTART-R3I15HF2"
++#define HW_NAME "G30D-FO76-PUSHSTART-R3I15HF3"
+ #else
+ #define HW_NAME "40"
+ #endif
+--- a/common_files/src/terminal.c
++++ b/common_files/src/terminal.c
+@@ -138,7 +138,7 @@
+-        commands_printf(phandle, "FO76_R3I15HF2 pushstart_sensorless=1 seeded=%u valid=%u samples4k=%lu eval1k=%lu",
++        commands_printf(phandle, "FO76_R3I15HF3 pushstart_sensorless=1 seeded=%u valid=%u samples4k=%lu eval1k=%lu",
+@@ -181,7 +181,7 @@
+-        commands_printf(phandle,"R3I15HF2 preload n=%lu lambda=%uuWb vbus=%umV dpp=%d",
++        commands_printf(phandle,"R3I15HF3 preload n=%lu lambda=%uuWb vbus=%umV dpp=%d",
+@@ -192,7 +192,7 @@
+-            commands_printf(phandle,"R3I15HF2 drive vesc_erpm=%ld pwm_off=%u sensorless=%u control_erpm=%ld",
++            commands_printf(phandle,"R3I15HF3 drive vesc_erpm=%ld pwm_off=%u sensorless=%u control_erpm=%ld",
+@@ -227,7 +227,7 @@
+-            commands_printf(phandle,"R3I15HF2 ARM: fixed BEMF frame + one-shot observer-lambda voltage preload");
++            commands_printf(phandle,"R3I15HF3 ARM: fixed BEMF frame + one-shot observer-lambda voltage preload");
