@@ -1,0 +1,384 @@
+--- a/common_files/src/VescToSTM.c
++++ b/common_files/src/VescToSTM.c
+@@ -21,6 +21,7 @@
+ #include "g30_fo76_shadow.h"
+ #include "g30_r3i_pushstart.h"
+ #include "g30_r3i_preload.h"
++#include "g30_hall_trace.h"
+ #endif
+ 
+ #ifdef G30P
+@@ -331,6 +332,9 @@
+ 
+ 
+ void VescToSTM_pwm_stop(void){
++#ifdef G30P
++    g30_hall_trace_freeze(G30_HT_PWM_STOP);
++#endif
+ #ifdef G30P
+ 	/* R3G takeover is intentionally one run at a time. A PWM stop disarms it. */
+ 	g30_fo76_request_takeover(0u);
+--- a/common_files/src/defines.h
++++ b/common_files/src/defines.h
+@@ -2,7 +2,7 @@
+ #define DEFINES_H_
+ 
+ #ifdef G30P
+-#define HW_NAME "G30D-FO76-PUSHSTART-R3I10"
++#define HW_NAME "G30D-FO76-PUSHSTART-R3I11"
+ #else
+ #define HW_NAME "40"
+ #endif
+--- a/common_files/src/g30_fo76_shadow.c
++++ b/common_files/src/g30_fo76_shadow.c
+@@ -5,6 +5,7 @@
+  * R3G can use it as drive angle only after an explicit terminal arm request.
+  */
+ #include "g30_fo76_shadow.h"
++#include "g30_hall_trace.h"
+ 
+ #define Q8 256
+ #define INV_SQRT3_Q15 18919
+@@ -119,6 +120,7 @@
+ }
+ uint8_t g30_fo76_sensorless_active(void){return sensorless_external;}
+ void g30_fo76_sensorless_clear(void){
++    g30_hall_trace_freeze(G30_HT_CLEAR);
+     sensorless_external=0u;
+     takeover_enable_request=0u;
+     takeover_coast_request=0u;
+@@ -139,6 +141,21 @@
+     if(sensorless_external || takeover_state==G30_TK_OBSERVER)
+         return (int16_t)(takeover_step_foc_q4/16);
+     return 0;
++}
++g30_fo76_capture_probe_t g30_fo76_capture_probe(void){
++    g30_fo76_capture_probe_t out={0};
++    /* ADC/FOC IRQ can interrupt the lower-priority Hall IRQ. Retry if the
++     * applied control phase changes while reading the other probe fields. */
++    for(unsigned tries=0;tries<3u;tries++){
++        uint16_t before=takeover_control_phase;
++        __asm volatile("" ::: "memory");
++        out.control=before;
++        out.observer=takeover_predictor_phase;
++        out.control_dpp=g30_fo76_control_speed_dpp();
++        __asm volatile("" ::: "memory");
++        if(before==takeover_control_phase){out.coherent=1u;return out;}
++    }
++    return out;
+ }
+ uint8_t g30_fo76_catch_state(void){return sensorless_catch_state;}
+ uint16_t g30_fo76_catch_phase(void){return (uint16_t)((uint32_t)sensorless_catch_phase_q4>>4);}
+@@ -198,6 +215,7 @@
+  * motor state machine to ANY_STOP while the fast loop keeps its last observer
+  * trajectory until PWM is switched off. */
+ static void takeover_latch_coast(uint8_t reason) {
++    g30_hall_trace_freeze(G30_HT_COAST);
+     takeover_state=G30_TK_FALLBACK;
+     takeover_fallback_reason=reason;
+     takeover_enable_request=0u;
+--- a/common_files/src/g30_fo76_shadow.h
++++ b/common_files/src/g30_fo76_shadow.h
+@@ -67,6 +67,14 @@
+ int16_t g30_fo76_control_speed_dpp(void);
+ /* Atomic 16-bit read of the live observer lambda; foreground startup only. */
+ uint16_t g30_fo76_model_lambda_uwb(void);
++/* Read-only capture probe: latest applied FOC angle, observer predictor and
++ * synthetic control speed. No Hall feedback enters the controller here. */
++typedef struct {
++    uint16_t control, observer;
++    int16_t control_dpp;
++    uint8_t coherent;
++} g30_fo76_capture_probe_t;
++g30_fo76_capture_probe_t g30_fo76_capture_probe(void);
+ uint8_t g30_fo76_catch_state(void);
+ uint16_t g30_fo76_catch_phase(void);
+ int16_t g30_fo76_catch_error(void);
+--- /dev/null
++++ b/common_files/src/g30_hall_trace.c
+@@ -0,0 +1,71 @@
++#include "g30_hall_trace.h"
++
++/* 384 bytes of samples plus 24 bytes of state. No heap, division or actuator
++ * access. Only Hall edges copy records; no new periodic FOC work. */
++_Static_assert(sizeof(g30_hall_trace_sample_t)==16u,"trace record size");
++static g30_hall_trace_sample_t samples[G30_HALL_TRACE_CAPACITY];
++static uint32_t origin, run, edges;
++static volatile uint32_t seq;
++static uint8_t next=1u, count;
++static volatile uint8_t active, reason;
++#define BARRIER() __asm volatile("" ::: "memory")
++
++void g30_hall_trace_begin(const g30_hall_trace_sample_t *sample){
++    active=0u;
++    ++seq; BARRIER();
++    origin=sample->cycles; run++; edges=0u; next=1u; count=1u;
++    samples[0]=*sample;
++    samples[0].cycles=0u;
++    samples[0].flags|=G30_HT_SEED;
++    reason=G30_HT_RUNNING;
++    BARRIER(); ++seq; BARRIER();
++    active=1u;
++}
++
++void g30_hall_trace_edge(const g30_hall_trace_sample_t *sample){
++    if(!active)return;
++    ++seq; BARRIER();
++    samples[next]=*sample;
++    samples[next].cycles=sample->cycles-origin;
++    edges++;
++    if(count<G30_HALL_TRACE_CAPACITY)count++;
++    if(++next>=G30_HALL_TRACE_CAPACITY)next=1u;
++    BARRIER(); ++seq;
++}
++
++void g30_hall_trace_freeze(uint8_t why){
++    if(active){
++        reason=why;
++        BARRIER();
++        active=0u;
++    }
++}
++uint8_t g30_hall_trace_enabled(void){return active;}
++
++g30_hall_trace_meta_t g30_hall_trace_meta(void){
++    g30_hall_trace_meta_t out={0};
++    for(unsigned tries=0;tries<4u;tries++){
++        uint32_t before=seq; BARRIER();
++        out.run=run; out.total_edges=edges; out.count=count;
++        uint32_t dropped=edges>G30_HALL_TRACE_CAPACITY-1u?edges-(G30_HALL_TRACE_CAPACITY-1u):0u;
++        out.dropped=(uint16_t)(dropped>65535u?65535u:dropped);
++        out.active=active;out.reason=reason;
++        BARRIER();
++        if(!(before&1u) && before==seq){out.coherent=1u;return out;}
++    }
++    return out;
++}
++
++uint8_t g30_hall_trace_read(uint16_t index,g30_hall_trace_sample_t *out){
++    for(unsigned tries=0;tries<4u;tries++){
++        uint32_t before=seq; BARRIER();
++        if(index>=count)return 0u;
++        uint16_t physical=index;
++        if(index && edges>G30_HALL_TRACE_CAPACITY-1u)
++            physical=(uint16_t)(1u+((uint16_t)next-1u+index-1u)%(G30_HALL_TRACE_CAPACITY-1u));
++        *out=samples[physical];
++        BARRIER();
++        if(!(before&1u) && before==seq)return 1u;
++    }
++    return 0u;
++}
+--- /dev/null
++++ b/common_files/src/g30_hall_trace.h
+@@ -0,0 +1,35 @@
++#ifndef G30_HALL_TRACE_H
++#define G30_HALL_TRACE_H
++#include <stdint.h>
++
++#define G30_HALL_TRACE_CAPACITY 24u
++#define G30_HT_RELIABLE 1u
++#define G30_HT_PWM_ON 2u
++#define G30_HT_SEED 4u
++#define G30_HT_COHERENT 8u
++enum { G30_HT_RUNNING=0, G30_HT_COAST=1, G30_HT_PWM_STOP=2, G30_HT_CLEAR=3 };
++
++typedef struct {
++    uint32_t cycles;
++    uint16_t hall, control, observer;
++    int16_t control_dpp;
++    uint16_t vbus_adc;
++    uint8_t hall_code, flags;
++} g30_hall_trace_sample_t;
++
++typedef struct {
++    uint32_t run, total_edges;
++    uint16_t count, dropped;
++    uint8_t active, reason, coherent;
++} g30_hall_trace_meta_t;
++
++/* begin: called with PWM off immediately after a BEMF seed; seed sample is
++ * always retained. edge: called only from the physical Hall capture IRQ.
++ * freeze: only publishes a byte; never writes the Hall IRQ's ring data. */
++void g30_hall_trace_begin(const g30_hall_trace_sample_t *sample);
++void g30_hall_trace_edge(const g30_hall_trace_sample_t *sample);
++void g30_hall_trace_freeze(uint8_t reason);
++uint8_t g30_hall_trace_enabled(void);
++g30_hall_trace_meta_t g30_hall_trace_meta(void);
++uint8_t g30_hall_trace_read(uint16_t index, g30_hall_trace_sample_t *out);
++#endif
+--- a/common_files/src/g30_r3i_pushstart.c
++++ b/common_files/src/g30_r3i_pushstart.c
+@@ -1,9 +1,11 @@
+ #include "g30_r3i_pushstart.h"
+ #include "g30_fo76_shadow.h"
++#include "g30_hall_trace.h"
+ #include "regular_conversion_manager.h"
+ #include "drive_parameters.h"
+ #include "mc_stm_types.h"
+ #include "main.h"
++#include "mc_config.h"
+ 
+ #define R3I_NO_SECTOR 0xffu
+ #define R3I_MIN_SPAN 40u
+@@ -150,6 +152,17 @@
+              * On every later arm in the same boot, Hall is no longer a start gate. */
+             if(arm_had_cal || abs16((int16_t)(d.phase_cal-hall_angle))<3641u){
+                 g30_fo76_sensorless_seed(d.phase_cal,d.speed_dpp);
++                g30_fo76_capture_probe_t probe=g30_fo76_capture_probe();
++                g30_hall_trace_sample_t seed={
++                    .cycles=DWT->CYCCNT,.hall=hall_angle,
++                    .control=probe.control,.observer=probe.observer,
++                    .control_dpp=probe.control_dpp,
++                    .vbus_adc=RealBusVoltageSensorParamsM1._Super.AvBusVoltage_d,
++                    .hall_code=HALL_M1.HallState,
++                    .flags=(uint8_t)((HALL_M1.SensorIsReliable?G30_HT_RELIABLE:0u)|
++                        (probe.coherent?G30_HT_COHERENT:0u))
++                };
++                g30_hall_trace_begin(&seed);
+                 d.sensorless_started=1u;d.mode=2u;d.starts++;start_tick=HAL_GetTick();
+                 start_request=1u;
+             }
+--- a/common_files/src/mc_tasks.c
++++ b/common_files/src/mc_tasks.c
+@@ -44,6 +44,7 @@
+ #include "VescToSTM.h"
+ #include "g30_fo76_shadow.h"
+ #include "g30_r3i_pushstart.h"
++#include "g30_hall_trace.h"
+ 
+ /* USER CODE BEGIN Includes */
+ 
+@@ -547,6 +548,9 @@
+ 
+   STC_Clear(pSTC[bMotor]);
+ 
++#ifdef G30P
++  g30_hall_trace_freeze(G30_HT_PWM_STOP);
++#endif
+   PWMC_SwitchOffPWM(pwmcHandle[bMotor]);
+ #ifdef G30P
+   /* R3I2 preserves an externally seeded sensorless trajectory through the
+--- a/common_files/src/stm32f10x_mc_it.c
++++ b/common_files/src/stm32f10x_mc_it.c
+@@ -29,6 +29,10 @@
+ /* USER CODE BEGIN Includes */
+ #include "product.h"
+ #include "task_cli.h"
++#ifdef G30P
++#include "g30_fo76_shadow.h"
++#include "g30_hall_trace.h"
++#endif
+ 
+ /* USER CODE END Includes */
+ 
+@@ -156,6 +160,25 @@
+   {
+     LL_TIM_ClearFlag_CC1(HALL_M1.TIMx);
+     HALL_TIMx_CC_IRQHandler(&HALL_M1);
++#ifdef G30P
++    /* Diagnostic data only. This branch is reached by a physical CC1 event,
++     * never by the synthetic speed written into the MCSDK Hall handle. */
++    if(g30_hall_trace_enabled()){
++        uint32_t stamp=DWT->CYCCNT;
++        g30_fo76_capture_probe_t probe=g30_fo76_capture_probe();
++        g30_hall_trace_sample_t edge={
++            .cycles=stamp,.hall=(uint16_t)HALL_M1.MeasuredElAngle,
++            .control=probe.control,.observer=probe.observer,
++            .control_dpp=probe.control_dpp,
++            .vbus_adc=RealBusVoltageSensorParamsM1._Super.AvBusVoltage_d,
++            .hall_code=HALL_M1.HallState,
++            .flags=(uint8_t)((HALL_M1.SensorIsReliable?G30_HT_RELIABLE:0u)|
++                (!PWM_Handle_M1._Super.PWM_off?G30_HT_PWM_ON:0u)|
++                (probe.coherent?G30_HT_COHERENT:0u))
++        };
++        g30_hall_trace_edge(&edge);
++    }
++#endif
+     /* USER CODE BEGIN M1 HALL_CC1 */
+ 
+     /* USER CODE END M1 HALL_CC1 */
+--- a/common_files/src/terminal.c
++++ b/common_files/src/terminal.c
+@@ -14,6 +14,7 @@
+ #include "conf_general.h"
+ #include "utils.h"
+ #include "g30_fo76_shadow.h"
++#include "g30_hall_trace.h"
+ #include "g30_r3i_pushstart.h"
+ 
+ static uint32_t terminal_foc_load_percent(uint32_t cycles, uint32_t frequency_hz) {
+@@ -58,6 +59,29 @@
+ #if MUSIC_ENABLE
+ extern MUSIC_PARAM bldc_music;
+ #endif
++static void terminal_hall_trace(PACKET_STATE_t *phandle){
++    g30_hall_trace_meta_t meta=g30_hall_trace_meta();
++    commands_printf(phandle,"HALLTRACE run=%lu active=%u reason=%u count=%u edges=%lu dropped=%u cpu=%lu coherent=%u",
++        (unsigned long)meta.run,(unsigned)meta.active,(unsigned)meta.reason,(unsigned)meta.count,
++        (unsigned long)meta.total_edges,(unsigned)meta.dropped,(unsigned long)CPU_CLOCK,(unsigned)meta.coherent);
++    if(!meta.coherent || meta.active){
++        commands_printf(phandle,"HALLTRACE busy; full dump available after Coast/PWM stop");
++        return;
++    }
++    for(uint16_t i=0;i<meta.count;i++){
++        g30_hall_trace_sample_t sample;
++        if(!g30_hall_trace_read(i,&sample)){
++            commands_printf(phandle,"HALLTRACE read failed index=%u",(unsigned)i);
++            break;
++        }
++        commands_printf(phandle,"HT i=%u cyc=%lu h=%u c=%u o=%u dpp=%d adc=%u hs=%u f=%u",
++            (unsigned)i,(unsigned long)sample.cycles,(unsigned)sample.hall,
++            (unsigned)sample.control,(unsigned)sample.observer,(int)sample.control_dpp,
++            (unsigned)sample.vbus_adc,(unsigned)sample.hall_code,(unsigned)sample.flags);
++    }
++    commands_printf(phandle,"HALLTRACE END run=%lu",(unsigned long)meta.run);
++}
++
+ void terminal_process_string(char *str, PACKET_STATE_t * phandle) {
+ 	enum { kMaxArgs = 16 };
+ 	int argc = 0;
+@@ -114,7 +138,7 @@
+             return;
+         }
+         g30_fo76_diag_t obs = g30_fo76_get_diag();
+-        commands_printf(phandle, "FO76_R3I10 pushstart_sensorless=1 seeded=%u valid=%u samples4k=%lu eval1k=%lu",
++        commands_printf(phandle, "FO76_R3I11 pushstart_sensorless=1 seeded=%u valid=%u samples4k=%lu eval1k=%lu",
+             (unsigned)obs.seeded, (unsigned)obs.valid,
+             (unsigned long)obs.samples_4k, (unsigned long)obs.evaluated_1k);
+         commands_printf(phandle, "phase=%u error=%d maxabs=%u avgabs=%lu within30=%lu over90=%lu clamps=%lu",
+@@ -157,10 +181,12 @@
+             (unsigned)obs.takeover_control_phase,(unsigned)obs.takeover_observer_phase,(unsigned)obs.takeover_hall_phase,
+             (int)obs.takeover_pred_error,(int)obs.takeover_blend_offset,(int)obs.observer_step_foc_q4);
+         g30_start_preload_diag_t pre=VescToSTM_get_start_preload();
+-        commands_printf(phandle,"R3I10 preload n=%lu lambda=%uuWb vbus=%umV dpp=%d",
++        commands_printf(phandle,"R3I11 preload n=%lu lambda=%uuWb vbus=%umV dpp=%d",
+             (unsigned long)pre.count,(unsigned)pre.lambda_uwb,(unsigned)pre.vbus_mv,(int)pre.speed_dpp);
+         commands_printf(phandle,"preload vq_counts=%d vd_counts=%d bemf_mV=%ld scale=Vbus/sqrt3",
+             (int)pre.vq_counts,(int)pre.vd_counts,(long)pre.bemf_mv);
++    }else if (strcmp(argv[0], "g30_halltrace") == 0){
++        terminal_hall_trace(phandle);
+     }else if (strcmp(argv[0], "g30_takeover") == 0){
+         if(argc==2 && strcmp(argv[1],"arm")==0){
+             g30_fo76_request_takeover(1u);
+@@ -189,7 +215,7 @@
+                 MCI_ExecSpeedRamp(pMCI[M1],0,0);
+                 (void)MCI_StartMotor(pMCI[M1]);
+             }
+-            commands_printf(phandle,"R3I10 ARM: live Hall calibration + one-shot observer-lambda voltage preload");
++            commands_printf(phandle,"R3I11 ARM: live Hall calibration + one-shot observer-lambda voltage preload");
+         }else if(argc==2 && strcmp(argv[1],"off")==0){
+             g30_r3i_request_arm(0u);
+             g30_fo76_request_takeover(0u);
+--- a/g30p/STM32CubeIDE/.project
++++ b/g30p/STM32CubeIDE/.project
+@@ -646,5 +646,10 @@
+ 			<type>1</type>
+ 			<locationURI>PARENT-2-PROJECT_LOC/common_files/src/g30_r3i_pushstart.c</locationURI>
+ 		</link>
++        <link>
++            <name>Common/g30_hall_trace.c</name>
++            <type>1</type>
++            <locationURI>PARENT-2-PROJECT_LOC/common_files/src/g30_hall_trace.c</locationURI>
++        </link>
+ 	</linkedResources>
+ </projectDescription>
