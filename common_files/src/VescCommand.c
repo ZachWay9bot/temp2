@@ -809,25 +809,41 @@ void commands_process_packet(unsigned char *data, unsigned int len,
 
 			case COMM_SET_DUTY: {
 				int32_t ind = 0;
-				VescToSTM_set_current_rel((float)buffer_get_int32(data, &ind) / 100000.0);
+				int32_t raw = buffer_get_int32(data, &ind);
+#ifdef G30P
+				VescToSTM_g30_pushstart_command(raw != 0);
+#endif
+				VescToSTM_set_current_rel((float)raw / 100000.0);
 				VescToSTM_timeout_reset();
 			} break;
 
 			case COMM_SET_CURRENT: {
 				int32_t ind = 0;
-				VescToSTM_set_torque(buffer_get_int32(data, &ind));
+				int32_t raw = buffer_get_int32(data, &ind);
+#ifdef G30P
+				VescToSTM_g30_pushstart_command(raw != 0);
+#endif
+				VescToSTM_set_torque(raw);
 				VescToSTM_timeout_reset();
 			} break;
 
 			case COMM_SET_CURRENT_BRAKE: {
 				int32_t ind = 0;
-				VescToSTM_set_brake(buffer_get_int32(data, &ind)*-1);
+				int32_t raw = buffer_get_int32(data, &ind);
+#ifdef G30P
+				VescToSTM_g30_pushstart_command(false);
+#endif
+				VescToSTM_set_brake(raw*-1);
 				VescToSTM_timeout_reset();
 			} break;
 
 			case COMM_SET_RPM: {
 				int32_t ind = 0;
-				VescToSTM_set_speed(buffer_get_int32(data, &ind));
+				int32_t raw = buffer_get_int32(data, &ind);
+#ifdef G30P
+				VescToSTM_g30_pushstart_command(raw != 0);
+#endif
+				VescToSTM_set_speed(raw);
 				VescToSTM_timeout_reset();
 			} break;
 
@@ -1376,7 +1392,11 @@ void commands_process_packet(unsigned char *data, unsigned int len,
 
 				case COMM_SET_CURRENT_REL: {
 					int32_t ind = 0;
-					VescToSTM_set_current_rel(buffer_get_float32(data, 1e5, &ind));
+					float val = buffer_get_float32(data, 1e5, &ind);
+#ifdef G30P
+					VescToSTM_g30_pushstart_command(val != 0.0f);
+#endif
+					VescToSTM_set_current_rel(val);
 					VescToSTM_timeout_reset();
 				} break;
 
