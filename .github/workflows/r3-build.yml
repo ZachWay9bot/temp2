@@ -1,8 +1,8 @@
-name: G30D R3I9 live-Hall calibration compile
+name: G30D R3I12 observer-reanchored catch compile
 on:
   push:
     branches:
-      - r3i9-live-hall-cal-20261028
+      - r3i12-observer-reanchor-20261028
   workflow_dispatch:
 
 jobs:
@@ -135,6 +135,18 @@ jobs:
           sed -i 's/FO76_PUSHSTART_R3I8/FO76_PUSHSTART_R3I9/g' tools/build_native.py tools/validate_image.py
           sed -i 's/G30D-FO76-PUSHSTART-R3I8/G30D-FO76-PUSHSTART-R3I9/g' tools/validate_image.py
           python3 -m py_compile ci/g30_r3i9_pushstart_test.py
+          patch -d SOURCE_KOXX3 -p1 --dry-run < ci/R3I10_FROM_R3I9.patch
+          patch -d SOURCE_KOXX3 -p1 < ci/R3I10_FROM_R3I9.patch
+          grep -q 'G30D-FO76-PUSHSTART-R3I10' SOURCE_KOXX3/common_files/src/defines.h
+          patch -d SOURCE_KOXX3 -p1 --dry-run < ci/R3I11_FROM_R3I10.patch
+          patch -d SOURCE_KOXX3 -p1 < ci/R3I11_FROM_R3I10.patch
+          grep -q 'G30D-FO76-PUSHSTART-R3I11' SOURCE_KOXX3/common_files/src/defines.h
+          patch -d SOURCE_KOXX3 -p1 --dry-run < ci/R3I12_FROM_R3I11.patch
+          patch -d SOURCE_KOXX3 -p1 < ci/R3I12_FROM_R3I11.patch
+          grep -q 'G30D-FO76-PUSHSTART-R3I12' SOURCE_KOXX3/common_files/src/defines.h
+          grep -q 'sensorless_catch_phase_q4=((int32_t)(uint16_t)obs_pred)<<4;' SOURCE_KOXX3/common_files/src/g30_fo76_shadow.c
+          grep -q 'catch_phase=obs_pred;' SOURCE_KOXX3/common_files/src/g30_fo76_shadow.c
+          grep -q 'sensorless_catch_error=0;' SOURCE_KOXX3/common_files/src/g30_fo76_shadow.c
 
       - name: Install ARM GNU GCC 13.2.1
         shell: bash
@@ -149,101 +161,63 @@ jobs:
           tar -xzf "$FILE"
           echo "/tmp/xpack-arm-none-eabi-gcc-13.2.1-1.1/bin" >> "$GITHUB_PATH"
 
-      - name: Compile and validate R3I9
+      - name: Compile and validate R3I12
         shell: bash
         run: |
           set -euo pipefail
           arm-none-eabi-gcc --version
+          sed -i 's/FO76_PUSHSTART_R3I9/FO76_PUSHSTART_R3I12/g' tools/build_native.py tools/validate_image.py
+          sed -i 's/G30D-FO76-PUSHSTART-R3I9/G30D-FO76-PUSHSTART-R3I12/g' tools/validate_image.py
           mkdir -p OUTPUT
           python3 tools/build_native.py | tee OUTPUT/build.log
           python3 tools/validate_image.py | tee OUTPUT/validation.log
-          BIN=OUTPUT/SmartESC_v2_G30D_FO76_PUSHSTART_R3I9_STLINK_APP_0x08001000.bin
-          ELF=OUTPUT/SmartESC_v2_G30D_FO76_PUSHSTART_R3I9.elf
+          BIN=OUTPUT/SmartESC_v2_G30D_FO76_PUSHSTART_R3I12_STLINK_APP_0x08001000.bin
+          ELF=OUTPUT/SmartESC_v2_G30D_FO76_PUSHSTART_R3I12.elf
           sha256sum "$BIN" > OUTPUT/SHA256_BIN.txt
           arm-none-eabi-size "$ELF" > OUTPUT/SIZE.txt
           arm-none-eabi-nm -S --size-sort "$ELF" | tail -40 > OUTPUT/LARGEST_SYMBOLS.txt
-          tar -czf OUTPUT/SOURCE_KOXX3_R3I9_EXACT.tgz SOURCE_KOXX3
-          cp ci/apply_r3i9.py OUTPUT/APPLY_R3I9_EXACT.py
-          cp .github/workflows/r3-build.yml OUTPUT/R3I9_BUILD_WORKFLOW.yml
-          python3 - <<'PY' | tee OUTPUT/R3I9_STATIC_GATES.txt
+          tar -czf OUTPUT/SOURCE_KOXX3_R3I12_EXACT.tgz SOURCE_KOXX3
+          cp ci/R3I12_FROM_R3I11.patch OUTPUT/
+          python3 - <<'PY' | tee OUTPUT/R3I12_STATIC_GATES.txt
           from pathlib import Path
-          shadow=Path('SOURCE_KOXX3/common_files/src/g30_fo76_shadow.c').read_text()
-          mc=Path('SOURCE_KOXX3/common_files/src/mc_tasks.c').read_text()
-          vesc=Path('SOURCE_KOXX3/common_files/src/VescToSTM.c').read_text()
-          pwm=mc.find('PWMC_SetPhaseVoltage(pwmcHandle[M1], Valphabeta)')
-          obs=mc.find('g30_fo76_shadow_step(', pwm)
-          sel=mc.find('g30_fo76_control_angle(hElAngle')
-          park=mc.find('MCM_Park(Ialphabeta, hElAngle)', sel)
+          sh=Path('SOURCE_KOXX3/common_files/src/g30_fo76_shadow.c').read_text()
+          de=Path('SOURCE_KOXX3/common_files/src/defines.h').read_text()
           gates={
-            'lambda_24200':'G30_FO76_LAMBDA_PROVEN_UWB 24200u' in shadow,
-            'takeover_default_off':'static volatile uint8_t takeover_enable_request;' in shadow,
-            'entry_speed_64':'G30_R3G_TAKEOVER_MIN_DPP 64' in shadow,
-            'fallback_speed_48':'G30_R3G_FALLBACK_MIN_DPP 48' in shadow,
-            'entry_20deg':'G30_R3G_ENTRY_ERR_COUNTS 3641u' in shadow,
-            'fallback_30deg':'G30_R3G_FALLBACK_ERR_COUNTS 5461u' in shadow,
-            'park_uses_selector':sel >= 0 and park > sel,
-            'pwm_stop_disarms':'g30_fo76_request_takeover(0u)' in vesc,
-            'observer_after_pwm_commit':pwm >= 0 and obs > pwm,
-            'takeover_speed_uses_valid_source':'hElSpeedDpp = g30_fo76_sensorless_active()?g30_fo76_control_speed_dpp():SPD_GetElSpeedDpp(speedHandle);' in mc,
-            'r3h_fwd_only_entry':'hall_speed_dpp<=-(int16_t)G30_R3G_TAKEOVER_MIN_DPP' in shadow,
-            'observer_coast_speed_64':'G30_R3H_OBSERVER_COAST_MIN_DPP 64' in shadow,
-            'observer_speed_from_predictor':'abs_i16_u(takeover_step_foc_q4)>>4' in shadow,
-            'coast_request_latched':'takeover_coast_request=1u' in shadow,
-            'coast_uses_motor_stop':'g30_fo76_coast_requested()' in mc and 'MCI_StopMotor( pMCI[M1] )' in mc,
-            'r3i_passive_adc':'RCM_ExecRegularConv' in Path('SOURCE_KOXX3/common_files/src/g30_r3i_pushstart.c').read_text(),
-            'r3i_adc_6_7_9':'RegConv_t ca={ADC1,6u' in Path('SOURCE_KOXX3/common_files/src/g30_r3i_pushstart.c').read_text() and 'RegConv_t cc={ADC1,9u' in Path('SOURCE_KOXX3/common_files/src/g30_r3i_pushstart.c').read_text(),
-            'r3i_forward_step5':'step==5u' in Path('SOURCE_KOXX3/common_files/src/g30_r3i_pushstart.c').read_text(),
-            'r3i_min_dpp64':'R3I_MIN_DPP 64' in Path('SOURCE_KOXX3/common_files/src/g30_r3i_pushstart.c').read_text(),
-            'r3i_pwm_block':'g30_r3i_block_pwm_start()' in vesc,
-            'r3i_virtual_speed':'g30_fo76_sensorless_active()' in mc and 'HALL_M1.AvrElSpeedDpp=odpp' in mc,
-            'r3i_observer_self_valid':'if(sensorless_external)' in shadow and 'sdpp<=-G30_FO76_MIN_TRACK_DPP' in shadow,
-            'r3i_cal_persists_one_boot':'cal_persist_valid' in Path('SOURCE_KOXX3/common_files/src/g30_r3i_pushstart.c').read_text() and 'cal_persist_offset' in Path('SOURCE_KOXX3/common_files/src/g30_r3i_pushstart.c').read_text(),
-            'r3i_second_arm_no_hall_gate':'arm_had_cal || abs16((int16_t)(d.phase_cal-hall_angle))<3641u' in Path('SOURCE_KOXX3/common_files/src/g30_r3i_pushstart.c').read_text(),
-            'r3i5_arm_does_not_stop_mc':'MCI_StopMotor( pMCI[M1] )' not in Path('SOURCE_KOXX3/common_files/src/terminal.c').read_text().split('g30_pushstart')[1].split('top')[0],
-            'r3i5_restart_not_idle':'g30_r3i_start_pending() && StateM1==IDLE' not in mc,
-            'r3i2_seed_survives_restart':'if(!g30_fo76_sensorless_active()) g30_fo76_request_takeover(0u);' in mc,
-            'r3i2_preload_before_pwm':mc.find('VescToSTM_prepare_sensorless_start()') >= 0 and mc.find('VescToSTM_prepare_sensorless_start()') < mc.find('R3_2_SwitchOnPWM( pwmcHandle[M1] )'),
-            'r3i2_status_exposes_pwm':'pwm_off=%u' in Path('SOURCE_KOXX3/common_files/src/terminal.c').read_text(),
-            'r3i3_rcm_slots_5':'#define RCM_MAX_CONV  5' in Path('SOURCE_KOXX3/common_files/src/regular_conversion_manager.c').read_text(),
-            'r3i3_adc_diag':'adc_ready=%u handles=%u,%u,%u' in Path('SOURCE_KOXX3/common_files/src/terminal.c').read_text(),
-            'r3i5_keeps_run':'g30_r3i_start_pending() && StateM1==RUN' in mc and 'MCI_StopMotor( pMCI[M1] )' not in Path('SOURCE_KOXX3/common_files/src/terminal.c').read_text().split('g30_pushstart')[1].split('top')[0],
-            'r3i5_direct_pwm_resume':'VescToSTM_prepare_sensorless_start();' in mc and 'VescToSTM_pwm_start();' in mc,
-            'r3i6_bemf_predictor_catch':'sensorless_catch_phase_q4' in shadow and 'sensorless_catch_step_q4' in shadow,
-            'r3i6_no_hall_catch_gate':'if(sensorless_external && sensorless_catch_state)' in shadow,
-            'r3i6_clean_samples_20':'G30_R3I6_CATCH_GOOD_1K 20u' in shadow,
-            'r3i6_catch_timeout':'G30_R3I6_CATCH_TIMEOUT_FOC 4000u' in shadow,
-            'r3i6_observer_blend':'sensorless_catch_blend_offset' in shadow,
-            'r3i7_catch_speed_tracks_observer':'sensorless_catch_step_q4=(int16_t)((int32_t)sensorless_catch_step_q4 + diff/4);' in shadow,
-            'r3i7_timeout_latched_once':'if(!takeover_coast_request) takeover_latch_coast' in shadow,
-            'r3i7_idle_restart_arm':'MCI_ExecSpeedRamp(pMCI[M1],0,0);' in Path('SOURCE_KOXX3/common_files/src/terminal.c').read_text() and 'MCI_StartMotor(pMCI[M1])' in Path('SOURCE_KOXX3/common_files/src/terminal.c').read_text(),
+            'build_id':'G30D-FO76-PUSHSTART-R3I12' in de,
+            'catch_reanchors_to_observer':'sensorless_catch_phase_q4=((int32_t)(uint16_t)obs_pred)<<4;' in sh,
+            'control_uses_obs_pred':'catch_phase=obs_pred;' in sh and 'takeover_control_phase=catch_phase;' in sh,
+            'catch_error_zero_after_reanchor':'sensorless_catch_error=0;' in sh,
+            'old_independent_entry_gate_removed':'abs_phase16(sensorless_catch_error)<G30_R3G_ENTRY_ERR_COUNTS' not in sh,
+            'timeout_retained':'G30_R3I6_CATCH_TIMEOUT_FOC' in sh,
+            'coast_retained':'takeover_latch_coast(G30_TK_FB_INVALID)' in sh,
+            'lambda_retained':'G30_FO76_LAMBDA_PROVEN_UWB 24200u' in sh,
           }
-          for k,v in gates.items():
-              print(f'{k}={int(v)}')
+          for k,v in gates.items(): print(f'{k}={int(v)}')
           assert all(gates.values()), gates
-          print('R3I9_STATIC_GATES=PASS')
+          print('R3I12_STATIC_GATES=PASS')
           PY
 
-      - name: Upload R3I9 serialized-RCM candidate
+      - name: Upload R3I12 candidate
         uses: actions/upload-artifact@v4
         with:
-          name: G30D_R3I9_PUSHSTART_COMPILED
+          name: G30D_R3I12_PUSHSTART_COMPILED
           if-no-files-found: error
           retention-days: 7
           path: |
-            OUTPUT/SmartESC_v2_G30D_FO76_PUSHSTART_R3I9.elf
-            OUTPUT/SmartESC_v2_G30D_FO76_PUSHSTART_R3I9.map
-            OUTPUT/SmartESC_v2_G30D_FO76_PUSHSTART_R3I9_STLINK_APP_0x08001000.bin
-            OUTPUT/SmartESC_v2_G30D_FO76_PUSHSTART_R3I9_STLINK_APP_0x08001000.hex
+            OUTPUT/SmartESC_v2_G30D_FO76_PUSHSTART_R3I12.elf
+            OUTPUT/SmartESC_v2_G30D_FO76_PUSHSTART_R3I12.map
+            OUTPUT/SmartESC_v2_G30D_FO76_PUSHSTART_R3I12_STLINK_APP_0x08001000.bin
+            OUTPUT/SmartESC_v2_G30D_FO76_PUSHSTART_R3I12_STLINK_APP_0x08001000.hex
             OUTPUT/VERIFICATION.json
             OUTPUT/SHA256_BIN.txt
             OUTPUT/SIZE.txt
             OUTPUT/LARGEST_SYMBOLS.txt
-            OUTPUT/SOURCE_KOXX3_R3I9_EXACT.tgz
-            OUTPUT/APPLY_R3I9_EXACT.py
-            OUTPUT/R3I9_BUILD_WORKFLOW.yml
-            OUTPUT/R3I9_STATIC_GATES.txt
+            OUTPUT/SOURCE_KOXX3_R3I12_EXACT.tgz
+            OUTPUT/APPLY_R3I12_EXACT.py
+            OUTPUT/R3I12_BUILD_WORKFLOW.yml
+            OUTPUT/R3I12_STATIC_GATES.txt
             ci/g30_r3i9_pushstart_test.py
-            ci/01_AUTO_R3I9_TWO_PUSH_TEST.cmd
+            ci/01_AUTO_R3I12_TWO_PUSH_TEST.cmd
             OUTPUT/build.log
             OUTPUT/compile.log
             OUTPUT/validation.log
