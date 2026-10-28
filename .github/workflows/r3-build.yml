@@ -114,15 +114,19 @@ jobs:
           sed -i 's/G30D-FO76-PUSHSTART-R3I5/G30D-FO76-PUSHSTART-R3I6/g' tools/validate_image.py
           python3 -m py_compile ci/g30_r3i6_pushstart_test.py
           python3 ci/apply_r3i7.py
-          grep -q 'G30D-FO76-PUSHSTART-R3I8' SOURCE_KOXX3/common_files/src/defines.h
+          grep -q 'G30D-FO76-PUSHSTART-R3I7' SOURCE_KOXX3/common_files/src/defines.h
           grep -q 'sensorless_catch_step_q4=(int16_t)((int32_t)sensorless_catch_step_q4 + diff/4);' SOURCE_KOXX3/common_files/src/g30_fo76_shadow.c
           grep -q 'if(!takeover_coast_request) takeover_latch_coast' SOURCE_KOXX3/common_files/src/g30_fo76_shadow.c
           grep -q 'R3I7 ARM: PWM blocked; IDLE auto-restarts at zero' SOURCE_KOXX3/common_files/src/terminal.c
           grep -q 'catch state=%u phase=%u err=%d ticks=%u step_q4=%d' SOURCE_KOXX3/common_files/src/terminal.c
-          sed -i 's/FO76_PUSHSTART_R3I6/FO76_PUSHSTART_R3I8/g' tools/build_native.py tools/validate_image.py
-          sed -i 's/G30D-FO76-PUSHSTART-R3I6/G30D-FO76-PUSHSTART-R3I8/g' tools/validate_image.py
+          sed -i 's/FO76_PUSHSTART_R3I6/FO76_PUSHSTART_R3I7/g' tools/build_native.py tools/validate_image.py
+          sed -i 's/G30D-FO76-PUSHSTART-R3I6/G30D-FO76-PUSHSTART-R3I7/g' tools/validate_image.py
           python3 -m py_compile ci/g30_r3i7_pushstart_test.py
           python3 ci/apply_r3i8.py
+          grep -q 'G30D-FO76-PUSHSTART-R3I8' SOURCE_KOXX3/common_files/src/defines.h
+          grep -q 'vbus_now=%ld adc_vbus=%u' SOURCE_KOXX3/common_files/src/terminal.c
+          sed -i 's/FO76_PUSHSTART_R3I7/FO76_PUSHSTART_R3I8/g' tools/build_native.py tools/validate_image.py
+          sed -i 's/G30D-FO76-PUSHSTART-R3I7/G30D-FO76-PUSHSTART-R3I8/g' tools/validate_image.py
           python3 -m py_compile ci/g30_r3i8_pushstart_test.py
 
       - name: Install ARM GNU GCC 13.2.1
