@@ -86,7 +86,7 @@ def status(link,keep=False):
     return {
         'lines':lines,
         'mode':val(lines,r'R3I mode=(\d+)',int,-1),
-        'cal':val(lines,r'cal=(\d+)',int,-1),
+        'cal':val(lines,r'R3I mode=\d+ cal=(\d+)',int,-1),
         'started':val(lines,r'started=(\d+)',int,-1),
         'starts':val(lines,r'starts=(\d+)',int,-1),
         'frames':val(lines,r'frames=(\d+)',int,-1),
