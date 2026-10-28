@@ -1,8 +1,8 @@
-name: G30D R3I7 catch-speed tracking compile
+name: G30D R3I8 serialized-RCM compile
 on:
   push:
     branches:
-      - r3i7-catch-speedtrack-20261028
+      - r3i8-serial-rcm-20261028
   workflow_dispatch:
 
 jobs:
@@ -114,14 +114,16 @@ jobs:
           sed -i 's/G30D-FO76-PUSHSTART-R3I5/G30D-FO76-PUSHSTART-R3I6/g' tools/validate_image.py
           python3 -m py_compile ci/g30_r3i6_pushstart_test.py
           python3 ci/apply_r3i7.py
-          grep -q 'G30D-FO76-PUSHSTART-R3I7' SOURCE_KOXX3/common_files/src/defines.h
+          grep -q 'G30D-FO76-PUSHSTART-R3I8' SOURCE_KOXX3/common_files/src/defines.h
           grep -q 'sensorless_catch_step_q4=(int16_t)((int32_t)sensorless_catch_step_q4 + diff/4);' SOURCE_KOXX3/common_files/src/g30_fo76_shadow.c
           grep -q 'if(!takeover_coast_request) takeover_latch_coast' SOURCE_KOXX3/common_files/src/g30_fo76_shadow.c
           grep -q 'R3I7 ARM: PWM blocked; IDLE auto-restarts at zero' SOURCE_KOXX3/common_files/src/terminal.c
           grep -q 'catch state=%u phase=%u err=%d ticks=%u step_q4=%d' SOURCE_KOXX3/common_files/src/terminal.c
-          sed -i 's/FO76_PUSHSTART_R3I6/FO76_PUSHSTART_R3I7/g' tools/build_native.py tools/validate_image.py
-          sed -i 's/G30D-FO76-PUSHSTART-R3I6/G30D-FO76-PUSHSTART-R3I7/g' tools/validate_image.py
+          sed -i 's/FO76_PUSHSTART_R3I6/FO76_PUSHSTART_R3I8/g' tools/build_native.py tools/validate_image.py
+          sed -i 's/G30D-FO76-PUSHSTART-R3I6/G30D-FO76-PUSHSTART-R3I8/g' tools/validate_image.py
           python3 -m py_compile ci/g30_r3i7_pushstart_test.py
+          python3 ci/apply_r3i8.py
+          python3 -m py_compile ci/g30_r3i8_pushstart_test.py
 
       - name: Install ARM GNU GCC 13.2.1
         shell: bash
@@ -136,7 +138,7 @@ jobs:
           tar -xzf "$FILE"
           echo "/tmp/xpack-arm-none-eabi-gcc-13.2.1-1.1/bin" >> "$GITHUB_PATH"
 
-      - name: Compile and validate R3I7
+      - name: Compile and validate R3I8
         shell: bash
         run: |
           set -euo pipefail
@@ -144,15 +146,15 @@ jobs:
           mkdir -p OUTPUT
           python3 tools/build_native.py | tee OUTPUT/build.log
           python3 tools/validate_image.py | tee OUTPUT/validation.log
-          BIN=OUTPUT/SmartESC_v2_G30D_FO76_PUSHSTART_R3I7_STLINK_APP_0x08001000.bin
-          ELF=OUTPUT/SmartESC_v2_G30D_FO76_PUSHSTART_R3I7.elf
+          BIN=OUTPUT/SmartESC_v2_G30D_FO76_PUSHSTART_R3I8_STLINK_APP_0x08001000.bin
+          ELF=OUTPUT/SmartESC_v2_G30D_FO76_PUSHSTART_R3I8.elf
           sha256sum "$BIN" > OUTPUT/SHA256_BIN.txt
           arm-none-eabi-size "$ELF" > OUTPUT/SIZE.txt
           arm-none-eabi-nm -S --size-sort "$ELF" | tail -40 > OUTPUT/LARGEST_SYMBOLS.txt
-          tar -czf OUTPUT/SOURCE_KOXX3_R3I7_EXACT.tgz SOURCE_KOXX3
-          cp ci/apply_r3i7.py OUTPUT/APPLY_R3I7_EXACT.py
-          cp .github/workflows/r3-build.yml OUTPUT/R3I7_BUILD_WORKFLOW.yml
-          python3 - <<'PY' | tee OUTPUT/R3I7_STATIC_GATES.txt
+          tar -czf OUTPUT/SOURCE_KOXX3_R3I8_EXACT.tgz SOURCE_KOXX3
+          cp ci/apply_r3i8.py OUTPUT/APPLY_R3I8_EXACT.py
+          cp .github/workflows/r3-build.yml OUTPUT/R3I8_BUILD_WORKFLOW.yml
+          python3 - <<'PY' | tee OUTPUT/R3I8_STATIC_GATES.txt
           from pathlib import Path
           shadow=Path('SOURCE_KOXX3/common_files/src/g30_fo76_shadow.c').read_text()
           mc=Path('SOURCE_KOXX3/common_files/src/mc_tasks.c').read_text()
@@ -207,30 +209,30 @@ jobs:
           for k,v in gates.items():
               print(f'{k}={int(v)}')
           assert all(gates.values()), gates
-          print('R3I7_STATIC_GATES=PASS')
+          print('R3I8_STATIC_GATES=PASS')
           PY
 
-      - name: Upload R3I7 catch-speed tracking candidate
+      - name: Upload R3I8 serialized-RCM candidate
         uses: actions/upload-artifact@v4
         with:
-          name: G30D_R3I7_PUSHSTART_COMPILED
+          name: G30D_R3I8_PUSHSTART_COMPILED
           if-no-files-found: error
           retention-days: 7
           path: |
-            OUTPUT/SmartESC_v2_G30D_FO76_PUSHSTART_R3I7.elf
-            OUTPUT/SmartESC_v2_G30D_FO76_PUSHSTART_R3I7.map
-            OUTPUT/SmartESC_v2_G30D_FO76_PUSHSTART_R3I7_STLINK_APP_0x08001000.bin
-            OUTPUT/SmartESC_v2_G30D_FO76_PUSHSTART_R3I7_STLINK_APP_0x08001000.hex
+            OUTPUT/SmartESC_v2_G30D_FO76_PUSHSTART_R3I8.elf
+            OUTPUT/SmartESC_v2_G30D_FO76_PUSHSTART_R3I8.map
+            OUTPUT/SmartESC_v2_G30D_FO76_PUSHSTART_R3I8_STLINK_APP_0x08001000.bin
+            OUTPUT/SmartESC_v2_G30D_FO76_PUSHSTART_R3I8_STLINK_APP_0x08001000.hex
             OUTPUT/VERIFICATION.json
             OUTPUT/SHA256_BIN.txt
             OUTPUT/SIZE.txt
             OUTPUT/LARGEST_SYMBOLS.txt
-            OUTPUT/SOURCE_KOXX3_R3I7_EXACT.tgz
-            OUTPUT/APPLY_R3I7_EXACT.py
-            OUTPUT/R3I7_BUILD_WORKFLOW.yml
-            OUTPUT/R3I7_STATIC_GATES.txt
-            ci/g30_r3i7_pushstart_test.py
-            ci/01_AUTO_R3I7_TWO_PUSH_TEST.cmd
+            OUTPUT/SOURCE_KOXX3_R3I8_EXACT.tgz
+            OUTPUT/APPLY_R3I8_EXACT.py
+            OUTPUT/R3I8_BUILD_WORKFLOW.yml
+            OUTPUT/R3I8_STATIC_GATES.txt
+            ci/g30_r3i8_pushstart_test.py
+            ci/01_AUTO_R3I8_TWO_PUSH_TEST.cmd
             OUTPUT/build.log
             OUTPUT/compile.log
             OUTPUT/validation.log
