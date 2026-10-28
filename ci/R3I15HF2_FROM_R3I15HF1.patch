@@ -1,0 +1,177 @@
+--- a/common_files/src/VescToSTM.c	2026-10-28 23:12:55.000000000 +0000
++++ b/common_files/src/VescToSTM.c	2026-10-28 23:29:37.996523538 +0000
+@@ -338,11 +338,33 @@
+ 
+ 
+ #ifdef G30P
++static void VescToSTM_g30_coast_rearm(void){
++    /* HF2: electrical coast must happen BEFORE observer/takeover state is
++     * changed. Otherwise a 16 kHz FOC interrupt can run on disconnected Hall
++     * angle data for one or more cycles, which produces the observed hard
++     * braking / DC-bus spike. */
++    VescToSTM_pwm_stop();
++
++    g30_r3i_diag_t ps=g30_r3i_get_diag();
++    if(ps.mode==1u){
++        /* VESC Tool repeats zero commands while the key is released. Do not
++         * reset passive BEMF acquisition on every packet. */
++        return;
++    }
++
++    g30_fo76_sensorless_clear();
++    g30_fo76_request_takeover(0u);
++    VescToSTM_set_open_loop(false,0,0);
++    VescToSTM_set_current(0.0f,0.0f);
++    SpeednTorqCtrlM1.PISpeed->wIntegralTerm=0;
++    /* Stay armed while coasting so Hall-free BEMF capture continues and a
++     * later non-zero VESC command can catch the already-rolling wheel. */
++    g30_r3i_request_arm(1u);
++}
++
+ void VescToSTM_g30_pushstart_command(bool active){
+     if(!active){
+-        g30_r3i_request_arm(0u);
+-        g30_fo76_sensorless_clear();
+-        g30_fo76_request_takeover(0u);
++        VescToSTM_g30_coast_rearm();
+         return;
+     }
+ 
+@@ -368,11 +390,9 @@
+ #ifdef G30P
+     g30_hall_trace_freeze(G30_HT_PWM_STOP);
+ #endif
+-#ifdef G30P
+-	/* R3G takeover is intentionally one run at a time. A PWM stop disarms it. */
+-	g30_fo76_request_takeover(0u);
+-#endif
+ 	if(PWM_Handle_M1._Super.PWM_off == false){
++		/* HF2: disable gate outputs first. Do not revoke the observer angle
++		 * while the bridge is still energized. */
+ 		PWMC_SwitchOffPWM(&PWM_Handle_M1._Super);
+ 		PIDIdHandle_M1.wIntegralTerm = 0;
+ 		PIDIqHandle_M1.wIntegralTerm = 0;
+@@ -380,6 +400,10 @@
+ 		FOCVars[M1].Vqd.q=0;
+ 		FW_Clear(&FW_M1);
+ 	}
++#ifdef G30P
++	/* Only after MOE/gate outputs are off is it safe to disarm takeover. */
++	g30_fo76_request_takeover(0u);
++#endif
+ }
+ 
+ void VescToSTM_prepare_sensorless_start(void){
+@@ -516,13 +540,11 @@
+ 
+ void VescToSTM_set_brake(int32_t current){
+ #ifdef G30P
+-	/* R3I13: all VESC brake requests are Coast on G30. */
++	/* HF2: all brake/zero requests are true coast. The bridge is disabled
++	 * before any observer state or current-reference changes. */
+ 	(void)current;
+ 	VescToSTM_mode = STM_STATE_BRAKE;
+-	VescToSTM_set_open_loop(false, 0, 0);
+-	VescToSTM_set_current(0.0f, 0.0f);
+-	SpeednTorqCtrlM1.PISpeed->wIntegralTerm = 0;
+-	VescToSTM_pwm_stop();
++	VescToSTM_g30_coast_rearm();
+ 	return;
+ #endif
+ 	VescToSTM_mode = STM_STATE_BRAKE;
+--- a/common_files/src/VescCommand.c	2026-10-28 23:12:55.000000000 +0000
++++ b/common_files/src/VescCommand.c	2026-10-28 23:29:37.996793894 +0000
+@@ -412,6 +412,7 @@
+ 				int32_t raw = buffer_get_int32(data, &ind);
+ #ifdef G30P
+ 				VescToSTM_g30_pushstart_command(raw != 0);
++				if(raw == 0){ VescToSTM_timeout_reset(); break; }
+ #endif
+ 				VescToSTM_set_current_rel((float)raw / 100000.0);
+ 				VescToSTM_timeout_reset();
+@@ -422,6 +423,7 @@
+ 				int32_t raw = buffer_get_int32(data, &ind);
+ #ifdef G30P
+ 				VescToSTM_g30_pushstart_command(raw != 0);
++				if(raw == 0){ VescToSTM_timeout_reset(); break; }
+ #endif
+ 				VescToSTM_set_torque(raw);
+ 				VescToSTM_timeout_reset();
+@@ -431,9 +433,11 @@
+ 				int32_t ind = 0;
+ 				int32_t raw = buffer_get_int32(data, &ind);
+ #ifdef G30P
++				(void)raw;
+ 				VescToSTM_g30_pushstart_command(false);
+-#endif
++#else
+ 				VescToSTM_set_brake(raw*-1);
++#endif
+ 				VescToSTM_timeout_reset();
+ 			} break;
+ 
+@@ -442,6 +446,7 @@
+ 				int32_t raw = buffer_get_int32(data, &ind);
+ #ifdef G30P
+ 				VescToSTM_g30_pushstart_command(raw != 0);
++				if(raw == 0){ VescToSTM_timeout_reset(); break; }
+ #endif
+ 				VescToSTM_set_speed(raw);
+ 				VescToSTM_timeout_reset();
+@@ -995,6 +1000,7 @@
+ 					float val = buffer_get_float32(data, 1e5, &ind);
+ #ifdef G30P
+ 					VescToSTM_g30_pushstart_command(val != 0.0f);
++					if(val == 0.0f){ VescToSTM_timeout_reset(); break; }
+ #endif
+ 					VescToSTM_set_current_rel(val);
+ 					VescToSTM_timeout_reset();
+--- a/common_files/src/defines.h	2026-10-28 23:12:55.000000000 +0000
++++ b/common_files/src/defines.h	2026-10-28 23:29:37.996853504 +0000
+@@ -2,7 +2,7 @@
+ #define DEFINES_H_
+ 
+ #ifdef G30P
+-#define HW_NAME "G30D-FO76-PUSHSTART-R3I15HF1"
++#define HW_NAME "G30D-FO76-PUSHSTART-R3I15HF2"
+ #else
+ #define HW_NAME "40"
+ #endif
+--- a/common_files/src/terminal.c	2026-10-28 23:12:55.000000000 +0000
++++ b/common_files/src/terminal.c	2026-10-28 23:29:37.996903469 +0000
+@@ -138,7 +138,7 @@
+             return;
+         }
+         g30_fo76_diag_t obs = g30_fo76_get_diag();
+-        commands_printf(phandle, "FO76_R3I15HF1 pushstart_sensorless=1 seeded=%u valid=%u samples4k=%lu eval1k=%lu",
++        commands_printf(phandle, "FO76_R3I15HF2 pushstart_sensorless=1 seeded=%u valid=%u samples4k=%lu eval1k=%lu",
+             (unsigned)obs.seeded, (unsigned)obs.valid,
+             (unsigned long)obs.samples_4k, (unsigned long)obs.evaluated_1k);
+         commands_printf(phandle, "phase=%u error=%d maxabs=%u avgabs=%lu within30=%lu over90=%lu clamps=%lu",
+@@ -181,7 +181,7 @@
+             (unsigned)obs.takeover_control_phase,(unsigned)obs.takeover_observer_phase,(unsigned)obs.takeover_hall_phase,
+             (int)obs.takeover_pred_error,(int)obs.takeover_blend_offset,(int)obs.observer_step_foc_q4);
+         g30_start_preload_diag_t pre=VescToSTM_get_start_preload();
+-        commands_printf(phandle,"R3I15HF1 preload n=%lu lambda=%uuWb vbus=%umV dpp=%d",
++        commands_printf(phandle,"R3I15HF2 preload n=%lu lambda=%uuWb vbus=%umV dpp=%d",
+             (unsigned long)pre.count,(unsigned)pre.lambda_uwb,(unsigned)pre.vbus_mv,(int)pre.speed_dpp);
+         commands_printf(phandle,"preload vq_counts=%d vd_counts=%d bemf_mV=%ld scale=Vbus/sqrt3",
+             (int)pre.vq_counts,(int)pre.vd_counts,(long)pre.bemf_mv);
+@@ -192,7 +192,7 @@
+             int32_t erpm=(int32_t)atoi(argv[1]);
+             VescToSTM_set_speed(erpm);
+             VescToSTM_timeout_reset();
+-            commands_printf(phandle,"R3I15HF1 drive vesc_erpm=%ld pwm_off=%u sensorless=%u control_erpm=%ld",
++            commands_printf(phandle,"R3I15HF2 drive vesc_erpm=%ld pwm_off=%u sensorless=%u control_erpm=%ld",
+                 (long)erpm,(unsigned)PWM_Handle_M1._Super.PWM_off,
+                 (unsigned)g30_fo76_sensorless_active(),
+                 (long)((int64_t)g30_fo76_control_speed_dpp()*16000*60/65536));
+@@ -227,7 +227,7 @@
+                 MCI_ExecSpeedRamp(pMCI[M1],0,0);
+                 (void)MCI_StartMotor(pMCI[M1]);
+             }
+-            commands_printf(phandle,"R3I15HF1 ARM: fixed BEMF frame + one-shot observer-lambda voltage preload");
++            commands_printf(phandle,"R3I15HF2 ARM: fixed BEMF frame + one-shot observer-lambda voltage preload");
+         }else if(argc==2 && strcmp(argv[1],"off")==0){
+             g30_r3i_request_arm(0u);
+             g30_fo76_request_takeover(0u);
