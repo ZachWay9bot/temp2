@@ -123,13 +123,14 @@ def control_diag(link,keep=False):
     lines += link.query('g30_observer',.30,keep)
     return {
         'lines':lines,
-        'state':val(lines,r'R3H req=\\d+ state=(\\d+)',int,-1),
-        'reason':val(lines,r'R3H req=\\d+ state=\\d+ reason=(\\d+)',int,-1),
-        'coast':val(lines,r'coast=(\\d+)',int,-1),
-        'valid':val(lines,r'FO76_R3I8 .* valid=(\\d+)',int,-1),
-        'catch':val(lines,r'catch state=(\\d+)',int,-1),
-        'catch_err':val(lines,r'catch state=\\d+ phase=\\d+ err=(-?\\d+)',int,None),
-        'catch_step':val(lines,r'step_q4=(-?\\d+)',int,None),
+        'state':val(lines,r'R3H req=\d+ state=(\d+)',int,-1),
+        'reason':val(lines,r'R3H req=\d+ state=\d+ reason=(\d+)',int,-1),
+        'coast':val(lines,r'coast=(\d+)',int,-1),
+        'valid':val(lines,r'FO76_R3I8 .* valid=(\d+)',int,-1),
+        'catch':val(lines,r'catch state=(\d+)',int,-1),
+        'catch_err':val(lines,r'catch state=\d+ phase=\d+ err=(-?\d+)',int,None),
+        'catch_step':val(lines,r'catch state=\d+ phase=\d+ err=-?\d+ ticks=\d+ step_q4=(-?\d+)',int,None),
+        'obs_vbus':val(lines,r'flux=\d+uWb vbus=(\d+)mV',int,None),
     }
 
 def run_push(link,phase,target,wait_s,hold_s,min_starts,expect_cal_before):
