@@ -162,14 +162,14 @@ jobs:
           grep -q 'G30D-FO76-PUSHSTART-R3I14' SOURCE_KOXX3/common_files/src/defines.h
           grep -q '(-(int32_t)odpp)' SOURCE_KOXX3/common_files/src/mc_tasks.c
           ! grep -q 'erpm = -erpm;' SOURCE_KOXX3/common_files/src/VescToSTM.c
-          patch -d SOURCE_KOXX3 -p1 --dry-run < ci/R3I15HF1_FROM_R3I15.patch
-          patch -d SOURCE_KOXX3 -p1 < ci/R3I15HF1_FROM_R3I15.patch
-          grep -q 'G30D-FO76-PUSHSTART-R3I15HF1' SOURCE_KOXX3/common_files/src/defines.h
+          patch -d SOURCE_KOXX3 -p1 --dry-run < ci/R3I15_FROM_R3I14.patch
+          patch -d SOURCE_KOXX3 -p1 < ci/R3I15_FROM_R3I14.patch
+          grep -q 'G30D-FO76-PUSHSTART-R3I15' SOURCE_KOXX3/common_files/src/defines.h
           grep -q 'VescToSTM_g30_pushstart_command(raw != 0)' SOURCE_KOXX3/common_files/src/VescCommand.c
           grep -q 'if(ps.mode!=0u) return;' SOURCE_KOXX3/common_files/src/VescToSTM.c
           patch -d SOURCE_KOXX3 -p1 --dry-run < ci/R3I15HF1_FROM_R3I15.patch
           patch -d SOURCE_KOXX3 -p1 < ci/R3I15HF1_FROM_R3I15.patch
-          grep -q 'G30D-FO76-PUSHSTART-R3I15HF1HF1' SOURCE_KOXX3/common_files/src/defines.h
+          grep -q 'G30D-FO76-PUSHSTART-R3I15HF1' SOURCE_KOXX3/common_files/src/defines.h
           grep -q 'R3I_FIXED_BEMF_TO_CONTROL_OFFSET 0' SOURCE_KOXX3/common_files/src/g30_r3i_pushstart.c
           grep -q '(void)hall_angle;' SOURCE_KOXX3/common_files/src/g30_r3i_pushstart.c
           grep -q 'r3i_diag.mode==1u' SOURCE_KOXX3/common_files/src/mc_tasks.c
@@ -197,8 +197,8 @@ jobs:
           mkdir -p OUTPUT
           python3 tools/build_native.py | tee OUTPUT/build.log
           python3 tools/validate_image.py | tee OUTPUT/validation.log
-          BIN=OUTPUT/SmartESC_v2_G30D_FO76_PUSHSTART_R3I15HF1HF1_STLINK_APP_0x08001000.bin
-          ELF=OUTPUT/SmartESC_v2_G30D_FO76_PUSHSTART_R3I15HF1HF1.elf
+          BIN=OUTPUT/SmartESC_v2_G30D_FO76_PUSHSTART_R3I15HF1_STLINK_APP_0x08001000.bin
+          ELF=OUTPUT/SmartESC_v2_G30D_FO76_PUSHSTART_R3I15HF1.elf
           sha256sum "$BIN" > OUTPUT/SHA256_BIN.txt
           arm-none-eabi-size "$ELF" > OUTPUT/SIZE.txt
           arm-none-eabi-nm -S --size-sort "$ELF" | tail -40 > OUTPUT/LARGEST_SYMBOLS.txt
@@ -242,10 +242,10 @@ jobs:
           if-no-files-found: error
           retention-days: 7
           path: |
-            OUTPUT/SmartESC_v2_G30D_FO76_PUSHSTART_R3I15HF1HF1.elf
-            OUTPUT/SmartESC_v2_G30D_FO76_PUSHSTART_R3I15HF1HF1.map
-            OUTPUT/SmartESC_v2_G30D_FO76_PUSHSTART_R3I15HF1HF1_STLINK_APP_0x08001000.bin
-            OUTPUT/SmartESC_v2_G30D_FO76_PUSHSTART_R3I15HF1HF1_STLINK_APP_0x08001000.hex
+            OUTPUT/SmartESC_v2_G30D_FO76_PUSHSTART_R3I15HF1.elf
+            OUTPUT/SmartESC_v2_G30D_FO76_PUSHSTART_R3I15HF1.map
+            OUTPUT/SmartESC_v2_G30D_FO76_PUSHSTART_R3I15HF1_STLINK_APP_0x08001000.bin
+            OUTPUT/SmartESC_v2_G30D_FO76_PUSHSTART_R3I15HF1_STLINK_APP_0x08001000.hex
             OUTPUT/VERIFICATION.json
             OUTPUT/SHA256_BIN.txt
             OUTPUT/SIZE.txt
