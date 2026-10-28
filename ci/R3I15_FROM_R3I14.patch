@@ -1,0 +1,158 @@
+--- a/common_files/src/VescToSTM.h
++++ b/common_files/src/VescToSTM.h
+@@ -48,6 +48,9 @@
+ int16_t VescToSTM_Iq_lim_hook(int16_t iq);
+ 
+ void VescToSTM_pwm_stop(void);
++#ifdef G30P
++void VescToSTM_g30_pushstart_command(bool active);
++#endif
+ void VescToSTM_pwm_start(void);
+ void VescToSTM_prepare_sensorless_start(void);
+ #ifdef G30P
+--- a/common_files/src/VescToSTM.c
++++ b/common_files/src/VescToSTM.c
+@@ -337,6 +337,33 @@
+ }
+ 
+ 
++#ifdef G30P
++void VescToSTM_g30_pushstart_command(bool active){
++    if(!active){
++        g30_r3i_request_arm(0u);
++        g30_fo76_sensorless_clear();
++        g30_fo76_request_takeover(0u);
++        return;
++    }
++
++    /* R3I15: the R3I14 hardware test armed pushstart through the terminal
++     * before sending COMM_SET_RPM. VESC Tool does not send that terminal
++     * command. Arm exactly once on the first non-zero VESC drive request.
++     * Repeated control packets must not reset an in-progress/running start. */
++    g30_r3i_diag_t ps=g30_r3i_get_diag();
++    if(ps.mode!=0u) return;
++
++    VescToSTM_pwm_stop();
++    g30_fo76_sensorless_clear();
++    g30_fo76_request_takeover(0u);
++    g30_r3i_request_arm(1u);
++    if(STM_GetState(&STM[M1])==IDLE){
++        MCI_ExecSpeedRamp(pMCI[M1],0,0);
++        (void)MCI_StartMotor(pMCI[M1]);
++    }
++}
++#endif
++
+ void VescToSTM_pwm_stop(void){
+ #ifdef G30P
+     g30_hall_trace_freeze(G30_HT_PWM_STOP);
+--- a/common_files/src/VescCommand.c
++++ b/common_files/src/VescCommand.c
+@@ -409,25 +409,41 @@
+ 
+ 			case COMM_SET_DUTY: {
+ 				int32_t ind = 0;
+-				VescToSTM_set_current_rel((float)buffer_get_int32(data, &ind) / 100000.0);
++				int32_t raw = buffer_get_int32(data, &ind);
++#ifdef G30P
++				VescToSTM_g30_pushstart_command(raw != 0);
++#endif
++				VescToSTM_set_current_rel((float)raw / 100000.0);
+ 				VescToSTM_timeout_reset();
+ 			} break;
+ 
+ 			case COMM_SET_CURRENT: {
+ 				int32_t ind = 0;
+-				VescToSTM_set_torque(buffer_get_int32(data, &ind));
++				int32_t raw = buffer_get_int32(data, &ind);
++#ifdef G30P
++				VescToSTM_g30_pushstart_command(raw != 0);
++#endif
++				VescToSTM_set_torque(raw);
+ 				VescToSTM_timeout_reset();
+ 			} break;
+ 
+ 			case COMM_SET_CURRENT_BRAKE: {
+ 				int32_t ind = 0;
+-				VescToSTM_set_brake(buffer_get_int32(data, &ind)*-1);
++				int32_t raw = buffer_get_int32(data, &ind);
++#ifdef G30P
++				VescToSTM_g30_pushstart_command(false);
++#endif
++				VescToSTM_set_brake(raw*-1);
+ 				VescToSTM_timeout_reset();
+ 			} break;
+ 
+ 			case COMM_SET_RPM: {
+ 				int32_t ind = 0;
+-				VescToSTM_set_speed(buffer_get_int32(data, &ind));
++				int32_t raw = buffer_get_int32(data, &ind);
++#ifdef G30P
++				VescToSTM_g30_pushstart_command(raw != 0);
++#endif
++				VescToSTM_set_speed(raw);
+ 				VescToSTM_timeout_reset();
+ 			} break;
+ 
+@@ -976,7 +992,11 @@
+ 
+ 				case COMM_SET_CURRENT_REL: {
+ 					int32_t ind = 0;
+-					VescToSTM_set_current_rel(buffer_get_float32(data, 1e5, &ind));
++					float val = buffer_get_float32(data, 1e5, &ind);
++#ifdef G30P
++					VescToSTM_g30_pushstart_command(val != 0.0f);
++#endif
++					VescToSTM_set_current_rel(val);
+ 					VescToSTM_timeout_reset();
+ 				} break;
+ 
+--- a/common_files/src/defines.h
++++ b/common_files/src/defines.h
+@@ -2,7 +2,7 @@
+ #define DEFINES_H_
+ 
+ #ifdef G30P
+-#define HW_NAME "G30D-FO76-PUSHSTART-R3I14"
++#define HW_NAME "G30D-FO76-PUSHSTART-R3I15"
+ #else
+ #define HW_NAME "40"
+ #endif
+--- a/common_files/src/terminal.c
++++ b/common_files/src/terminal.c
+@@ -138,7 +138,7 @@
+             return;
+         }
+         g30_fo76_diag_t obs = g30_fo76_get_diag();
+-        commands_printf(phandle, "FO76_R3I14 pushstart_sensorless=1 seeded=%u valid=%u samples4k=%lu eval1k=%lu",
++        commands_printf(phandle, "FO76_R3I15 pushstart_sensorless=1 seeded=%u valid=%u samples4k=%lu eval1k=%lu",
+             (unsigned)obs.seeded, (unsigned)obs.valid,
+             (unsigned long)obs.samples_4k, (unsigned long)obs.evaluated_1k);
+         commands_printf(phandle, "phase=%u error=%d maxabs=%u avgabs=%lu within30=%lu over90=%lu clamps=%lu",
+@@ -181,7 +181,7 @@
+             (unsigned)obs.takeover_control_phase,(unsigned)obs.takeover_observer_phase,(unsigned)obs.takeover_hall_phase,
+             (int)obs.takeover_pred_error,(int)obs.takeover_blend_offset,(int)obs.observer_step_foc_q4);
+         g30_start_preload_diag_t pre=VescToSTM_get_start_preload();
+-        commands_printf(phandle,"R3I14 preload n=%lu lambda=%uuWb vbus=%umV dpp=%d",
++        commands_printf(phandle,"R3I15 preload n=%lu lambda=%uuWb vbus=%umV dpp=%d",
+             (unsigned long)pre.count,(unsigned)pre.lambda_uwb,(unsigned)pre.vbus_mv,(int)pre.speed_dpp);
+         commands_printf(phandle,"preload vq_counts=%d vd_counts=%d bemf_mV=%ld scale=Vbus/sqrt3",
+             (int)pre.vq_counts,(int)pre.vd_counts,(long)pre.bemf_mv);
+@@ -192,7 +192,7 @@
+             int32_t erpm=(int32_t)atoi(argv[1]);
+             VescToSTM_set_speed(erpm);
+             VescToSTM_timeout_reset();
+-            commands_printf(phandle,"R3I14 drive vesc_erpm=%ld pwm_off=%u sensorless=%u control_erpm=%ld",
++            commands_printf(phandle,"R3I15 drive vesc_erpm=%ld pwm_off=%u sensorless=%u control_erpm=%ld",
+                 (long)erpm,(unsigned)PWM_Handle_M1._Super.PWM_off,
+                 (unsigned)g30_fo76_sensorless_active(),
+                 (long)((int64_t)g30_fo76_control_speed_dpp()*16000*60/65536));
+@@ -227,7 +227,7 @@
+                 MCI_ExecSpeedRamp(pMCI[M1],0,0);
+                 (void)MCI_StartMotor(pMCI[M1]);
+             }
+-            commands_printf(phandle,"R3I14 ARM: live Hall calibration + one-shot observer-lambda voltage preload");
++            commands_printf(phandle,"R3I15 ARM: live Hall calibration + one-shot observer-lambda voltage preload");
+         }else if(argc==2 && strcmp(argv[1],"off")==0){
+             g30_r3i_request_arm(0u);
+             g30_fo76_request_takeover(0u);
