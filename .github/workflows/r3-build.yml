@@ -155,11 +155,11 @@ jobs:
           grep -q 'erpm = -erpm;' SOURCE_KOXX3/common_files/src/VescToSTM.c
           grep -q 'VescToSTM_set_brake(0);' SOURCE_KOXX3/common_files/src/VescToSTM.c
           grep -q 'R3I13 drive vesc_erpm=' SOURCE_KOXX3/common_files/src/terminal.c
-          patch -d SOURCE_KOXX3 -p1 --dry-run < ci/R3I15_FROM_R3I14.patch
-          patch -d SOURCE_KOXX3 -p1 < ci/R3I15_FROM_R3I14.patch
-          sed -i 's/G30D-FO76-PUSHSTART-R3I13/G30D-FO76-PUSHSTART-R3I15/g' SOURCE_KOXX3/common_files/src/defines.h
+          patch -d SOURCE_KOXX3 -p1 --dry-run < ci/R3I14_FROM_R3I13.patch
+          patch -d SOURCE_KOXX3 -p1 < ci/R3I14_FROM_R3I13.patch
+          sed -i 's/G30D-FO76-PUSHSTART-R3I13/G30D-FO76-PUSHSTART-R3I14/g' SOURCE_KOXX3/common_files/src/defines.h
           sed -i 's/FO76_R3I13/FO76_R3I14/g; s/R3I13 preload/R3I14 preload/g; s/R3I13 drive/R3I14 drive/g; s/R3I13 ARM:/R3I14 ARM:/g' SOURCE_KOXX3/common_files/src/terminal.c
-          grep -q 'G30D-FO76-PUSHSTART-R3I15' SOURCE_KOXX3/common_files/src/defines.h
+          grep -q 'G30D-FO76-PUSHSTART-R3I14' SOURCE_KOXX3/common_files/src/defines.h
           grep -q '(-(int32_t)odpp)' SOURCE_KOXX3/common_files/src/mc_tasks.c
           ! grep -q 'erpm = -erpm;' SOURCE_KOXX3/common_files/src/VescToSTM.c
           patch -d SOURCE_KOXX3 -p1 --dry-run < ci/R3I15_FROM_R3I14.patch
