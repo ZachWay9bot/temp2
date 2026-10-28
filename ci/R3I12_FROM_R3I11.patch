@@ -1,0 +1,65 @@
+--- a/common_files/src/g30_fo76_shadow.c
++++ b/common_files/src/g30_fo76_shadow.c
+@@ -237,14 +237,25 @@
+         sensorless_catch_error=(int16_t)(obs_pred-catch_phase);
+ 
+         if(sensorless_catch_state==1u){
++            /* R3I12: R3I11 hardware Hall-trace proved that the independent
++             * BEMF-seeded catch integrator can drift by ~40 electrical degrees
++             * while the observer predictor remains close to the physical rotor.
++             * Do not let a stale release-speed estimate become an open-loop
++             * angle source. The observer predictor is re-anchored at every 1 kHz
++             * observer publication and interpolated at the 16 kHz FOC rate.
++             * Re-anchor the catch diagnostic phase to exactly the angle actually
++             * applied to FOC so the existing 20 ms model-quality gate validates
++             * the observer rather than a second free-running oscillator. */
++            sensorless_catch_phase_q4=((int32_t)(uint16_t)obs_pred)<<4;
++            catch_phase=obs_pred;
++            sensorless_catch_error=0;
+             if(sensorless_catch_ticks>G30_R3I6_CATCH_TIMEOUT_FOC){
+                 if(!takeover_coast_request) takeover_latch_coast(G30_TK_FB_INVALID);
+                 takeover_control_phase=catch_phase;
+                 return catch_phase;
+             }
+-            if(d.valid && d.tracking &&
+-               abs_phase16(sensorless_catch_error)<G30_R3G_ENTRY_ERR_COUNTS){
+-                sensorless_catch_blend_offset=(int16_t)(catch_phase-obs_pred);
++            if(d.valid && d.tracking){
++                sensorless_catch_blend_offset=0;
+                 sensorless_catch_state=2u;
+             }
+             takeover_control_phase=catch_phase;
+--- a/common_files/src/defines.h
++++ b/common_files/src/defines.h
+@@ -2,7 +2,7 @@
+ #define DEFINES_H_
+ 
+ #ifdef G30P
+-#define HW_NAME "G30D-FO76-PUSHSTART-R3I11"
++#define HW_NAME "G30D-FO76-PUSHSTART-R3I12"
+ #else
+ #define HW_NAME "40"
+ #endif
+--- a/common_files/src/terminal.c
++++ b/common_files/src/terminal.c
+@@ -138,7 +138,7 @@
+             return;
+         }
+         g30_fo76_diag_t obs = g30_fo76_get_diag();
+-        commands_printf(phandle, "FO76_R3I11 pushstart_sensorless=1 seeded=%u valid=%u samples4k=%lu eval1k=%lu",
++        commands_printf(phandle, "FO76_R3I12 pushstart_sensorless=1 seeded=%u valid=%u samples4k=%lu eval1k=%lu",
+             (unsigned)obs.seeded, (unsigned)obs.valid,
+             (unsigned long)obs.samples_4k, (unsigned long)obs.evaluated_1k);
+@@ -181,7 +181,7 @@
+             (unsigned)obs.takeover_control_phase,(unsigned)obs.takeover_observer_phase,(unsigned)obs.takeover_hall_phase,
+             (int)obs.takeover_pred_error,(int)obs.takeover_blend_offset,(int)obs.observer_step_foc_q4);
+         g30_start_preload_diag_t pre=VescToSTM_get_start_preload();
+-        commands_printf(phandle,"R3I11 preload n=%lu lambda=%uuWb vbus=%umV dpp=%d",
++        commands_printf(phandle,"R3I12 preload n=%lu lambda=%uuWb vbus=%umV dpp=%d",
+             (unsigned long)pre.count,(unsigned)pre.lambda_uwb,(unsigned)pre.vbus_mv,(int)pre.speed_dpp);
+@@ -215,7 +215,7 @@
+                 MCI_ExecSpeedRamp(pMCI[M1],0,0);
+                 (void)MCI_StartMotor(pMCI[M1]);
+             }
+-            commands_printf(phandle,"R3I11 ARM: live Hall calibration + one-shot observer-lambda voltage preload");
++            commands_printf(phandle,"R3I12 ARM: live Hall calibration + one-shot observer-lambda voltage preload");
