@@ -225,7 +225,7 @@ jobs:
             'observer_dpp_retained':'HALL_M1._Super.hElSpeedDpp=odpp;' in mc and 'HALL_M1.AvrElSpeedDpp=odpp;' in mc,
             'rpm_zero_coasts':'if(erpm == 0)' in vs and 'VescToSTM_set_brake(0);' in vs,
             'timeout_coasts':'timeout_brake_current into regenerative' in vs,
-            'brake_coasts':'all VESC brake requests are Coast on G30' in vs,
+            'brake_coasts':'all brake/zero requests are true coast' in vs and 'VescToSTM_g30_coast_rearm();' in vs,
             'speed_no_braking':'SpeednTorqCtrlM1.PISpeed->wUpperIntegralLimit = 0;' in vs and 'SpeednTorqCtrlM1.PISpeed->wLowerIntegralLimit = 0;' in vs,
             'drive_diag':'R3I15HF2 drive vesc_erpm=' in te,
             'lambda_retained':'G30_FO76_LAMBDA_PROVEN_UWB 24200u' in sh,
