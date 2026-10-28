@@ -181,7 +181,7 @@ jobs:
           grep -q 'if(raw == 0){ VescToSTM_timeout_reset(); break; }' SOURCE_KOXX3/common_files/src/VescCommand.c
           patch -d SOURCE_KOXX3 -p1 --dry-run < ci/R3I15HF3_FROM_R3I15HF2.patch
           patch -d SOURCE_KOXX3 -p1 < ci/R3I15HF3_FROM_R3I15HF2.patch
-          grep -q 'G30D-FO76-PUSHSTART-R3I15HF4' SOURCE_KOXX3/common_files/src/defines.h
+          grep -q 'G30D-FO76-PUSHSTART-R3I15HF3' SOURCE_KOXX3/common_files/src/defines.h
           grep -q 'drive_request && d.forward_edges' SOURCE_KOXX3/common_files/src/g30_r3i_pushstart.c
           grep -q 'g30_r3i_motion_recent()' SOURCE_KOXX3/common_files/src/VescToSTM.c
           patch -d SOURCE_KOXX3 -p1 --dry-run < ci/R3I15HF4_FROM_R3I15HF3.patch
