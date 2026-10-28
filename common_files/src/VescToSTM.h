@@ -48,6 +48,9 @@ int32_t VescToSTM_speed_to_erpm(int32_t speed);
 int16_t VescToSTM_Iq_lim_hook(int16_t iq);
 
 void VescToSTM_pwm_stop(void);
+#ifdef G30P
+void VescToSTM_g30_pushstart_command(bool active);
+#endif
 void VescToSTM_pwm_start(void);
 void VescToSTM_set_minimum_current(float current);
 void VescToSTM_pwm_force(bool force, bool update);
