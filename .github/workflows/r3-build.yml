@@ -143,6 +143,8 @@ jobs:
           grep -q 'G30D-FO76-PUSHSTART-R3I11' SOURCE_KOXX3/common_files/src/defines.h
           patch -d SOURCE_KOXX3 -p1 --dry-run < ci/R3I12_FROM_R3I11.patch
           patch -d SOURCE_KOXX3 -p1 < ci/R3I12_FROM_R3I11.patch
+          sed -i 's/G30D-FO76-PUSHSTART-R3I11/G30D-FO76-PUSHSTART-R3I12/g' SOURCE_KOXX3/common_files/src/defines.h
+          sed -i 's/FO76_R3I11/FO76_R3I12/g; s/R3I11 preload/R3I12 preload/g; s/R3I11 ARM:/R3I12 ARM:/g' SOURCE_KOXX3/common_files/src/terminal.c
           grep -q 'G30D-FO76-PUSHSTART-R3I12' SOURCE_KOXX3/common_files/src/defines.h
           grep -q 'sensorless_catch_phase_q4=((int32_t)(uint16_t)obs_pred)<<4;' SOURCE_KOXX3/common_files/src/g30_fo76_shadow.c
           grep -q 'catch_phase=obs_pred;' SOURCE_KOXX3/common_files/src/g30_fo76_shadow.c
