@@ -175,7 +175,7 @@ jobs:
           grep -q 'r3i_diag.mode==1u' SOURCE_KOXX3/common_files/src/mc_tasks.c
           patch -d SOURCE_KOXX3 -p1 --dry-run < ci/R3I15HF2_FROM_R3I15HF1.patch
           patch -d SOURCE_KOXX3 -p1 < ci/R3I15HF2_FROM_R3I15HF1.patch
-          grep -q 'G30D-FO76-PUSHSTART-R3I15HF3' SOURCE_KOXX3/common_files/src/defines.h
+          grep -q 'G30D-FO76-PUSHSTART-R3I15HF2' SOURCE_KOXX3/common_files/src/defines.h
           grep -q 'if(ps.mode==1u)' SOURCE_KOXX3/common_files/src/VescToSTM.c
           grep -q 'Only after MOE/gate outputs are off' SOURCE_KOXX3/common_files/src/VescToSTM.c
           grep -q 'if(raw == 0){ VescToSTM_timeout_reset(); break; }' SOURCE_KOXX3/common_files/src/VescCommand.c
