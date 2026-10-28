@@ -240,7 +240,7 @@ jobs:
             'drive_diag':'R3I15HF4 drive vesc_erpm=' in te,
             'lambda_retained':'G30_FO76_LAMBDA_PROVEN_UWB 24200u' in sh,
             'vesc_auto_arm':'VescToSTM_g30_pushstart_command(raw != 0)' in Path('SOURCE_KOXX3/common_files/src/VescCommand.c').read_text(),
-            'repeat_packets_do_not_rearm':'if(ps.mode==1u)' in vs and 'g30_r3i_request_arm(1u);' not in vs[vs.index('if(ps.mode==1u)'):vs.index('VescToSTM_pwm_stop();', vs.index('if(ps.mode==1u)'))],
+            'repeat_packets_do_not_rearm':(lambda start,block: 'g30_r3i_request_arm(1u);' not in block)(vs.index('if(ps.mode==1u)',vs.index('void VescToSTM_g30_pushstart_command')), vs[vs.index('if(ps.mode==1u)',vs.index('void VescToSTM_g30_pushstart_command')):vs.index('VescToSTM_pwm_stop();',vs.index('if(ps.mode==1u)',vs.index('void VescToSTM_g30_pushstart_command')))]),
             'coast_rearms_sensorless':'g30_r3i_request_arm(1u);' in vs and 'if(ps.mode==1u)' in vs,
             'hallfree_fixed_bemf':'R3I_FIXED_BEMF_TO_CONTROL_OFFSET 0' in Path('SOURCE_KOXX3/common_files/src/g30_r3i_pushstart.c').read_text(),
             'hallfree_no_start_gate':'(void)hall_angle;' in Path('SOURCE_KOXX3/common_files/src/g30_r3i_pushstart.c').read_text(),
