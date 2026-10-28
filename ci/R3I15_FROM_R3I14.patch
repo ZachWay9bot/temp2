@@ -1,14 +1,11 @@
 --- a/common_files/src/VescToSTM.c
 +++ b/common_files/src/VescToSTM.c
-@@ -20,6 +20,24 @@
- #include "g30_r3i_preload.h"
- #include "g30_hall_trace.h"
+@@ -25,6 +25,20 @@
  #endif
-+
-+#ifdef G30P
-+/* R3I15: normal VESC drive commands must be sufficient to prepare the
-+ * validated passive pushstart path. The previous test-only CLI command
-+ * g30_pushstart arm must no longer be required for real VESC Tool use. */
+ 
+ #ifdef G30P
++/* R3I15: a normal nonzero VESC drive command arms the already validated
++ * passive pushstart path. No private terminal command is required. */
 +static void g30_vesc_auto_arm_pushstart(void){
 +    if(g30_r3i_sensorless_active() || g30_r3i_block_pwm_start()) return;
 +    VescToSTM_pwm_stop();
@@ -20,24 +17,25 @@
 +        (void)MCI_StartMotor(pMCI[M1]);
 +    }
 +}
-+#endif
- 
- #ifdef G30P
++
  static g30_start_preload_diag_t startup_preload;
-@@ -451,6 +469,13 @@
- void VescToSTM_set_torque(int32_t current){
- #ifdef G30P
-+    if(current==0){
-+        VescToSTM_set_brake(0);
-+        return;
-+    }
-+    g30_vesc_auto_arm_pushstart();
-+#endif
-+#ifdef G30P
-     if (!g30_drive_request_ok(current)) return;
+ static volatile uint32_t startup_preload_seq;
  #endif
+@@ -447,6 +461,13 @@
+ }
+ 
+ void VescToSTM_set_torque(int32_t current){
++#ifdef G30P
++	if(current==0){
++		VescToSTM_set_brake(0);
++		return;
++	}
++	g30_vesc_auto_arm_pushstart();
++#endif
  	VescToSTM_mode = STM_STATE_TORQUE;
-@@ -493,6 +518,9 @@
+ 	VescToSTM_set_open_loop(false, 0, 0);
+ 
+@@ -494,6 +515,9 @@
  	VescToSTM_mode = STM_STATE_BRAKE;
  	VescToSTM_set_open_loop(false, 0, 0);
  	VescToSTM_set_current(0.0f, 0.0f);
@@ -47,7 +45,7 @@
  	SpeednTorqCtrlM1.PISpeed->wIntegralTerm = 0;
  	VescToSTM_pwm_stop();
  	return;
-@@ -534,6 +562,7 @@
+@@ -533,6 +557,7 @@
  		VescToSTM_set_brake(0);
  		return;
  	}
@@ -55,7 +53,7 @@
  #endif
  	erpm *= DIR_MUL;
  	VescToSTM_mode = STM_STATE_SPEED;
-@@ -954,6 +983,13 @@
+@@ -950,6 +975,13 @@
   * The relative current value, range [-1.0 1.0]
   */
  void VescToSTM_set_current_rel(float val) {
@@ -69,7 +67,7 @@
  	VescToSTM_mode = STM_STATE_TORQUE;
  	VescToSTM_set_open_loop(false, 0, 0);
  	int q;
-@@ -979,6 +1015,13 @@
+@@ -975,6 +1007,13 @@
   * The relative current value, range [-32768 +32768]
   */
  void VescToSTM_set_current_rel_int(int32_t val) {
@@ -104,6 +102,7 @@
 +        commands_printf(phandle, "FO76_R3I15 pushstart_sensorless=1 seeded=%u valid=%u samples4k=%lu eval1k=%lu",
              (unsigned)obs.seeded, (unsigned)obs.valid,
              (unsigned long)obs.samples_4k, (unsigned long)obs.evaluated_1k);
+         commands_printf(phandle, "phase=%u error=%d maxabs=%u avgabs=%lu within30=%lu over90=%lu clamps=%lu",
 @@ -181,7 +181,7 @@
              (unsigned)obs.takeover_control_phase,(unsigned)obs.takeover_observer_phase,(unsigned)obs.takeover_hall_phase,
              (int)obs.takeover_pred_error,(int)obs.takeover_blend_offset,(int)obs.observer_step_foc_q4);
@@ -111,7 +110,10 @@
 -        commands_printf(phandle,"R3I14 preload n=%lu lambda=%uuWb vbus=%umV dpp=%d",
 +        commands_printf(phandle,"R3I15 preload n=%lu lambda=%uuWb vbus=%umV dpp=%d",
              (unsigned long)pre.count,(unsigned)pre.lambda_uwb,(unsigned)pre.vbus_mv,(int)pre.speed_dpp);
-@@ -188,7 +188,7 @@
+         commands_printf(phandle,"preload vq_counts=%d vd_counts=%d bemf_mV=%ld scale=Vbus/sqrt3",
+             (int)pre.vq_counts,(int)pre.vd_counts,(long)pre.bemf_mv);
+@@ -192,7 +192,7 @@
+             int32_t erpm=(int32_t)atoi(argv[1]);
              VescToSTM_set_speed(erpm);
              VescToSTM_timeout_reset();
 -            commands_printf(phandle,"R3I14 drive vesc_erpm=%ld pwm_off=%u sensorless=%u control_erpm=%ld",
