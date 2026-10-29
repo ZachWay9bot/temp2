@@ -1,0 +1,68 @@
+diff --git a/common_files/src/app_uartcomm.c b/common_files/src/app_uartcomm.c
+--- a/common_files/src/app_uartcomm.c
++++ b/common_files/src/app_uartcomm.c
+@@ -194,17 +194,25 @@
+ 
+ #ifdef G30P
+-    /* Stock dash uses the same Hall/Sensorless command gate as VESC Tool.
+-     * Brake always wins and remains electrical Coast on G30. */
+-    if(brake>0.0f){
++    /* R3I18B: native G30 Hall ranges from the stock dashboard protocol.
++     * Throttle 0x28..0xC5 (40..197), brake 0x29..0xB5 (41..181).
++     * Use the already-filtered raw bytes, not the M365 0.9..3.0 V defaults. */
++    float g30_throttle=((float)aver1/16.0f-40.0f)/(197.0f-40.0f);
++    float g30_brake=((float)aver2/16.0f-41.0f)/(181.0f-41.0f);
++    utils_truncate_number(&g30_throttle,0.0f,1.0f);
++    utils_truncate_number(&g30_brake,0.0f,1.0f);
++    g30_throttle*=mc_conf.lo_current_max_scale;
++    utils_truncate_number(&g30_throttle,0.0f,1.0f);
++    decoded_level=g30_throttle;
++    decoded_level2=g30_brake;
++    if(g30_brake>0.002f){
+         VescToSTM_g30_pushstart_command(false);
+-        VescToSTM_set_brake_current_rel(brake);
+-    }else if(pwr>0.0f){
++        VescToSTM_set_brake_current_rel(g30_brake);
++    }else if(g30_throttle>0.002f){
+         VescToSTM_g30_pushstart_command(true);
+-        VescToSTM_set_current_rel(pwr);
++        VescToSTM_set_current_rel(g30_throttle);
+     }else{
+         VescToSTM_g30_pushstart_command(false);
+     }
+@@ -329,17 +337,17 @@
+ 		while(rd_ptr != uart_get_write_pos(port)) {
+ 			if(ninebot_parse(usart_rx_dma_buffer[rd_ptr] ,&frame)	==0){
+ #ifdef G30P
+                 if(frame.addr==0x21 && frame.arg==0x00){
+-                    if(frame.cmd==0x64){
+-                        g30_dash_send_status(port);
+-                    }else if((frame.cmd==0x65 || frame.cmd==0x61) && frame.len>=3u){
+-                        /* Captured G30 control payload: [mode, throttle, brake, ...].
+-                         * Brake remains Coast through the existing G30 brake path. */
+-                        m365_to_display.mode=frame.payload[0];
++                    if((frame.cmd==0x64 || frame.cmd==0x65 || frame.cmd==0x61) && frame.len>=3u){
++                        /* Native G30 hall payload:
++                         * [dataLen, throttle, brake, updating, beeping, ...].
++                         * CMD64 also requests the ESC display/status response.
++                         * CMD65 is the normal hall update; CMD61 is observed stock traffic. */
+                         adc1=frame.payload[1];
+                         adc2=frame.payload[2];
+                         VescToSTM_timeout_reset();
+                         app_check_timer();
++                        if(frame.cmd==0x64) g30_dash_send_status(port);
+                     }
+                 }
+ #else
+diff --git a/common_files/src/defines.h b/common_files/src/defines.h
+--- a/common_files/src/defines.h
++++ b/common_files/src/defines.h
+@@ -2,7 +2,7 @@
+ #define DEFINES_H_
+ 
+ #ifdef G30P
+-#define HW_NAME "G30D-R3I18-STOCK-DASH"
++#define HW_NAME "G30D-R3I18B-STOCK-DASH-VERIFIED"
+ #else
+ #define HW_NAME "40"
+ #endif
