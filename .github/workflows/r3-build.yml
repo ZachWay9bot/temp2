@@ -276,7 +276,7 @@ jobs:
           print('R3I20_TUNNEL_FRAGMENT_ROUNDTRIP=PASS')
           PY
           BIN=OUTPUT/SmartESC_v2_G30D_R3I20_BLE_VESC_TUNNEL_STLINK_APP_0x08001000.bin
-          ELF=OUTPUT/SmartESC_v2_G30D_R3I19_STOCK_DASH_FINAL.elf
+          ELF=OUTPUT/SmartESC_v2_G30D_R3I20_BLE_VESC_TUNNEL.elf
           sha256sum "$BIN" > OUTPUT/SHA256_BIN.txt
           arm-none-eabi-size "$ELF" > OUTPUT/SIZE.txt
           arm-none-eabi-nm -S --size-sort "$ELF" | tail -40 > OUTPUT/LARGEST_SYMBOLS.txt
@@ -366,10 +366,10 @@ jobs:
           if-no-files-found: error
           retention-days: 7
           path: |
-            OUTPUT/SmartESC_v2_G30D_R3I19_STOCK_DASH_FINAL.elf
-            OUTPUT/SmartESC_v2_G30D_R3I19_STOCK_DASH_FINAL.map
-            OUTPUT/SmartESC_v2_G30D_R3I19_STOCK_DASH_FINAL_STLINK_APP_0x08001000.bin
-            OUTPUT/SmartESC_v2_G30D_R3I19_STOCK_DASH_FINAL_STLINK_APP_0x08001000.hex
+            OUTPUT/SmartESC_v2_G30D_R3I20_BLE_VESC_TUNNEL.elf
+            OUTPUT/SmartESC_v2_G30D_R3I20_BLE_VESC_TUNNEL.map
+            OUTPUT/SmartESC_v2_G30D_R3I20_BLE_VESC_TUNNEL_STLINK_APP_0x08001000.bin
+            OUTPUT/SmartESC_v2_G30D_R3I20_BLE_VESC_TUNNEL_STLINK_APP_0x08001000.hex
             OUTPUT/VERIFICATION.json
             OUTPUT/SHA256_BIN.txt
             OUTPUT/SIZE.txt
