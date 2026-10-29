@@ -1,8 +1,8 @@
-name: G30D R3I16 VESC Hall Sensorless selector compile
+name: G30D R3I17 minimal R L lambda detect compile
 on:
   push:
     branches:
-      - r3i16-vesc-sensor-mode-20261029
+      - r3i17-min-detect-20261029
   workflow_dispatch:
 
 jobs:
@@ -194,6 +194,11 @@ jobs:
           grep -q 'G30D-R3I16-MODE-SELECT' SOURCE_KOXX3/common_files/src/defines.h
           grep -q 'VescToSTM_g30_sensorless_selected' SOURCE_KOXX3/common_files/src/VescToSTM.c
           grep -q 'mcconf->foc_sensor_mode != FOC_SENSOR_MODE_HALL' SOURCE_KOXX3/common_files/src/conf_general.c
+          patch -d SOURCE_KOXX3 -p1 --dry-run < ci/R3I17_MIN_DETECT_FROM_R3I16.patch
+          patch -d SOURCE_KOXX3 -p1 < ci/R3I17_MIN_DETECT_FROM_R3I16.patch
+          grep -q 'G30D-R3I17-MIN-DETECT' SOURCE_KOXX3/common_files/src/defines.h
+          grep -q 'R3I17 G30 minimal detect' SOURCE_KOXX3/common_files/src/conf_general.c
+          ! grep -q 'tune_mcpwm_foc_hall_detect' <(sed -n '/#ifdef G30P/,/#else/p' SOURCE_KOXX3/common_files/src/conf_general.c)
 
       - name: Install ARM GNU GCC 13.2.1
         shell: bash
@@ -208,24 +213,24 @@ jobs:
           tar -xzf "$FILE"
           echo "/tmp/xpack-arm-none-eabi-gcc-13.2.1-1.1/bin" >> "$GITHUB_PATH"
 
-      - name: Compile and validate R3I16
+      - name: Compile and validate R3I17
         shell: bash
         run: |
           set -euo pipefail
           arm-none-eabi-gcc --version
-          sed -i 's/FO76_PUSHSTART_R3I9/R3I16_MODE_SELECT/g' tools/build_native.py tools/validate_image.py
-          sed -i 's/G30D-FO76-PUSHSTART-R3I9/G30D-R3I16-MODE-SELECT/g' tools/validate_image.py
+          sed -i 's/FO76_PUSHSTART_R3I9/R3I17_MIN_DETECT/g' tools/build_native.py tools/validate_image.py
+          sed -i 's/G30D-FO76-PUSHSTART-R3I9/G30D-R3I17-MIN-DETECT/g' tools/validate_image.py
           mkdir -p OUTPUT
           python3 tools/build_native.py | tee OUTPUT/build.log
           python3 tools/validate_image.py | tee OUTPUT/validation.log
-          BIN=OUTPUT/SmartESC_v2_G30D_R3I16_MODE_SELECT_STLINK_APP_0x08001000.bin
-          ELF=OUTPUT/SmartESC_v2_G30D_R3I16_MODE_SELECT.elf
+          BIN=OUTPUT/SmartESC_v2_G30D_R3I17_MIN_DETECT_STLINK_APP_0x08001000.bin
+          ELF=OUTPUT/SmartESC_v2_G30D_R3I17_MIN_DETECT.elf
           sha256sum "$BIN" > OUTPUT/SHA256_BIN.txt
           arm-none-eabi-size "$ELF" > OUTPUT/SIZE.txt
           arm-none-eabi-nm -S --size-sort "$ELF" | tail -40 > OUTPUT/LARGEST_SYMBOLS.txt
-          tar -czf OUTPUT/SOURCE_KOXX3_R3I16_EXACT.tgz SOURCE_KOXX3
-          cp ci/R3I16_MODE_FROM_HF4.patch OUTPUT/
-          python3 - <<'PY' | tee OUTPUT/R3I16_STATIC_GATES.txt
+          tar -czf OUTPUT/SOURCE_KOXX3_R3I17_EXACT.tgz SOURCE_KOXX3
+          cp ci/R3I17_MIN_DETECT_FROM_R3I16.patch OUTPUT/
+          python3 - <<'PY' | tee OUTPUT/R3I17_STATIC_GATES.txt
           from pathlib import Path
           sh=Path('SOURCE_KOXX3/common_files/src/g30_fo76_shadow.c').read_text()
           vs=Path('SOURCE_KOXX3/common_files/src/VescToSTM.c').read_text()
@@ -233,7 +238,7 @@ jobs:
           te=Path('SOURCE_KOXX3/common_files/src/terminal.c').read_text()
           de=Path('SOURCE_KOXX3/common_files/src/defines.h').read_text()
           gates={
-            'build_id':'G30D-R3I16-MODE-SELECT' in de,
+            'build_id':'G30D-R3I17-MIN-DETECT' in de,
             'r3i12_catch_retained':'sensorless_catch_phase_q4=((int32_t)(uint16_t)obs_pred)<<4;' in sh and 'catch_phase=obs_pred;' in sh,
             'no_command_inversion':'erpm = -erpm;' not in vs,
             'speed_feedback_normalized':'(-(int32_t)odpp)' in mc,
@@ -262,31 +267,36 @@ jobs:
             'hall_does_not_arm':'if(!VescToSTM_g30_sensorless_selected())' in vs and 'g30_r3i_request_arm(0u);' in vs,
             'mcconf_preserves_selector':'mcconf->foc_sensor_mode != FOC_SENSOR_MODE_HALL' in Path('SOURCE_KOXX3/common_files/src/conf_general.c').read_text() and 'mcconf->pwm_mode = PWM_MODE_SYNCHRONOUS;\n\tmcconf->foc_sensor_mode = FOC_SENSOR_MODE_HALL;' not in Path('SOURCE_KOXX3/common_files/src/conf_general.c').read_text(),
             'hall_hf_path_gated':'!VescToSTM_g30_sensorless_selected() || !g30_fo76_sensorless_active()' in mc,
+            'minimal_detect_present':'R3I17 G30 minimal detect' in Path('SOURCE_KOXX3/common_files/src/conf_general.c').read_text(),
+            'minimal_detect_only_rl_lambda':all(x in Path('SOURCE_KOXX3/common_files/src/conf_general.c').read_text() for x in ['saved->foc_motor_r = r;','saved->foc_motor_l = l;','saved->foc_motor_flux_linkage = lambda;']),
+            'minimal_detect_preserves_sensor':'saved->foc_sensor_mode = selected_sensor_mode;' in Path('SOURCE_KOXX3/common_files/src/conf_general.c').read_text(),
+            'minimal_detect_no_hall': 'tune_mcpwm_foc_hall_detect' not in Path('SOURCE_KOXX3/common_files/src/conf_general.c').read_text()[Path('SOURCE_KOXX3/common_files/src/conf_general.c').read_text().index('#ifdef G30P',Path('SOURCE_KOXX3/common_files/src/conf_general.c').read_text().index('int conf_general_detect_apply_all_foc')):Path('SOURCE_KOXX3/common_files/src/conf_general.c').read_text().index('#else',Path('SOURCE_KOXX3/common_files/src/conf_general.c').read_text().index('int conf_general_detect_apply_all_foc'))],
+            'minimal_detect_no_limit_rewrite':'saved->l_current_max =' not in Path('SOURCE_KOXX3/common_files/src/conf_general.c').read_text()[Path('SOURCE_KOXX3/common_files/src/conf_general.c').read_text().index('#ifdef G30P',Path('SOURCE_KOXX3/common_files/src/conf_general.c').read_text().index('int conf_general_detect_apply_all_foc')):Path('SOURCE_KOXX3/common_files/src/conf_general.c').read_text().index('#else',Path('SOURCE_KOXX3/common_files/src/conf_general.c').read_text().index('int conf_general_detect_apply_all_foc'))],
           }
           for k,v in gates.items(): print(f'{k}={int(v)}')
           assert all(gates.values()), gates
-          print('R3I16_STATIC_GATES=PASS')
+          print('R3I17_STATIC_GATES=PASS')
           PY
 
-      - name: Upload R3I16 candidate
+      - name: Upload R3I17 candidate
         uses: actions/upload-artifact@v4
         with:
-          name: G30D_R3I16_MODE_SELECT_COMPILED
+          name: G30D_R3I17_MIN_DETECT_COMPILED
           if-no-files-found: error
           retention-days: 7
           path: |
-            OUTPUT/SmartESC_v2_G30D_R3I16_MODE_SELECT.elf
-            OUTPUT/SmartESC_v2_G30D_R3I16_MODE_SELECT.map
-            OUTPUT/SmartESC_v2_G30D_R3I16_MODE_SELECT_STLINK_APP_0x08001000.bin
-            OUTPUT/SmartESC_v2_G30D_R3I16_MODE_SELECT_STLINK_APP_0x08001000.hex
+            OUTPUT/SmartESC_v2_G30D_R3I17_MIN_DETECT.elf
+            OUTPUT/SmartESC_v2_G30D_R3I17_MIN_DETECT.map
+            OUTPUT/SmartESC_v2_G30D_R3I17_MIN_DETECT_STLINK_APP_0x08001000.bin
+            OUTPUT/SmartESC_v2_G30D_R3I17_MIN_DETECT_STLINK_APP_0x08001000.hex
             OUTPUT/VERIFICATION.json
             OUTPUT/SHA256_BIN.txt
             OUTPUT/SIZE.txt
             OUTPUT/LARGEST_SYMBOLS.txt
-            OUTPUT/SOURCE_KOXX3_R3I16_EXACT.tgz
+            OUTPUT/SOURCE_KOXX3_R3I17_EXACT.tgz
             OUTPUT/APPLY_R3I14_EXACT.py
-            OUTPUT/R3I16_BUILD_WORKFLOW.yml
-            OUTPUT/R3I16_STATIC_GATES.txt
+            OUTPUT/R3I17_BUILD_WORKFLOW.yml
+            OUTPUT/R3I17_STATIC_GATES.txt
             ci/g30_r3i9_pushstart_test.py
             ci/01_AUTO_R3I14_TWO_PUSH_TEST.cmd
             OUTPUT/build.log
