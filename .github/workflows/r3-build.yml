@@ -1,8 +1,8 @@
-name: G30D R3I18B stock dashboard verified compile
+name: G30D R3I18C dash heartbeat ACK compile
 on:
   push:
     branches:
-      - r3i18b-stock-dash-verified-20261029
+      - r3i18c-dash-heartbeat-ack-20261029
   workflow_dispatch:
 
 jobs:
@@ -211,6 +211,11 @@ jobs:
           grep -q 'frame.cmd==0x64 || frame.cmd==0x65' SOURCE_KOXX3/common_files/src/app_uartcomm.c
           grep -q '197.0f-40.0f' SOURCE_KOXX3/common_files/src/app_uartcomm.c
           grep -q '181.0f-41.0f' SOURCE_KOXX3/common_files/src/app_uartcomm.c
+          python3 ci/apply_r3i18c.py
+          grep -q 'G30D-R3I18C-DASH-HEARTBEAT-ACK' SOURCE_KOXX3/common_files/src/defines.h
+          grep -q 'g30_dash_send_meta_query' SOURCE_KOXX3/common_files/src/app_uartcomm.c
+          grep -q 'frame.cmd==0x04 && frame.len==13u' SOURCE_KOXX3/common_files/src/app_uartcomm.c
+          grep -q 'pdMS_TO_TICKS(1000)' SOURCE_KOXX3/common_files/src/app_uartcomm.c
 
       - name: Install ARM GNU GCC 13.2.1
         shell: bash
@@ -225,13 +230,13 @@ jobs:
           tar -xzf "$FILE"
           echo "/tmp/xpack-arm-none-eabi-gcc-13.2.1-1.1/bin" >> "$GITHUB_PATH"
 
-      - name: Compile and validate R3I18B
+      - name: Compile and validate R3I18C
         shell: bash
         run: |
           set -euo pipefail
           arm-none-eabi-gcc --version
-          sed -i 's/FO76_PUSHSTART_R3I9/R3I18B_STOCK_DASH_VERIFIED/g' tools/build_native.py tools/validate_image.py
-          sed -i 's/G30D-FO76-PUSHSTART-R3I9/G30D-R3I18B-STOCK-DASH-VERIFIED/g' tools/validate_image.py
+          sed -i 's/FO76_PUSHSTART_R3I9/R3I18C_DASH_HEARTBEAT_ACK/g' tools/build_native.py tools/validate_image.py
+          sed -i 's/G30D-FO76-PUSHSTART-R3I9/G30D-R3I18C-DASH-HEARTBEAT-ACK/g' tools/validate_image.py
           mkdir -p OUTPUT
           python3 tools/build_native.py | tee OUTPUT/build.log
           python3 tools/validate_image.py | tee OUTPUT/validation.log
@@ -241,15 +246,21 @@ jobs:
           crc=(~sum(pkt[2:])) & 0xFFFF
           assert crc==0xFF3B, hex(crc)
           print('G30_DASH_CAPTURE_CRC=PASS')
+          # Stock bootstrap query: 5A A5 00 20 21 01 00 BD FF
+          q=[0x5A,0xA5,0x00,0x20,0x21,0x01,0x00]
+          qcrc=(~sum(q[2:])) & 0xFFFF
+          assert qcrc==0xFFBD, hex(qcrc)
+          print('G30_DASH_BOOTSTRAP_CRC=PASS')
           PY
-          BIN=OUTPUT/SmartESC_v2_G30D_R3I18B_STOCK_DASH_VERIFIED_STLINK_APP_0x08001000.bin
-          ELF=OUTPUT/SmartESC_v2_G30D_R3I18B_STOCK_DASH_VERIFIED.elf
+          BIN=OUTPUT/SmartESC_v2_G30D_R3I18C_DASH_HEARTBEAT_ACK_STLINK_APP_0x08001000.bin
+          ELF=OUTPUT/SmartESC_v2_G30D_R3I18C_DASH_HEARTBEAT_ACK.elf
           sha256sum "$BIN" > OUTPUT/SHA256_BIN.txt
           arm-none-eabi-size "$ELF" > OUTPUT/SIZE.txt
           arm-none-eabi-nm -S --size-sort "$ELF" | tail -40 > OUTPUT/LARGEST_SYMBOLS.txt
-          tar -czf OUTPUT/SOURCE_KOXX3_R3I18B_EXACT.tgz SOURCE_KOXX3
+          tar -czf OUTPUT/SOURCE_KOXX3_R3I18C_EXACT.tgz SOURCE_KOXX3
           cp ci/R3I18B_DASH_VERIFY_FROM_R3I18.patch OUTPUT/
-          python3 - <<'PY' | tee OUTPUT/R3I18B_STATIC_GATES.txt
+          cp ci/apply_r3i18c.py OUTPUT/
+          python3 - <<'PY' | tee OUTPUT/R3I18C_STATIC_GATES.txt
           from pathlib import Path
           sh=Path('SOURCE_KOXX3/common_files/src/g30_fo76_shadow.c').read_text()
           vs=Path('SOURCE_KOXX3/common_files/src/VescToSTM.c').read_text()
@@ -257,7 +268,7 @@ jobs:
           te=Path('SOURCE_KOXX3/common_files/src/terminal.c').read_text()
           de=Path('SOURCE_KOXX3/common_files/src/defines.h').read_text()
           gates={
-            'build_id':'G30D-R3I18B-STOCK-DASH-VERIFIED' in de,
+            'build_id':'G30D-R3I18C-DASH-HEARTBEAT-ACK' in de,
             'r3i12_catch_retained':'sensorless_catch_phase_q4=((int32_t)(uint16_t)obs_pred)<<4;' in sh and 'catch_phase=obs_pred;' in sh,
             'no_command_inversion':'erpm = -erpm;' not in vs,
             'speed_feedback_normalized':'(-(int32_t)odpp)' in mc,
@@ -304,31 +315,35 @@ jobs:
             'dash_cmd64_reply_only':'if(frame.cmd==0x64) g30_dash_send_status(port);' in Path('SOURCE_KOXX3/common_files/src/app_uartcomm.c').read_text(),
             'dash_cmd61_inert':'frame.cmd==0x61' not in Path('SOURCE_KOXX3/common_files/src/app_uartcomm.c').read_text(),
             'dash_brake_wins':'if(g30_brake>0.002f)' in Path('SOURCE_KOXX3/common_files/src/app_uartcomm.c').read_text() and 'VescToSTM_set_brake_current_rel(g30_brake);' in Path('SOURCE_KOXX3/common_files/src/app_uartcomm.c').read_text(),
+            'dash_heartbeat_reply':'CMD64 is the periodic heartbeat/status request' in Path('SOURCE_KOXX3/common_files/src/app_uartcomm.c').read_text() and 'g30_dash_send_status(port);' in Path('SOURCE_KOXX3/common_files/src/app_uartcomm.c').read_text(),
+            'dash_bootstrap_query':'g30_dash_send_meta_query' in Path('SOURCE_KOXX3/common_files/src/app_uartcomm.c').read_text() and '0x20,0x21,0x01,0x00' in Path('SOURCE_KOXX3/common_files/src/app_uartcomm.c').read_text(),
+            'dash_metadata_ack':'frame.cmd==0x04 && frame.len==13u' in Path('SOURCE_KOXX3/common_files/src/app_uartcomm.c').read_text(),
+            'dash_bootstrap_rate_limit':'pdMS_TO_TICKS(1000)' in Path('SOURCE_KOXX3/common_files/src/app_uartcomm.c').read_text(),
           }
           for k,v in gates.items(): print(f'{k}={int(v)}')
           assert all(gates.values()), gates
-          print('R3I18B_STATIC_GATES=PASS')
+          print('R3I18C_STATIC_GATES=PASS')
           PY
 
-      - name: Upload R3I18B candidate
+      - name: Upload R3I18C candidate
         uses: actions/upload-artifact@v4
         with:
-          name: G30D_R3I18B_STOCK_DASH_VERIFIED_COMPILED
+          name: G30D_R3I18C_DASH_HEARTBEAT_ACK_COMPILED
           if-no-files-found: error
           retention-days: 7
           path: |
-            OUTPUT/SmartESC_v2_G30D_R3I18B_STOCK_DASH_VERIFIED.elf
-            OUTPUT/SmartESC_v2_G30D_R3I18B_STOCK_DASH_VERIFIED.map
-            OUTPUT/SmartESC_v2_G30D_R3I18B_STOCK_DASH_VERIFIED_STLINK_APP_0x08001000.bin
-            OUTPUT/SmartESC_v2_G30D_R3I18B_STOCK_DASH_VERIFIED_STLINK_APP_0x08001000.hex
+            OUTPUT/SmartESC_v2_G30D_R3I18C_DASH_HEARTBEAT_ACK.elf
+            OUTPUT/SmartESC_v2_G30D_R3I18C_DASH_HEARTBEAT_ACK.map
+            OUTPUT/SmartESC_v2_G30D_R3I18C_DASH_HEARTBEAT_ACK_STLINK_APP_0x08001000.bin
+            OUTPUT/SmartESC_v2_G30D_R3I18C_DASH_HEARTBEAT_ACK_STLINK_APP_0x08001000.hex
             OUTPUT/VERIFICATION.json
             OUTPUT/SHA256_BIN.txt
             OUTPUT/SIZE.txt
             OUTPUT/LARGEST_SYMBOLS.txt
-            OUTPUT/SOURCE_KOXX3_R3I18B_EXACT.tgz
+            OUTPUT/SOURCE_KOXX3_R3I18C_EXACT.tgz
             OUTPUT/APPLY_R3I14_EXACT.py
-            OUTPUT/R3I18B_BUILD_WORKFLOW.yml
-            OUTPUT/R3I18B_STATIC_GATES.txt
+            OUTPUT/R3I18C_BUILD_WORKFLOW.yml
+            OUTPUT/R3I18C_STATIC_GATES.txt
             ci/g30_r3i9_pushstart_test.py
             ci/01_AUTO_R3I14_TWO_PUSH_TEST.cmd
             OUTPUT/build.log
