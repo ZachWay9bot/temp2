@@ -106,7 +106,7 @@
  #endif
 --- a/common_files/src/g30_dash_drive_logic.h
 +++ b/common_files/src/g30_dash_drive_logic.h
-@@ -0,0 +1,95 @@
+@@ -0,0 +1,100 @@
 +/* G30 HF4 DASH R2 - pure input calibration and motor-request arbitration.
 + * No hardware access here; host-regression testable. */
 +#ifndef G30_DASH_DRIVE_LOGIC_H
@@ -157,6 +157,9 @@
 +                 brake <= G30_DASH_R2_INPUT_MAX;
 +    bool braking = fresh && brake >= G30_DASH_R2_BRAKE_BEGIN &&
 +                   brake <= G30_DASH_R2_INPUT_MAX;
++    /* The physical dashboard brake wins, including while VESC Tool owns drive.
++     * Generate ONE coast edge on brake engagement. Nonzero VESC commands
++     * themselves are also inhibited while this brake input is current. */
 +    if (braking) {
 +        bool need_coast = c->driving || (remote_busy && !c->brake_override);
 +        c->brake_override=1u;
@@ -172,6 +175,7 @@
 +    }
 +    bool neutral = valid && gas <= G30_DASH_R2_GAS_BEGIN &&
 +                   brake <= G30_DASH_R2_BRAKE_RELEASE;
++
 +    if(!valid || braking) {
 +        c->armed=0u;
 +        c->neutral_started=0u;
@@ -185,6 +189,7 @@
 +    } else {
 +        c->neutral_started=0u;
 +    }
++
 +    bool request=valid && c->armed && !braking && motor_ok &&
 +                 gas>G30_DASH_R2_GAS_BEGIN;
 +    if(!request) {
@@ -220,7 +225,7 @@
  #include "ninebot.h"
  #include "VescToSTM.h"
  #include "VescCommand.h"
-@@ -19,11 +21,60 @@
+@@ -19,11 +21,69 @@
      uint32_t tx_calls, tx_ok, tx_fail, rx_errors;
      uint16_t version;
      uint8_t gas, brake, init_result, rx_result, tx_result;
@@ -235,6 +240,8 @@
  static dash_link_state *dash;
  static uint32_t alloc_failed;
 +
++/* Called on legitimate IoT VESC motor-control packets, before their setter.
++ * The existing VESC command contents and motor setters are NOT changed. */
 +void g30_dash_link_vesc_claim(void) {
 +    dash_link_state *d=dash;
 +    if(!d) return;
@@ -244,6 +251,8 @@
 +    d->remote_claims++;
 +}
 +
++/* Called only by the IoT VESC command dispatcher. Dashboard input is
++ * fresh/CRC-validated before a brake is permitted to inhibit motor commands. */
 +bool g30_dash_link_brake_active(void) {
 +    dash_link_state *d=dash;
 +    if (!d || !d->input_seen) return false;
@@ -253,6 +262,7 @@
 +           d->brake<=G30_DASH_R2_INPUT_MAX;
 +}
 +
++/* One consumer: DASH task. No second motor-control task is created. */
 +static void handle_control(dash_link_state *d) {
 +    uint32_t now=HAL_GetTick();
 +    bool fresh=d->input_seen &&
@@ -260,16 +270,20 @@
 +    bool remote_busy=d->remote_claimed &&
 +        (uint32_t)(now-d->last_remote_ms) < G30_DASH_R2_VESC_HOLD_MS;
 +    if(!remote_busy) d->remote_claimed=0u;
++    /* Undervoltage/MCSDK faults block any torque while on 5V logic alone. */
 +    bool ready=g30_runtime_ready && !app_is_output_disabled() &&
 +        VescToSTM_get_fault()==FAULT_CODE_NONE &&
 +        VescToSTM_get_bus_voltage()>=18.0f;
 +    g30_dash_r2_action action=g30_dash_r2_step(&d->control,now,
 +        d->gas,d->brake,fresh,remote_busy,ready);
 +    if(action==G30_DASH_R2_COAST) {
++        /* Existing HF4 brake implementation is true coast, never regen. */
 +        VescToSTM_set_brake(0);
 +        VescToSTM_g30_pushstart_command(false);
 +        d->coast_commands++;
 +    } else if(action==G30_DASH_R2_DRIVE) {
++        /* A valid neutral-to-throttle transition arms the ORIGINAL
++         * >=3 km/h sensorless push-start. Not a stationary start path. */
 +        uint16_t torque=g30_dash_r2_scale(d->gas);
 +        if(!torque) return;
 +        VescToSTM_g30_pushstart_command(true);
@@ -323,7 +337,7 @@
          (unsigned long)u->Instance->SR,(unsigned long)u->Instance->CR1,(unsigned long)u->Instance->CR3,
 --- a/common_files/src/g30_dash_link.h
 +++ b/common_files/src/g30_dash_link.h
-@@ -1,7 +1,10 @@
+@@ -1,6 +1,9 @@
  #ifndef G30_DASH_LINK_H
  #define G30_DASH_LINK_H
 +#include <stdbool.h>
