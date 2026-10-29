@@ -1,0 +1,198 @@
+diff --git a/common_files/src/VescToSTM.c b/common_files/src/VescToSTM.c
+index 77a70c6..98cff40 100644
+--- a/common_files/src/VescToSTM.c
++++ b/common_files/src/VescToSTM.c
+@@ -338,6 +338,10 @@ void VescToSTM_enable_timeout(bool enbale){
+ 
+ 
+ #ifdef G30P
++bool VescToSTM_g30_sensorless_selected(void){
++    return mc_conf.foc_sensor_mode == FOC_SENSOR_MODE_SENSORLESS;
++}
++
+ static void VescToSTM_g30_coast_rearm(void){
+     g30_r3i_set_drive_request(0u);
+     /* HF2: electrical coast must happen BEFORE observer/takeover state is
+@@ -347,6 +351,16 @@ static void VescToSTM_g30_coast_rearm(void){
+     VescToSTM_pwm_stop();
+ 
+     g30_r3i_diag_t ps=g30_r3i_get_diag();
++    if(!VescToSTM_g30_sensorless_selected()){
++        /* R3I16: Hall mode is the established zero-speed MCSDK/Hall path.
++         * Zero command means electrical Coast, but it must never arm the
++         * Hall-free pushstart state machine. */
++        g30_fo76_sensorless_clear();
++        g30_fo76_request_takeover(0u);
++        g30_r3i_request_arm(0u);
++        SpeednTorqCtrlM1.PISpeed->wIntegralTerm=0;
++        return;
++    }
+     if(ps.mode==1u){
+         /* VESC Tool repeats zero commands while the key is released. Do not
+          * reset passive BEMF acquisition on every packet. */
+@@ -369,6 +383,16 @@ void VescToSTM_g30_pushstart_command(bool active){
+         return;
+     }
+ 
++    if(!VescToSTM_g30_sensorless_selected()){
++        /* R3I16 Hall mode: leave the proven Hall startup path completely
++         * alone. The following VESC setter will start PWM from zero speed. */
++        g30_r3i_set_drive_request(0u);
++        g30_r3i_request_arm(0u);
++        g30_fo76_sensorless_clear();
++        g30_fo76_request_takeover(0u);
++        return;
++    }
++
+     /* R3I15: the R3I14 hardware test armed pushstart through the terminal
+      * before sending COMM_SET_RPM. VESC Tool does not send that terminal
+      * command. Arm exactly once on the first non-zero VESC drive request.
+diff --git a/common_files/src/VescToSTM.h b/common_files/src/VescToSTM.h
+index f01f216..b504b10 100644
+--- a/common_files/src/VescToSTM.h
++++ b/common_files/src/VescToSTM.h
+@@ -50,6 +50,7 @@ int16_t VescToSTM_Iq_lim_hook(int16_t iq);
+ void VescToSTM_pwm_stop(void);
+ #ifdef G30P
+ void VescToSTM_g30_pushstart_command(bool active);
++bool VescToSTM_g30_sensorless_selected(void);
+ #endif
+ void VescToSTM_pwm_start(void);
+ void VescToSTM_prepare_sensorless_start(void);
+diff --git a/common_files/src/conf_general.c b/common_files/src/conf_general.c
+index 4d199bc..0dd0db4 100644
+--- a/common_files/src/conf_general.c
++++ b/common_files/src/conf_general.c
+@@ -39,6 +39,7 @@
+ #include <string.h>
+ #include "main.h"
+ #include "g30_fo76_shadow.h"
++#include "g30_r3i_pushstart.h"
+ 
+ mc_configuration mc_conf;
+ app_configuration appconf;
+@@ -446,9 +447,21 @@ void conf_general_setup_mc(mc_configuration *mcconf) {
+ 
+ 	// BLDC switching and drive
+ 	mcconf->motor_type = MOTOR_TYPE_FOC;
++	/* R3I16: MCSDK keeps the Hall handle as the common speed/angle carrier,
++	 * but VESC foc_sensor_mode is now authoritative for the G30 runtime path.
++	 * Only the two hardware-validated modes are accepted. */
++	if(mcconf->foc_sensor_mode != FOC_SENSOR_MODE_HALL &&
++	   mcconf->foc_sensor_mode != FOC_SENSOR_MODE_SENSORLESS){
++		mcconf->foc_sensor_mode = FOC_SENSOR_MODE_HALL;
++	}
+ 	mcconf->sensor_mode = SENSOR_MODE_SENSORED;
+ 	mcconf->pwm_mode = PWM_MODE_SYNCHRONOUS;
+-	mcconf->foc_sensor_mode = FOC_SENSOR_MODE_HALL;
++
++	/* A configuration change must not inherit an old observer/pushstart state. */
++	g30_r3i_set_drive_request(0u);
++	g30_r3i_request_arm(0u);
++	g30_fo76_sensorless_clear();
++	g30_fo76_request_takeover(0u);
+ 
+ 	HALL_Init(&HALL_M1);
+ 
+@@ -508,7 +521,12 @@ int conf_general_detect_apply_all_foc(float max_power_loss,	bool store_mcconf_on
+ 	*mcconf_old = *mcconf;
+ 
+ 	mcconf->motor_type = MOTOR_TYPE_FOC;
+-	mcconf->foc_sensor_mode = FOC_SENSOR_MODE_HALL;
++	/* R3I16: preserve the user-selected Hall/Sensorless mode through detection. */
++	mc_foc_sensor_mode selected_sensor_mode = mcconf->foc_sensor_mode;
++	if(selected_sensor_mode != FOC_SENSOR_MODE_HALL && selected_sensor_mode != FOC_SENSOR_MODE_SENSORLESS){
++		selected_sensor_mode = FOC_SENSOR_MODE_HALL;
++	}
++	mcconf->foc_sensor_mode = selected_sensor_mode;
+ 	mcconf->foc_f_sw = 16000.0;
+ 	mcconf->foc_current_kp = 0.0005;
+ 	mcconf->foc_current_ki = 1.0;
+diff --git a/common_files/src/defines.h b/common_files/src/defines.h
+index b0b102c..c9f9938 100644
+--- a/common_files/src/defines.h
++++ b/common_files/src/defines.h
+@@ -2,7 +2,7 @@
+ #define DEFINES_H_
+ 
+ #ifdef G30P
+-#define HW_NAME "G30D-FO76-PUSHSTART-R3I15HF4"
++#define HW_NAME "G30D-R3I16-MODE-SELECT"
+ #else
+ #define HW_NAME "40"
+ #endif
+diff --git a/common_files/src/mc_tasks.c b/common_files/src/mc_tasks.c
+index 034302b..c11c619 100644
+--- a/common_files/src/mc_tasks.c
++++ b/common_files/src/mc_tasks.c
+@@ -363,7 +363,7 @@ __weak void TSK_MediumFrequencyTaskM1(void)
+   bool IsSpeedReliable;
+ #ifdef G30P
+   g30_r3i_diag_t r3i_diag=g30_r3i_get_diag();
+-  if(g30_fo76_sensorless_active()){
++  if(VescToSTM_g30_sensorless_selected() && g30_fo76_sensorless_active()){
+     int16_t odpp=g30_fo76_control_speed_dpp();
+     /* R3I14: validated physical FWD observer rotation is negative DPP, while
+      * VESC uses positive ERPM for FWD. Keep electrical angle/speed DPP in the
+@@ -375,7 +375,7 @@ __weak void TSK_MediumFrequencyTaskM1(void)
+     HALL_M1.AvrElSpeedDpp=odpp;
+     HALL_M1._Super.hAvrMecSpeedUnit=wAux;
+     IsSpeedReliable=true;
+-  }else if(r3i_diag.mode==1u){
++  }else if(VescToSTM_g30_sensorless_selected() && r3i_diag.mode==1u){
+     /* HF1: while waiting for the Hall-free pushstart, do not let missing/floating
+      * Hall inputs trip MC_SPEED_FDBK. Use passive BEMF speed when available. */
+     int16_t bdpp=g30_r3i_speed_dpp();
+@@ -395,7 +395,7 @@ __weak void TSK_MediumFrequencyTaskM1(void)
+   StateM1 = STM_GetState( &STM[M1] );
+ 
+ #ifdef G30P
+-  if(g30_r3i_start_pending() && StateM1==RUN)
++  if(VescToSTM_g30_sensorless_selected() && g30_r3i_start_pending() && StateM1==RUN)
+   {
+     /* R3I10: pwm_start initializes the current controllers once, inside its
+      * PWM-off guard. Repeated requests during RUN cannot re-preload them. */
+@@ -443,7 +443,7 @@ __weak void TSK_MediumFrequencyTaskM1(void)
+       FOC_Clear( M1 );
+ 
+ #ifdef G30P
+-      if(g30_fo76_sensorless_active()) VescToSTM_prepare_sensorless_start();
++      if(VescToSTM_g30_sensorless_selected() && g30_fo76_sensorless_active()) VescToSTM_prepare_sensorless_start();
+ #endif
+       R3_2_SwitchOnPWM( pwmcHandle[M1] );
+     }
+@@ -476,7 +476,7 @@ __weak void TSK_MediumFrequencyTaskM1(void)
+ #ifdef G30P
+     /* R3H: observer-only exit is Coast. Use the normal motor state machine
+      * stop path instead of switching the FOC angle back to Hall. */
+-    if(g30_fo76_coast_requested())
++    if(VescToSTM_g30_sensorless_selected() && g30_fo76_coast_requested())
+     {
+       (void)MCI_StopMotor( pMCI[M1] );
+       break;
+@@ -745,7 +745,7 @@ __weak uint8_t TSK_HighFrequencyTask(void)
+ 	uint16_t hFOCreturn;
+ 
+ #ifdef G30P
+-    if(!g30_fo76_sensorless_active()) HALL_CalcElAngle (&HALL_M1);
++    if(!VescToSTM_g30_sensorless_selected() || !g30_fo76_sensorless_active()) HALL_CalcElAngle (&HALL_M1);
+ #else
+     HALL_CalcElAngle (&HALL_M1);
+ #endif
+@@ -855,14 +855,14 @@ inline uint16_t FOC_CurrControllerM1(void)
+   /* R3G2: Hall implementation updates hElSpeedDpp, but does not populate
+    * InstantaneousElSpeedDpp in this MCSDK tree. Use the same valid Hall speed
+    * source that the FO76 observer already consumes. */
+-  hElSpeedDpp = g30_fo76_sensorless_active()?g30_fo76_control_speed_dpp():SPD_GetElSpeedDpp(speedHandle);
++  hElSpeedDpp = (VescToSTM_g30_sensorless_selected() && g30_fo76_sensorless_active())?g30_fo76_control_speed_dpp():SPD_GetElSpeedDpp(speedHandle);
+ #else
+   hElSpeedDpp = SPD_GetInstElSpeedDpp(speedHandle);
+ #endif
+ #ifdef G30P
+   /* R3G: Hall is still the default. This fast selector can return the
+    * predicted observer angle only after an explicit, validated takeover. */
+-  hElAngle = (int16_t)g30_fo76_control_angle(hElAngle, hElSpeedDpp);
++  if(VescToSTM_g30_sensorless_selected()) hElAngle = (int16_t)g30_fo76_control_angle(hElAngle, hElSpeedDpp);
+ #endif
+   PWMC_GetPhaseCurrents(pwmcHandle[M1], &Iab);
+   Ialphabeta = MCM_Clarke(Iab);
