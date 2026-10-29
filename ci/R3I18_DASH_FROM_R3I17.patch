@@ -52,7 +52,7 @@ diff --git a/common_files/src/app_uartcomm.c b/common_files/src/app_uartcomm.c
  void task_app(void * argument)
  {
  	uint32_t rd_ptr=0;
-@@ -306,7 +329,20 @@
+@@ -306,7 +329,21 @@
  	{
  		while(rd_ptr != uart_get_write_pos(port)) {
  			if(ninebot_parse(usart_rx_dma_buffer[rd_ptr] ,&frame)	==0){
