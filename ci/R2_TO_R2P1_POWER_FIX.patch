@@ -8,6 +8,8 @@
 + * Keep the legacy M365 implementation completely unchanged. */
 +#ifdef G30P
 +uint8_t buttonState() {
++    /* The old timestamp was automatic storage and was reset on every call,
++     * which made the 20 ms debounce condition impossible to satisfy. */
 +    static uint8_t initialized, stable, candidate;
 +    static uint32_t candidate_since;
 +    uint32_t now = HAL_GetTick();
@@ -27,6 +29,8 @@
 +}
 +
 +eButtonEvent getButtonEvent() {
++    /* 300 ms was incorrectly treated as LONG_PRESS in R1/R2. A perfectly
++     * ordinary click was therefore turning the controller off. */
 +    static uint8_t pressed, single_pending;
 +    static uint32_t pressed_at, released_at;
 +    uint32_t now = HAL_GetTick();
