@@ -291,6 +291,8 @@ jobs:
             'dash_brake_throttle':'adc1=frame.payload[1];' in Path('SOURCE_KOXX3/common_files/src/app_uartcomm.c').read_text() and 'adc2=frame.payload[2];' in Path('SOURCE_KOXX3/common_files/src/app_uartcomm.c').read_text(),
             'dash_mode_mirror':'m365_to_display.mode=frame.payload[0];' in Path('SOURCE_KOXX3/common_files/src/app_uartcomm.c').read_text(),
             'dash_always_on_g30':'task_app_init(&aux_uart);' in Path('SOURCE_KOXX3/common_files/src/app.c').read_text() and 'VESC Tool uses USART1' in Path('SOURCE_KOXX3/common_files/src/app.c').read_text(),
+            'dash_uses_auto_arm':'VescToSTM_g30_pushstart_command(true);' in Path('SOURCE_KOXX3/common_files/src/app_uartcomm.c').read_text() and 'VescToSTM_g30_pushstart_command(false);' in Path('SOURCE_KOXX3/common_files/src/app_uartcomm.c').read_text(),
+            'dash_brake_wins':'if(brake>0.0f)' in Path('SOURCE_KOXX3/common_files/src/app_uartcomm.c').read_text(),
           }
           for k,v in gates.items(): print(f'{k}={int(v)}')
           assert all(gates.values()), gates
