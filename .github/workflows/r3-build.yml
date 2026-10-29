@@ -1,8 +1,9 @@
-name: HF4 native dashboard link R1 - raw inputs only
+name: HF4 dashboard drive R2P1 - flashable build
 on:
   push:
     branches:
       - r3i15hf4-dash-link-r1-20261029
+      - hf4-dash-r2p1-build
   workflow_dispatch:
 
 jobs:
@@ -198,6 +199,22 @@ jobs:
           cc -std=c11 -Wall -Wextra -Werror -fsanitize=address,undefined -fno-omit-frame-pointer -Ici/hf4_dash_link_r1 ci/hf4_dash_link_r1/test_hf4_dash_proto.c -o /tmp/hf4_dash_proto_test
           ASAN_OPTIONS=detect_leaks=0 /tmp/hf4_dash_proto_test | tee OUTPUT/DASH_R1_HOST_TESTS.txt
 
+      - name: Apply HF4 dashboard drive R2 and G30 power-button fix
+        shell: bash
+        run: |
+          set -euo pipefail
+          patch -d SOURCE_KOXX3 -p1 --dry-run < ci/HF4_DASH_R2_FROM_R1.patch
+          patch -d SOURCE_KOXX3 -p1 < ci/HF4_DASH_R2_FROM_R1.patch
+          patch -d SOURCE_KOXX3 -p1 --dry-run < ci/R2_TO_R2P1_POWER_FIX.patch
+          patch -d SOURCE_KOXX3 -p1 < ci/R2_TO_R2P1_POWER_FIX.patch
+          grep -q 'G30D-HF4-DASH-LINK-R2P1' SOURCE_KOXX3/common_files/src/defines.h
+          grep -q 'G30_DASH_R2_GAS_IDLE       67u' SOURCE_KOXX3/common_files/src/g30_dash_drive_logic.h
+          grep -q 'held_ms >= 2500u' SOURCE_KOXX3/common_files/src/task_pwr.c
+          cc -std=c11 -Wall -Wextra -Werror -I SOURCE_KOXX3/common_files/src ci/test_hf4_dash_r2.c -o /tmp/hf4_dash_r2_test
+          /tmp/hf4_dash_r2_test | tee OUTPUT/DASH_R2_HOST_TESTS.txt
+          cc -std=c11 -Wall -Wextra -Werror ci/test_exact_g30_power_button.c -o /tmp/hf4_power_test
+          for c in single longish 2500 double bounce 5sec; do /tmp/hf4_power_test "$c"; done | tee OUTPUT/POWER_BUTTON_HOST_TESTS.txt
+
       - name: Install ARM GNU GCC 13.2.1
         shell: bash
         run: |
@@ -211,22 +228,33 @@ jobs:
           tar -xzf "$FILE"
           echo "/tmp/xpack-arm-none-eabi-gcc-13.2.1-1.1/bin" >> "$GITHUB_PATH"
 
-      - name: Compile and validate HF4 dashboard link R1
+      - name: Compile and validate HF4 dashboard link R2P1
         shell: bash
         run: |
           set -euo pipefail
           arm-none-eabi-gcc --version
-          sed -i 's/FO76_PUSHSTART_R3I9/HF4_DASH_LINK_R1/g' tools/build_native.py tools/validate_image.py
-          sed -i 's/G30D-FO76-PUSHSTART-R3I9/G30D-HF4-DASH-LINK-R1/g' tools/validate_image.py
+          sed -i 's/FO76_PUSHSTART_R3I9/HF4_DASH_LINK_R2P1/g' tools/build_native.py tools/validate_image.py
+          sed -i 's/G30D-FO76-PUSHSTART-R3I9/G30D-HF4-DASH-LINK-R2P1/g' tools/validate_image.py
           mkdir -p OUTPUT
           python3 tools/build_native.py | tee OUTPUT/build.log
           python3 tools/validate_image.py | tee OUTPUT/validation.log
-          BIN=OUTPUT/SmartESC_v2_G30D_HF4_DASH_LINK_R1_STLINK_APP_0x08001000.bin
-          ELF=OUTPUT/SmartESC_v2_G30D_HF4_DASH_LINK_R1.elf
+          BIN=OUTPUT/SmartESC_v2_G30D_HF4_DASH_LINK_R2P1_STLINK_APP_0x08001000.bin
+          ELF=OUTPUT/SmartESC_v2_G30D_HF4_DASH_LINK_R2P1.elf
           sha256sum "$BIN" > OUTPUT/SHA256_BIN.txt
           arm-none-eabi-size "$ELF" > OUTPUT/SIZE.txt
+          python3 - <<'PY'
+          from pathlib import Path
+          parts=Path('OUTPUT/SIZE.txt').read_text().splitlines()[-1].split()
+          text,data,bss=map(int,parts[:3])
+          ram=data+bss
+          flash=text+data
+          print(f'R2P1_FLASH={flash} R2P1_RAM={ram}')
+          assert ram <= 20480, f'RAM overflow: {ram} > 20480'
+          assert flash <= 126976, f'APP flash overflow: {flash} > 126976'
+          Path('OUTPUT/MEMORY_GATE.txt').write_text(f'FLASH={flash}/126976\nRAM={ram}/20480\nPASS\n')
+          PY
           arm-none-eabi-nm -S --size-sort "$ELF" | tail -40 > OUTPUT/LARGEST_SYMBOLS.txt
-          tar --exclude='SOURCE_KOXX3/.git' -czf OUTPUT/SOURCE_KOXX3_HF4_DASH_LINK_R1_EXACT.tgz SOURCE_KOXX3
+          tar --exclude='SOURCE_KOXX3/.git' -czf OUTPUT/SOURCE_KOXX3_HF4_DASH_LINK_R2P1_EXACT.tgz SOURCE_KOXX3
           cp ci/R3I15HF4_FROM_R3I15HF3.patch OUTPUT/
           python3 - <<'PY' | tee OUTPUT/R3I15HF4_STATIC_GATES.txt
           from pathlib import Path
@@ -236,7 +264,7 @@ jobs:
           te=Path('SOURCE_KOXX3/common_files/src/terminal.c').read_text()
           de=Path('SOURCE_KOXX3/common_files/src/defines.h').read_text()
           gates={
-            'build_id':'G30D-HF4-DASH-LINK-R1' in de,
+            'build_id':'G30D-HF4-DASH-LINK-R2P1' in de,
             'r3i12_catch_retained':'sensorless_catch_phase_q4=((int32_t)(uint16_t)obs_pred)<<4;' in sh and 'catch_phase=obs_pred;' in sh,
             'no_command_inversion':'erpm = -erpm;' not in vs,
             'speed_feedback_normalized':'(-(int32_t)odpp)' in mc,
@@ -267,22 +295,23 @@ jobs:
           print('R3I15HF4_STATIC_GATES=PASS')
           PY
 
-      - name: Upload telemetry-only HF4 dashboard link R1 candidate
+      - name: Upload flashable HF4 dashboard drive R2P1 candidate
         uses: actions/upload-artifact@v4
         with:
-          name: G30D_HF4_DASH_LINK_R1_COMPILED
+          name: G30D_HF4_DASH_LINK_R2P1_COMPILED
           if-no-files-found: error
           retention-days: 7
           path: |
-            OUTPUT/SmartESC_v2_G30D_HF4_DASH_LINK_R1.elf
-            OUTPUT/SmartESC_v2_G30D_HF4_DASH_LINK_R1.map
-            OUTPUT/SmartESC_v2_G30D_HF4_DASH_LINK_R1_STLINK_APP_0x08001000.bin
-            OUTPUT/SmartESC_v2_G30D_HF4_DASH_LINK_R1_STLINK_APP_0x08001000.hex
+            OUTPUT/SmartESC_v2_G30D_HF4_DASH_LINK_R2P1.elf
+            OUTPUT/SmartESC_v2_G30D_HF4_DASH_LINK_R2P1.map
+            OUTPUT/SmartESC_v2_G30D_HF4_DASH_LINK_R2P1_STLINK_APP_0x08001000.bin
+            OUTPUT/SmartESC_v2_G30D_HF4_DASH_LINK_R2P1_STLINK_APP_0x08001000.hex
             OUTPUT/VERIFICATION.json
             OUTPUT/SHA256_BIN.txt
             OUTPUT/SIZE.txt
+            OUTPUT/MEMORY_GATE.txt
             OUTPUT/LARGEST_SYMBOLS.txt
-            OUTPUT/SOURCE_KOXX3_HF4_DASH_LINK_R1_EXACT.tgz
+            OUTPUT/SOURCE_KOXX3_HF4_DASH_LINK_R2P1_EXACT.tgz
             OUTPUT/APPLY_R3I14_EXACT.py
             OUTPUT/R3I15HF4_BUILD_WORKFLOW.yml
             OUTPUT/R3I15HF4_STATIC_GATES.txt
@@ -293,8 +322,10 @@ jobs:
             OUTPUT/validation.log
 
             OUTPUT/DASH_R1_CHANGE_AUDIT.json
-            OUTPUT/HF4_DASH_LINK_R1_FROM_FROZEN_HF4.patch
+            OUTPUT/HF4_DASH_LINK_R2P1_FROM_FROZEN_HF4.patch
             OUTPUT/DASH_R1_HOST_TESTS.txt
+            OUTPUT/DASH_R2_HOST_TESTS.txt
+            OUTPUT/POWER_BUTTON_HOST_TESTS.txt
             OUTPUT/build.log
             OUTPUT/compile.log
             OUTPUT/validation.log
