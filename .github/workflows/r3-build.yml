@@ -207,7 +207,7 @@ jobs:
           grep -q 'g30_dash_send_status' SOURCE_KOXX3/common_files/src/app_uartcomm.c
           patch -d SOURCE_KOXX3 -p1 --dry-run < ci/R3I18B_DASH_VERIFY_FROM_R3I18.patch
           patch -d SOURCE_KOXX3 -p1 < ci/R3I18B_DASH_VERIFY_FROM_R3I18.patch
-          grep -q 'G30D-R3I19-STOCK-DASH-FINAL' SOURCE_KOXX3/common_files/src/defines.h
+          grep -q 'G30D-R3I18B-STOCK-DASH-VERIFIED' SOURCE_KOXX3/common_files/src/defines.h
           grep -q 'frame.cmd==0x64 || frame.cmd==0x65' SOURCE_KOXX3/common_files/src/app_uartcomm.c
           grep -q '197.0f-40.0f' SOURCE_KOXX3/common_files/src/app_uartcomm.c
           grep -q '181.0f-41.0f' SOURCE_KOXX3/common_files/src/app_uartcomm.c
