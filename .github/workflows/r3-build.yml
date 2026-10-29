@@ -260,7 +260,7 @@ jobs:
             'fallback_returns_armed':'g30_fo76_sensorless_clear();' in vs and 'g30_r3i_request_arm(1u);' in vs,
             'mode_selector_present':'VescToSTM_g30_sensorless_selected' in vs,
             'hall_does_not_arm':'if(!VescToSTM_g30_sensorless_selected())' in vs and 'g30_r3i_request_arm(0u);' in vs,
-            'mcconf_preserves_selector':'mcconf->foc_sensor_mode = FOC_SENSOR_MODE_HALL;' not in Path('SOURCE_KOXX3/common_files/src/conf_general.c').read_text()[Path('SOURCE_KOXX3/common_files/src/conf_general.c').read_text().index('// BLDC switching and drive'):Path('SOURCE_KOXX3/common_files/src/conf_general.c').read_text().index('HALL_Init(&HALL_M1)')],
+            'mcconf_preserves_selector':'mcconf->foc_sensor_mode != FOC_SENSOR_MODE_HALL' in Path('SOURCE_KOXX3/common_files/src/conf_general.c').read_text() and 'mcconf->pwm_mode = PWM_MODE_SYNCHRONOUS;\n\tmcconf->foc_sensor_mode = FOC_SENSOR_MODE_HALL;' not in Path('SOURCE_KOXX3/common_files/src/conf_general.c').read_text(),
             'hall_hf_path_gated':'!VescToSTM_g30_sensorless_selected() || !g30_fo76_sensorless_active()' in mc,
           }
           for k,v in gates.items(): print(f'{k}={int(v)}')
