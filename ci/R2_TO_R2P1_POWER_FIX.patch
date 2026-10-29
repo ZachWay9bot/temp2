@@ -1,0 +1,81 @@
+--- a/common_files/src/task_pwr.c
++++ b/common_files/src/task_pwr.c
+@@ -43,6 +43,64 @@
+ //extern const uint8_t m365_mode[3];
+ uint32_t shutdown_limit = 0;
+ 
++/* G30D: a normal dashboard-button press must never count as power-off. 
++ * Keep the legacy M365 implementation completely unchanged. */
++#ifdef G30P
++uint8_t buttonState() {
++    static uint8_t initialized, stable, candidate;
++    static uint32_t candidate_since;
++    uint32_t now = HAL_GetTick();
++    uint8_t raw = (HAL_GPIO_ReadPin(PWR_BTN_GPIO_Port, PWR_BTN_Pin) == GPIO_PIN_SET);
++    if(!initialized) {
++        initialized = 1u;
++        stable = candidate = raw;
++        candidate_since = now;
++    }
++    if(raw != candidate) {
++        candidate = raw;
++        candidate_since = now;
++    }
++    if(candidate != stable && (uint32_t)(now - candidate_since) >= 30u)
++        stable = candidate;
++    return stable;
++}
++
++eButtonEvent getButtonEvent() {
++    static uint8_t pressed, single_pending;
++    static uint32_t pressed_at, released_at;
++    uint32_t now = HAL_GetTick();
++    uint8_t down = buttonState();
++    if(down && !pressed) {
++        pressed = 1u;
++        pressed_at = now;
++    } else if(!down && pressed) {
++        pressed = 0u;
++        uint32_t held_ms = (uint32_t)(now - pressed_at);
++        if(held_ms >= 2500u) {
++            single_pending = 0u;
++            return LONG_PRESS;
++        }
++        if(held_ms >= 30u) {
++            if(single_pending && (uint32_t)(now - released_at) <= 250u) {
++                single_pending = 0u;
++                return DOUBLE_PRESS;
++            }
++            single_pending = 1u;
++            released_at = now;
++        }
++    }
++    if(!pressed && single_pending && (uint32_t)(now - released_at) > 250u) {
++        single_pending = 0u;
++        return SINGLE_PRESS;
++    }
++    return NO_PRESS;
++}
++#else
+ uint8_t buttonState() {
+     static const uint32_t DEBOUNCE_MILLIS = 20 ;
+     bool buttonstate = HAL_GPIO_ReadPin( PWR_BTN_GPIO_Port, PWR_BTN_Pin ) == GPIO_PIN_SET ;
+@@ -104,6 +162,7 @@
+ 
+     return button_event ;
+ }
++#endif /* G30P */
+ 
+ void PWR_set_shutdown_time(uint32_t seconds){
+ 
+--- a/common_files/src/defines.h
++++ b/common_files/src/defines.h
+@@ -2,7 +2,7 @@
+ #define DEFINES_H_
+ 
+ #ifdef G30P
+-#define HW_NAME "G30D-HF4-DASH-LINK-R2"
++#define HW_NAME "G30D-HF4-DASH-LINK-R2P1"
+ #else
+ #define HW_NAME "40"
+ #endif
