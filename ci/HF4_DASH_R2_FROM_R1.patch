@@ -1,0 +1,335 @@
+--- a/common_files/src/VescCommand.c
++++ b/common_files/src/VescCommand.c
+@@ -41,6 +41,9 @@
+ #include "product.h"
+ #include "app.h"
+ #include "ninebot.h"
++#ifdef G30P
++#include "g30_dash_link.h"
++#endif
+ 
+ 
+ static void(* volatile send_func)(unsigned char *data, unsigned int len, PACKET_STATE_t * phandle) = 0;
+@@ -411,6 +414,13 @@
+ 				int32_t ind = 0;
+ 				int32_t raw = buffer_get_int32(data, &ind);
+ #ifdef G30P
++				g30_dash_link_vesc_claim();
++				if(g30_dash_link_brake_active()){
++					VescToSTM_g30_pushstart_command(false);
++					VescToSTM_set_brake(0);
++					VescToSTM_timeout_reset();
++					break;
++				}
+ 				VescToSTM_g30_pushstart_command(raw != 0);
+ 				if(raw == 0){ VescToSTM_timeout_reset(); break; }
+ #endif
+@@ -422,6 +432,13 @@
+ 				int32_t ind = 0;
+ 				int32_t raw = buffer_get_int32(data, &ind);
+ #ifdef G30P
++				g30_dash_link_vesc_claim();
++				if(g30_dash_link_brake_active()){
++					VescToSTM_g30_pushstart_command(false);
++					VescToSTM_set_brake(0);
++					VescToSTM_timeout_reset();
++					break;
++				}
+ 				VescToSTM_g30_pushstart_command(raw != 0);
+ 				if(raw == 0){ VescToSTM_timeout_reset(); break; }
+ #endif
+@@ -434,7 +451,9 @@
+ 				int32_t raw = buffer_get_int32(data, &ind);
+ #ifdef G30P
+ 				(void)raw;
++				g30_dash_link_vesc_claim();
+ 				VescToSTM_g30_pushstart_command(false);
++				VescToSTM_set_brake(0); /* Coast, never regenerative torque. */
+ #else
+ 				VescToSTM_set_brake(raw*-1);
+ #endif
+@@ -445,6 +464,13 @@
+ 				int32_t ind = 0;
+ 				int32_t raw = buffer_get_int32(data, &ind);
+ #ifdef G30P
++				g30_dash_link_vesc_claim();
++				if(g30_dash_link_brake_active()){
++					VescToSTM_g30_pushstart_command(false);
++					VescToSTM_set_brake(0);
++					VescToSTM_timeout_reset();
++					break;
++				}
+ 				VescToSTM_g30_pushstart_command(raw != 0);
+ 				if(raw == 0){ VescToSTM_timeout_reset(); break; }
+ #endif
+@@ -460,7 +486,14 @@
+ 
+ 			case COMM_SET_HANDBRAKE: {
+ 				int32_t ind = 0;
++#ifdef G30P
++				(void)ind;
++				g30_dash_link_vesc_claim();
++				VescToSTM_g30_pushstart_command(false);
++				VescToSTM_set_brake(0); /* G30 brake is coast only. */
++#else
+ 				VescToSTM_set_handbrake(buffer_get_float32(data, 1e3, &ind));
++#endif
+ 				VescToSTM_timeout_reset();
+ 			} break;
+ 
+@@ -999,7 +1032,14 @@
+ 					int32_t ind = 0;
+ 					float val = buffer_get_float32(data, 1e5, &ind);
+ #ifdef G30P
+-					VescToSTM_g30_pushstart_command(val != 0.0f);
++					g30_dash_link_vesc_claim();
++				if(g30_dash_link_brake_active()){
++					VescToSTM_g30_pushstart_command(false);
++					VescToSTM_set_brake(0);
++					VescToSTM_timeout_reset();
++					break;
++				}
++				VescToSTM_g30_pushstart_command(val != 0.0f);
+ 					if(val == 0.0f){ VescToSTM_timeout_reset(); break; }
+ #endif
+ 					VescToSTM_set_current_rel(val);
+--- a/common_files/src/defines.h
++++ b/common_files/src/defines.h
+@@ -2,7 +2,7 @@
+ #define DEFINES_H_
+ 
+ #ifdef G30P
+-#define HW_NAME "G30D-HF4-DASH-LINK-R1"
++#define HW_NAME "G30D-HF4-DASH-LINK-R2"
+ #else
+ #define HW_NAME "40"
+ #endif
+--- a/common_files/src/g30_dash_drive_logic.h
++++ b/common_files/src/g30_dash_drive_logic.h
+@@ -0,0 +1,100 @@
++/* G30 HF4 DASH R2 - pure input calibration and motor-request arbitration.
++ * No hardware access here; host-regression testable. */
++#ifndef G30_DASH_DRIVE_LOGIC_H
++#define G30_DASH_DRIVE_LOGIC_H
++#include <stdint.h>
++#include <stdbool.h>
++
++#define G30_DASH_R2_GAS_IDLE       67u
++#define G30_DASH_R2_GAS_BEGIN      75u
++#define G30_DASH_R2_GAS_FULL      190u
++#define G30_DASH_R2_BRAKE_IDLE     34u
++#define G30_DASH_R2_BRAKE_BEGIN    45u
++#define G30_DASH_R2_BRAKE_RELEASE  40u
++#define G30_DASH_R2_INPUT_MAX    210u
++#define G30_DASH_R2_NEUTRAL_MS   200u
++#define G30_DASH_R2_STALE_MS     250u
++#define G30_DASH_R2_COMMAND_MS    40u
++#define G30_DASH_R2_VESC_HOLD_MS 1500u
++
++typedef enum {
++    G30_DASH_R2_NONE = 0,
++    G30_DASH_R2_DRIVE = 1,
++    G30_DASH_R2_COAST = 2
++} g30_dash_r2_action;
++typedef struct {
++    uint32_t neutral_since_ms, last_drive_ms;
++    uint8_t neutral_started, armed, driving, brake_override;
++} g30_dash_r2_control;
++
++static inline uint16_t g30_dash_r2_scale(uint8_t gas) {
++    if(gas <= G30_DASH_R2_GAS_BEGIN) return 0u;
++    if(gas >= G30_DASH_R2_GAS_FULL) return 32768u;
++    return (uint16_t)(((uint32_t)(gas-G30_DASH_R2_GAS_BEGIN)*32768u) /
++                 (G30_DASH_R2_GAS_FULL-G30_DASH_R2_GAS_BEGIN));
++}
++
++/* Remote VESC takes over without an intervening Dashboard COAST command. */
++static inline void g30_dash_r2_remote_claim(g30_dash_r2_control *c) {
++    c->driving=0u;
++    c->armed=0u;
++    c->neutral_started=0u;
++}
++
++static inline g30_dash_r2_action g30_dash_r2_step(g30_dash_r2_control *c,
++        uint32_t now_ms, uint8_t gas, uint8_t brake,
++        bool fresh, bool remote_busy, bool motor_ok) {
++    bool valid = fresh && gas <= G30_DASH_R2_INPUT_MAX &&
++                 brake <= G30_DASH_R2_INPUT_MAX;
++    bool braking = fresh && brake >= G30_DASH_R2_BRAKE_BEGIN &&
++                   brake <= G30_DASH_R2_INPUT_MAX;
++    if (braking) {
++        bool need_coast = c->driving || (remote_busy && !c->brake_override);
++        c->brake_override=1u;
++        c->driving=0u;
++        c->armed=0u;
++        c->neutral_started=0u;
++        return need_coast ? G30_DASH_R2_COAST : G30_DASH_R2_NONE;
++    }
++    c->brake_override=0u;
++    if(remote_busy) {
++        g30_dash_r2_remote_claim(c);
++        return G30_DASH_R2_NONE;
++    }
++    bool neutral = valid && gas <= G30_DASH_R2_GAS_BEGIN &&
++                   brake <= G30_DASH_R2_BRAKE_RELEASE;
++    if(!valid || braking) {
++        c->armed=0u;
++        c->neutral_started=0u;
++    } else if(neutral) {
++        if(!c->neutral_started) {
++            c->neutral_since_ms=now_ms;
++            c->neutral_started=1u;
++        } else if((uint32_t)(now_ms-c->neutral_since_ms)>=G30_DASH_R2_NEUTRAL_MS) {
++            c->armed=1u;
++        }
++    } else {
++        c->neutral_started=0u;
++    }
++    bool request=valid && c->armed && !braking && motor_ok &&
++                 gas>G30_DASH_R2_GAS_BEGIN;
++    if(!request) {
++        if(c->driving) {
++            c->driving=0u;
++            return G30_DASH_R2_COAST;
++        }
++        return G30_DASH_R2_NONE;
++    }
++    if(!c->driving || (uint32_t)(now_ms-c->last_drive_ms)>=G30_DASH_R2_COMMAND_MS) {
++        c->driving=1u;
++        c->last_drive_ms=now_ms;
++        return G30_DASH_R2_DRIVE;
++    }
++    return G30_DASH_R2_NONE;
++}
++#endif
+--- a/common_files/src/g30_dash_link.c
++++ b/common_files/src/g30_dash_link.c
+@@ -1,10 +1,12 @@
+-/* HF4 dashboard link R1: transport and raw input diagnosis only.
+- * No ADC override, motor setter, auto-arm, timeout reset, or flash command.
+- * USART1/VESC motor commands and the complete HF4 motor core are unchanged. */
++/* HF4 dashboard link R2: calibrated gas/brake through original HF4
++ * sensorless push-start and bounded VESC torque path, no FOC changes.
++ * Stock dashboard status/CRC/transport and IoT IAP are preserved. */
+ #include "main.h"
+ #include "task_init.h"
+ #include "g30_dash_link.h"
+ #include "g30_dash_proto.h"
++#include "g30_dash_drive_logic.h"
++#include "app.h"
+ #include "ninebot.h"
+ #include "VescToSTM.h"
+ #include "VescCommand.h"
+@@ -19,11 +21,69 @@
+     uint32_t tx_calls, tx_ok, tx_fail, rx_errors;
+     uint16_t version;
+     uint8_t gas, brake, init_result, rx_result, tx_result;
++    uint8_t input_seen;
++    volatile uint8_t remote_claimed;
++    volatile uint32_t last_remote_ms;
++    uint32_t last_input_ms, drive_commands, coast_commands, remote_claims;
++    g30_dash_r2_control control;
+ } dash_link_state;
+ /* SRAM footprint is allocated from the existing FreeRTOS heap, not carved
+  * out of the almost-full static data region. One UART owner, one task. */
+ static dash_link_state *dash;
+ static uint32_t alloc_failed;
++
++void g30_dash_link_vesc_claim(void) {
++    dash_link_state *d=dash;
++    if(!d) return;
++    d->last_remote_ms=HAL_GetTick();
++    d->remote_claimed=1u;
++    g30_dash_r2_remote_claim(&d->control);
++    d->remote_claims++;
++}
++
++bool g30_dash_link_brake_active(void) {
++    dash_link_state *d=dash;
++    if (!d || !d->input_seen) return false;
++    uint32_t now=HAL_GetTick();
++    return (uint32_t)(now-d->last_input_ms)<=G30_DASH_R2_STALE_MS &&
++           d->brake>=G30_DASH_R2_BRAKE_BEGIN &&
++           d->brake<=G30_DASH_R2_INPUT_MAX;
++}
++
++static void handle_control(dash_link_state *d) {
++    uint32_t now=HAL_GetTick();
++    bool fresh=d->input_seen &&
++        (uint32_t)(now-d->last_input_ms) <= G30_DASH_R2_STALE_MS;
++    bool remote_busy=d->remote_claimed &&
++        (uint32_t)(now-d->last_remote_ms) < G30_DASH_R2_VESC_HOLD_MS;
++    if(!remote_busy) d->remote_claimed=0u;
++    bool ready=g30_runtime_ready && !app_is_output_disabled() &&
++        VescToSTM_get_fault()==FAULT_CODE_NONE &&
++        VescToSTM_get_bus_voltage()>=18.0f;
++    g30_dash_r2_action action=g30_dash_r2_step(&d->control,now,
++        d->gas,d->brake,fresh,remote_busy,ready);
++    if(action==G30_DASH_R2_COAST) {
++        VescToSTM_set_brake(0);
++        VescToSTM_g30_pushstart_command(false);
++        d->coast_commands++;
++    } else if(action==G30_DASH_R2_DRIVE) {
++        uint16_t torque=g30_dash_r2_scale(d->gas);
++        if(!torque) return;
++        VescToSTM_g30_pushstart_command(true);
++        VescToSTM_set_current_rel_int((int32_t)torque);
++        VescToSTM_timeout_reset();
++        d->drive_commands++;
++    }
++}
+ 
+ static unsigned rx_pos(dash_link_state *d) {
+     return (128u-d->port->uart->hdmarx->Instance->CNDTR)&127u;
+@@ -82,6 +142,8 @@
+                 unsigned kind=g30_dash_input_kind(&d->parser);
+                 if(kind) {
+                     d->gas=d->parser.payload[1];d->brake=d->parser.payload[2];
++                    d->input_seen=1u;
++                    d->last_input_ms=HAL_GetTick();
+                     if(kind==64u) {
+                         d->cmd64++;reply_pending=1;
+                         if(d->parser.len>=7u)
+@@ -96,6 +158,7 @@
+             d->rx_errors++;
+             __HAL_UART_CLEAR_OREFLAG(u);
+         }
++        handle_control(d);
+         /* 1 tick (0.5 ms at the existing 2-kHz RTOS tick), rather than the old
+          * two 10-tick waits. Never send an unsolicited periodic status frame. */
+         vTaskDelay(1);
+@@ -115,12 +178,20 @@
+ 
+ void g30_dash_link_print(PACKET_STATE_t *phandle) {
+     dash_link_state *d=dash;
+-    if(!d){commands_printf(phandle,"HF4 DASH R1 readonly=1 task=0 allocFail=%lu",(unsigned long)alloc_failed);return;}
+-    commands_printf(phandle,"HF4 DASH R1 readonly=1 init=%u rxDMA=%u bytes=%lu valid=%lu bad=%lu",
++    if(!d){commands_printf(phandle,"HF4 DASH R2 drive=1 task=0 allocFail=%lu",(unsigned long)alloc_failed);return;}
++    commands_printf(phandle,"HF4 DASH R2 drive=1 init=%u rxDMA=%u bytes=%lu valid=%lu bad=%lu",
+         d->init_result,d->rx_result,(unsigned long)d->bytes,(unsigned long)d->valid,(unsigned long)d->bad);
+     commands_printf(phandle,"DASH gas=%u brake=%u 64=%lu 65=%lu ver=%04x txCalls=%lu txOK=%lu txFail=%lu txLast=%u",
+         d->gas,d->brake,(unsigned long)d->cmd64,(unsigned long)d->cmd65,d->version,
+         (unsigned long)d->tx_calls,(unsigned long)d->tx_ok,(unsigned long)d->tx_fail,d->tx_result);
++    commands_printf(phandle,"R2 neutral=%u armed=%u active=%u fresh=%u lastGas=%u lastBrake=%u",
++        d->control.neutral_started,d->control.armed,d->control.driving,
++        d->input_seen && (uint32_t)(HAL_GetTick()-d->last_input_ms)<=G30_DASH_R2_STALE_MS,
++        d->gas,d->brake);
++    commands_printf(phandle,"R2 driveCmd=%lu coastCmd=%lu vescClaim=%lu vescHold=%u",
++        (unsigned long)d->drive_commands,(unsigned long)d->coast_commands,
++        (unsigned long)d->remote_claims,
++        d->remote_claimed && (uint32_t)(HAL_GetTick()-d->last_remote_ms)<G30_DASH_R2_VESC_HOLD_MS);
+     UART_HandleTypeDef *u=d->port->uart;
+     commands_printf(phandle,"USART2 SR=%04lx CR1=%04lx CR3=%04lx CNDTR=%lu rxErr=%lu stackFree=%u heap=%u",
+         (unsigned long)u->Instance->SR,(unsigned long)u->Instance->CR1,(unsigned long)u->Instance->CR3,
+--- a/common_files/src/g30_dash_link.h
++++ b/common_files/src/g30_dash_link.h
+@@ -1,6 +1,9 @@
+ #ifndef G30_DASH_LINK_H
+ #define G30_DASH_LINK_H
++#include <stdbool.h>
+ #include "task_cli.h"
+ void g30_dash_link_start(port_str *port);
++void g30_dash_link_vesc_claim(void);
++bool g30_dash_link_brake_active(void);
+ void g30_dash_link_print(PACKET_STATE_t *phandle);
+ #endif
