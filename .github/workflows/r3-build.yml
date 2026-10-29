@@ -208,7 +208,7 @@ jobs:
           patch -d SOURCE_KOXX3 -p1 --dry-run < ci/R3I18B_DASH_VERIFY_FROM_R3I18.patch
           patch -d SOURCE_KOXX3 -p1 < ci/R3I18B_DASH_VERIFY_FROM_R3I18.patch
           grep -q 'G30D-R3I18B-STOCK-DASH-VERIFIED' SOURCE_KOXX3/common_files/src/defines.h
-          grep -q 'frame.cmd==0x64 || frame.cmd==0x65 || frame.cmd==0x61' SOURCE_KOXX3/common_files/src/app_uartcomm.c
+          grep -q 'frame.cmd==0x64 || frame.cmd==0x65' SOURCE_KOXX3/common_files/src/app_uartcomm.c
           grep -q '197.0f-40.0f' SOURCE_KOXX3/common_files/src/app_uartcomm.c
           grep -q '181.0f-41.0f' SOURCE_KOXX3/common_files/src/app_uartcomm.c
 
@@ -293,15 +293,16 @@ jobs:
             'minimal_detect_no_limit_rewrite':'saved->l_current_max =' not in Path('SOURCE_KOXX3/common_files/src/conf_general.c').read_text()[Path('SOURCE_KOXX3/common_files/src/conf_general.c').read_text().index('#ifdef G30P',Path('SOURCE_KOXX3/common_files/src/conf_general.c').read_text().index('int conf_general_detect_apply_all_foc')):Path('SOURCE_KOXX3/common_files/src/conf_general.c').read_text().index('#else',Path('SOURCE_KOXX3/common_files/src/conf_general.c').read_text().index('int conf_general_detect_apply_all_foc'))],
             'dash_native_header':'data==0x5A' in Path('SOURCE_KOXX3/common_files/src/ninebot.c').read_text() and 'data==0xA5' in Path('SOURCE_KOXX3/common_files/src/ninebot.c').read_text(),
             'dash_native_addresses':'0x20,0x21,0x64' in Path('SOURCE_KOXX3/common_files/src/app_uartcomm.c').read_text(),
-            'dash_controls':'frame.cmd==0x65 || frame.cmd==0x61' in Path('SOURCE_KOXX3/common_files/src/app_uartcomm.c').read_text(),
+            'dash_controls':'frame.cmd==0x64 || frame.cmd==0x65' in Path('SOURCE_KOXX3/common_files/src/app_uartcomm.c').read_text(),
             'dash_brake_throttle':'adc1=frame.payload[1];' in Path('SOURCE_KOXX3/common_files/src/app_uartcomm.c').read_text() and 'adc2=frame.payload[2];' in Path('SOURCE_KOXX3/common_files/src/app_uartcomm.c').read_text(),
             'dash_no_false_mode_mirror':'m365_to_display.mode=frame.payload[0];' not in Path('SOURCE_KOXX3/common_files/src/app_uartcomm.c').read_text(),
             'dash_always_on_g30':'task_app_init(&aux_uart);' in Path('SOURCE_KOXX3/common_files/src/app.c').read_text() and 'VESC Tool uses USART1' in Path('SOURCE_KOXX3/common_files/src/app.c').read_text(),
             'dash_uses_auto_arm':'VescToSTM_g30_pushstart_command(true);' in Path('SOURCE_KOXX3/common_files/src/app_uartcomm.c').read_text() and 'VescToSTM_g30_pushstart_command(false);' in Path('SOURCE_KOXX3/common_files/src/app_uartcomm.c').read_text(),
-            'dash_cmd64_has_hall':'frame.cmd==0x64 || frame.cmd==0x65 || frame.cmd==0x61' in Path('SOURCE_KOXX3/common_files/src/app_uartcomm.c').read_text(),
+            'dash_cmd64_has_hall':'frame.cmd==0x64 || frame.cmd==0x65' in Path('SOURCE_KOXX3/common_files/src/app_uartcomm.c').read_text(),
             'dash_native_throttle_range':'197.0f-40.0f' in Path('SOURCE_KOXX3/common_files/src/app_uartcomm.c').read_text(),
             'dash_native_brake_range':'181.0f-41.0f' in Path('SOURCE_KOXX3/common_files/src/app_uartcomm.c').read_text(),
             'dash_cmd64_reply_only':'if(frame.cmd==0x64) g30_dash_send_status(port);' in Path('SOURCE_KOXX3/common_files/src/app_uartcomm.c').read_text(),
+            'dash_cmd61_inert':'frame.cmd==0x61' not in Path('SOURCE_KOXX3/common_files/src/app_uartcomm.c').read_text(),
             'dash_brake_wins':'if(g30_brake>0.002f)' in Path('SOURCE_KOXX3/common_files/src/app_uartcomm.c').read_text() and 'VescToSTM_set_brake_current_rel(g30_brake);' in Path('SOURCE_KOXX3/common_files/src/app_uartcomm.c').read_text(),
           }
           for k,v in gates.items(): print(f'{k}={int(v)}')
