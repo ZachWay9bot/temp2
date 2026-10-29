@@ -42,7 +42,7 @@ static unsigned n_single,n_double,n_long,n_very;
 static void tick_until(uint32_t end,uint8_t button){mock_btn=button;while(mock_ms<end){eButtonEvent ev=getButtonEvent();if(ev==SINGLE_PRESS)n_single++;if(ev==DOUBLE_PRESS)n_double++;if(ev==LONG_PRESS)n_long++;if(ev==VERY_LONG_PRESS)n_very++;mock_ms++;}}
 static void fail_if(bool cond,const char*why){if(cond){fprintf(stderr,"FAIL: %s\n",why);exit(1);}}
 int main(int argc,char**argv){
- if(argc!=2)return 2; tick_until(200,0);
+ if(argc!=2) return 2;\n tick_until(200,0);
  if(!strcmp(argv[1],"single")){tick_until(350,1);tick_until(700,0);fail_if(n_single!=1||n_double||n_long||n_very,"150ms click");}
  else if(!strcmp(argv[1],"longish")){tick_until(1150,1);tick_until(1500,0);fail_if(n_single!=1||n_double||n_long||n_very,"950ms short press");}
  else if(!strcmp(argv[1],"2500")){tick_until(3100,1);tick_until(3450,0);fail_if(n_single||n_double||n_long!=1||n_very,"2900ms long press");}
