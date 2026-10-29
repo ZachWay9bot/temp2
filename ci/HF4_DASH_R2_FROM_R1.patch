@@ -220,7 +220,7 @@
  #include "ninebot.h"
  #include "VescToSTM.h"
  #include "VescCommand.h"
-@@ -19,11 +21,69 @@
+@@ -19,11 +21,60 @@
      uint32_t tx_calls, tx_ok, tx_fail, rx_errors;
      uint16_t version;
      uint8_t gas, brake, init_result, rx_result, tx_result;
@@ -323,7 +323,7 @@
          (unsigned long)u->Instance->SR,(unsigned long)u->Instance->CR1,(unsigned long)u->Instance->CR3,
 --- a/common_files/src/g30_dash_link.h
 +++ b/common_files/src/g30_dash_link.h
-@@ -1,6 +1,9 @@
+@@ -1,7 +1,10 @@
  #ifndef G30_DASH_LINK_H
  #define G30_DASH_LINK_H
 +#include <stdbool.h>
