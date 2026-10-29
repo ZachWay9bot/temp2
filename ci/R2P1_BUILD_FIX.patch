@@ -1,11 +1,12 @@
 --- a/common_files/src/g30_dash_link.c
 +++ b/common_files/src/g30_dash_link.c
-@@ -11,6 +11,7 @@
- #include "VescToSTM.h"
- #include "VescCommand.h"
- #include "task.h"
- #include <math.h>
-+extern volatile bool g30_runtime_ready;
- 
- typedef struct {
-     port_str *port;
+@@ -63,7 +63,8 @@
+         (uint32_t)(now-d->last_remote_ms) < G30_DASH_R2_VESC_HOLD_MS;
+     if(!remote_busy) d->remote_claimed=0u;
+     /* Undervoltage/MCSDK faults block any torque while on 5V logic alone. */
+-    bool ready=g30_runtime_ready && !app_is_output_disabled() &&
++    bool ready=pMCI[M1] && pMCI[M1]->pSTM &&
++        !app_is_output_disabled() &&
+         VescToSTM_get_fault()==FAULT_CODE_NONE &&
+         VescToSTM_get_bus_voltage()>=18.0f;
+     g30_dash_r2_action action=g30_dash_r2_step(&d->control,now,
