@@ -207,6 +207,8 @@ jobs:
           patch -d SOURCE_KOXX3 -p1 < ci/HF4_DASH_R2_FROM_R1.patch
           patch -d SOURCE_KOXX3 -p1 --dry-run < ci/R2_TO_R2P1_POWER_FIX.patch
           patch -d SOURCE_KOXX3 -p1 < ci/R2_TO_R2P1_POWER_FIX.patch
+          patch -d SOURCE_KOXX3 -p1 --dry-run < ci/R2P1_BUILD_FIX.patch
+          patch -d SOURCE_KOXX3 -p1 < ci/R2P1_BUILD_FIX.patch
           grep -q 'G30D-HF4-DASH-LINK-R2P1' SOURCE_KOXX3/common_files/src/defines.h
           grep -q 'G30_DASH_R2_GAS_IDLE       67u' SOURCE_KOXX3/common_files/src/g30_dash_drive_logic.h
           grep -q 'held_ms >= 2500u' SOURCE_KOXX3/common_files/src/task_pwr.c
