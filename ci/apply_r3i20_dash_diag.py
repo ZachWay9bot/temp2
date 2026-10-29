@@ -146,19 +146,13 @@ once(app,"""                        g30_dash_metadata_seen=1u;""","""           
 
 vesc=src/"VescCommand.c"
 once(vesc,'#include "app.h"', '#include "app.h"\n#ifdef G30P\nextern void g30_dash_diag_format(char *out, unsigned cap, unsigned page);\n#endif')
-once(vesc,"""    case COMM_ALIVE:
-        VescToSTM_timeout_reset();
-        break;
-    default:
-        break;
-    }
-}
-#endif""",
-"""    case COMM_ALIVE:
-        VescToSTM_timeout_reset();
-        break;
+data=vesc.read_text()
+start=data.index("static void commands_process_packet_g30(")
+slot=data.index("switch (packet_id) {",start)+len("switch (packet_id) {")
+insert=r"""
     case COMM_TERMINAL_CMD:
-        if(len==7u && memcmp(data,"g30dash",7u)==0){
+        /* Read-only diagnostics via IoT VESC Tool Terminal: g30dash */
+        if(len>=7u && memcmp(data,"g30dash",7u)==0){
             for(unsigned page=0;page<3u;page++){
                 uint8_t sb[PACKET_SIZE(150)];
                 uint8_t *b=sb+PACKET_HEADER;
@@ -168,11 +162,8 @@ once(vesc,"""    case COMM_ALIVE:
             }
         }
         break;
-    default:
-        break;
-    }
-}
-#endif""")
+"""
+vesc.write_text(data[:slot]+insert+data[slot:])
 
 print("R3I20 DASH DIAG overlay applied",h,app,vesc)
 print("No motor-control/observer/recovery code changed")
