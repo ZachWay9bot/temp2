@@ -100,10 +100,67 @@ diff --git a/common_files/src/defines.h b/common_files/src/defines.h
 diff --git a/common_files/src/ninebot.c b/common_files/src/ninebot.c
 --- a/common_files/src/ninebot.c
 +++ b/common_files/src/ninebot.c
-@@ -29,6 +29,58 @@
+@@ -29,63 +29,113 @@
  
  
  uint16_t ninebot_parse(uint8_t data , NinebotPack *message){
+-	static uint8_t state = NIN_IDLE;
+-	static uint8_t cnt = 0;
+-	static uint16_t checksum=0;
+-	switch (state){
+-	case NIN_IDLE:
+-		if(data==NinebotHeader0) state = NIN_HEAD;
+-		break;
+-	case NIN_HEAD:
+-		if(data==NinebotHeader1) state = NIN_LEN;
+-		break;
+-	case NIN_LEN:
+-		message->len = data-1;
+-		checksum=0;
+-		checksum=checksum + data;
+-		state = NIN_ADDR;
+-		break;
+-	case NIN_ADDR:
+-		cnt++;
+-		state = NIN_CMD;
+-		checksum=checksum + data;
+-		message->addr = data;
+-		break;
+-	case NIN_CMD:
+-		cnt=0;
+-		state = NIN_ARG;
+-		checksum=checksum + data;
+-		message->cmd = data;
+-		break;
+-	case NIN_ARG:
+-		cnt++;
+-		state = NIN_DATA;
+-		checksum=checksum + data;
+-		message->arg = data;
+-		break;
+-	case NIN_DATA:
+-		cnt++;
+-		checksum=checksum + data;
+-		if((cnt-2) < NinebotMaxPayload){
+-			message->payload[cnt-2] = data;
+-		}
+-		if(cnt == (message->len)){
+-			state = NIN_CRC;
+-			cnt=0;
+-		}
+-		break;
+-	case NIN_CRC:
+-		message->CheckSum[cnt] = data;
+-		if(cnt==1){
+-			checksum ^= 0xFFFF;
+-			state = NIN_IDLE;
+-			return checksum - ((message->CheckSum[1]<<8) + message->CheckSum[0]);
+-		}
+-		cnt++;
+-		break;
+-	}
+-
+-return 1;
 +#ifdef G30P
 +    /* G30 native Yellow-wire framing:
 +     * 5A A5 LEN SRC DST CMD ARG DATA[LEN] CHECKSUM16_LE
@@ -154,12 +211,61 @@ diff --git a/common_files/src/ninebot.c b/common_files/src/ninebot.c
 +    }
 +    return 1;
 +#else
- 	static uint8_t state = NIN_IDLE;
- 	static uint8_t cnt = 0;
- 	static uint16_t checksum=0;
-@@ -86,6 +138,7 @@ uint16_t ninebot_parse(uint8_t data , NinebotPack *message){
- 	}
- 
- return 1;
++    static uint8_t state = NIN_IDLE;
++    static uint8_t cnt = 0;
++    static uint16_t checksum=0;
++    switch (state){
++    case NIN_IDLE:
++        if(data==NinebotHeader0) state = NIN_HEAD;
++        break;
++    case NIN_HEAD:
++        if(data==NinebotHeader1) state = NIN_LEN;
++        break;
++    case NIN_LEN:
++        message->len = data-1;
++        checksum=0;
++        checksum=checksum + data;
++        state = NIN_ADDR;
++        break;
++    case NIN_ADDR:
++        cnt++;
++        state = NIN_CMD;
++        checksum=checksum + data;
++        message->addr = data;
++        break;
++    case NIN_CMD:
++        cnt=0;
++        state = NIN_ARG;
++        checksum=checksum + data;
++        message->cmd = data;
++        break;
++    case NIN_ARG:
++        cnt++;
++        state = NIN_DATA;
++        checksum=checksum + data;
++        message->arg = data;
++        break;
++    case NIN_DATA:
++        cnt++;
++        checksum=checksum + data;
++        if((cnt-2) < NinebotMaxPayload){
++            message->payload[cnt-2] = data;
++        }
++        if(cnt == (message->len)){
++            state = NIN_CRC;
++            cnt=0;
++        }
++        break;
++    case NIN_CRC:
++        message->CheckSum[cnt] = data;
++        if(cnt==1){
++            checksum ^= 0xFFFF;
++            state = NIN_IDLE;
++            return checksum - ((message->CheckSum[1]<<8) + message->CheckSum[0]);
++        }
++        cnt++;
++        break;
++    }
++    return 1;
 +#endif
  }
