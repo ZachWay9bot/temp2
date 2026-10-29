@@ -41,11 +41,11 @@ diff --git a/common_files/src/app_uartcomm.c b/common_files/src/app_uartcomm.c
 -                        /* Captured G30 control payload: [mode, throttle, brake, ...].
 -                         * Brake remains Coast through the existing G30 brake path. */
 -                        m365_to_display.mode=frame.payload[0];
-+                    if((frame.cmd==0x64 || frame.cmd==0x65 || frame.cmd==0x61) && frame.len>=3u){
++                    if((frame.cmd==0x64 || frame.cmd==0x65) && frame.len>=3u){
 +                        /* Native G30 hall payload:
 +                         * [dataLen, throttle, brake, updating, beeping, ...].
 +                         * CMD64 also requests the ESC display/status response.
-+                         * CMD65 is the normal hall update; CMD61 is observed stock traffic. */
++                         * CMD65 is the normal hall update. Other stock commands stay inert. */
                          adc1=frame.payload[1];
                          adc2=frame.payload[2];
                          VescToSTM_timeout_reset();
