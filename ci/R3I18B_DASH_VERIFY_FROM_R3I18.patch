@@ -1,7 +1,7 @@
 diff --git a/common_files/src/app_uartcomm.c b/common_files/src/app_uartcomm.c
 --- a/common_files/src/app_uartcomm.c
 +++ b/common_files/src/app_uartcomm.c
-@@ -194,17 +194,25 @@
+@@ -194,13 +194,21 @@
  
  #ifdef G30P
 -    /* Stock dash uses the same Hall/Sensorless command gate as VESC Tool.
