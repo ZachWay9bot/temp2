@@ -290,7 +290,7 @@ jobs:
           te=Path('SOURCE_KOXX3/common_files/src/terminal.c').read_text()
           de=Path('SOURCE_KOXX3/common_files/src/defines.h').read_text()
           gates={
-            'build_id':'G30D-R3I19-STOCK-DASH-FINAL' in de,
+            'build_id':'G30D-R3I20-BLE-VESC-TUNNEL' in de,
             'r3i12_catch_retained':'sensorless_catch_phase_q4=((int32_t)(uint16_t)obs_pred)<<4;' in sh and 'catch_phase=obs_pred;' in sh,
             'no_command_inversion':'erpm = -erpm;' not in vs,
             'speed_feedback_normalized':'(-(int32_t)odpp)' in mc,
