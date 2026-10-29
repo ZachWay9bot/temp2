@@ -1,0 +1,11 @@
+--- a/common_files/src/g30_dash_link.c
++++ b/common_files/src/g30_dash_link.c
+@@ -11,6 +11,7 @@
+ #include "VescToSTM.h"
+ #include "VescCommand.h"
+ #include "task.h"
+ #include <math.h>
++extern volatile bool g30_runtime_ready;
+ 
+ typedef struct {
+     port_str *port;
