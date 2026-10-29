@@ -106,7 +106,7 @@
  #endif
 --- a/common_files/src/g30_dash_drive_logic.h
 +++ b/common_files/src/g30_dash_drive_logic.h
-@@ -0,0 +1,100 @@
+@@ -0,0 +1,95 @@
 +/* G30 HF4 DASH R2 - pure input calibration and motor-request arbitration.
 + * No hardware access here; host-regression testable. */
 +#ifndef G30_DASH_DRIVE_LOGIC_H
