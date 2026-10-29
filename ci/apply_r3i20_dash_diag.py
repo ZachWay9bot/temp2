@@ -130,7 +130,7 @@ once(app,"""                        adc1=frame.payload[1];
                         dd_last_brake=frame.payload[2];
                         if(frame.cmd==0x64u) dd_cmd64++;
                         else if(frame.cmd==0x65u) dd_cmd65++;
-                        else if(frame.cmd==0x61u) dd_cmd61++;
+                        else if(frame.cmd == 0x61u) dd_cmd61++;
                         adc1=frame.payload[1];
                         adc2=frame.payload[2];
                         VescToSTM_timeout_reset();""")
