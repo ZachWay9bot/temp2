@@ -64,6 +64,7 @@ diff --git a/common_files/src/app_uartcomm.c b/common_files/src/app_uartcomm.c
 +                    }else if((frame.cmd==0x65 || frame.cmd==0x61) && frame.len>=3u){
 +                        /* Captured G30 control payload: [mode, throttle, brake, ...].
 +                         * Brake remains Coast through the existing G30 brake path. */
++                        m365_to_display.mode=frame.payload[0];
 +                        adc1=frame.payload[1];
 +                        adc2=frame.payload[2];
 +                        VescToSTM_timeout_reset();
