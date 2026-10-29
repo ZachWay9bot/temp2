@@ -1,0 +1,165 @@
+diff --git a/common_files/src/app.c b/common_files/src/app.c
+--- a/common_files/src/app.c
++++ b/common_files/src/app.c
+@@ -66,6 +66,17 @@
+ 
+ 	utils_truncate_number_int((int*)&appconf.app_adc_conf.update_rate_hz, 1, 200);
+ 
++#ifdef G30P
++    /* R3I18: USART2/PA2 is the stock Yellow-wire. Keep the dashboard task
++     * alive regardless of the VESC app selector; VESC Tool uses USART1. */
++    if(xTaskGetSchedulerState()==taskSCHEDULER_RUNNING && old_app!=APP_ADC && aux_uart.task_handle){
++        task_cli_kill(&aux_uart);
++    }
++    task_app_init(&aux_uart);
++    old_app=APP_ADC;
++    return;
++#endif
++
+ 	switch (appconf.app_to_use) {
+ 		case APP_UART:
+ 			if( xTaskGetSchedulerState() == taskSCHEDULER_RUNNING){
+diff --git a/common_files/src/app_uartcomm.c b/common_files/src/app_uartcomm.c
+--- a/common_files/src/app_uartcomm.c
++++ b/common_files/src/app_uartcomm.c
+@@ -283,6 +283,29 @@
+ 	xTimerChangePeriod(xTimer, app_updaterate(), 1000);
+ }
+ 
++#ifdef G30P
++static void g30_dash_send_status(port_str *port){
++    /* Exact native G30 status shape observed on stock/EBiCS captures:
++     * 20->21 CMD64 ARG00 LEN6 = mode,battery,light,beep,speed,fault. */
++    uint8_t tx[15]={0x5A,0xA5,0x06,0x20,0x21,0x64,0x00,0,0,0,0,0,0,0,0};
++    float level=VescToSTM_get_battery_level(0);
++    float kph=fabsf(VescToSTM_get_speed()*3.6f);
++    if(level<0.0f) level=0.0f; if(level>1.0f) level=1.0f;
++    if(kph>255.0f) kph=255.0f;
++    tx[7]=m365_to_display.mode;
++    tx[8]=(uint8_t)(level*100.0f+0.5f);
++    tx[9]=m365_to_display.light;
++    tx[10]=0;
++    tx[11]=(uint8_t)(kph+0.5f);
++    tx[12]=(uint8_t)(pMCI[M1]->pSTM->hFaultOccurred & 0xFFu);
++    uint16_t sum=0;
++    for(unsigned i=2;i<=12;i++) sum=(uint16_t)(sum+tx[i]);
++    uint16_t crc=(uint16_t)(~sum);
++    tx[13]=(uint8_t)crc; tx[14]=(uint8_t)(crc>>8);
++    my_uart_send_data(tx,sizeof(tx),port);
++}
++#endif
++
+ void task_app(void * argument)
+ {
+ 	uint32_t rd_ptr=0;
+@@ -306,7 +329,20 @@
+ 	{
+ 		while(rd_ptr != uart_get_write_pos(port)) {
+ 			if(ninebot_parse(usart_rx_dma_buffer[rd_ptr] ,&frame)	==0){
+-				//commands_printf(main_uart.phandle, "LEN: %d CMD: %x ARG: %x PAY: %02x %02x %02x %02x", frame.len, frame.cmd, frame.arg, frame.payload[0], frame.payload[1], frame.payload[2], frame.payload[3]);
++#ifdef G30P
++                if(frame.addr==0x21 && frame.arg==0x00){
++                    if(frame.cmd==0x64){
++                        g30_dash_send_status(port);
++                    }else if((frame.cmd==0x65 || frame.cmd==0x61) && frame.len>=3u){
++                        /* Captured G30 control payload: [mode, throttle, brake, ...].
++                         * Brake remains Coast through the existing G30 brake path. */
++                        adc1=frame.payload[1];
++                        adc2=frame.payload[2];
++                        VescToSTM_timeout_reset();
++                        app_check_timer();
++                    }
++                }
++#else
+ 				switch(frame.cmd){
+ 					case 0x64:
+ 						addCRC((uint8_t*)&m365_to_display, m365_to_display.len+6);
+@@ -317,9 +353,9 @@
+ 						adc2 = frame.payload[2];
+ 						VescToSTM_timeout_reset();
+ 						app_check_timer();
+-						//commands_printf(main_uart.phandle, "LEN: %d CMD: %x ARG: %x PAY: %02x %02x %02x %02x", frame.len, frame.cmd, frame.arg, frame.payload[0], frame.payload[1], frame.payload[2], frame.payload[3]);
+ 					break;
+ 				}
++#endif
+ 			}
+ 			rd_ptr++;
+ 			rd_ptr &= ((uint32_t)port->rx_buffer_size - 1);
+diff --git a/common_files/src/defines.h b/common_files/src/defines.h
+--- a/common_files/src/defines.h
++++ b/common_files/src/defines.h
+@@ -2,7 +2,7 @@
+ #define DEFINES_H_
+ 
+ #ifdef G30P
+-#define HW_NAME "G30D-R3I17-MIN-DETECT"
++#define HW_NAME "G30D-R3I18-STOCK-DASH"
+ #else
+ #define HW_NAME "40"
+ #endif
+diff --git a/common_files/src/ninebot.c b/common_files/src/ninebot.c
+--- a/common_files/src/ninebot.c
++++ b/common_files/src/ninebot.c
+@@ -29,6 +29,58 @@
+ 
+ 
+ uint16_t ninebot_parse(uint8_t data , NinebotPack *message){
++#ifdef G30P
++    /* G30 native Yellow-wire framing:
++     * 5A A5 LEN SRC DST CMD ARG DATA[LEN] CHECKSUM16_LE
++     * checksum = bitwise NOT of the 16-bit sum from LEN through DATA. */
++    enum { G30_IDLE, G30_HEAD, G30_LEN, G30_SRC, G30_DST, G30_CMD, G30_ARG, G30_DATA, G30_CRC };
++    static uint8_t state=G30_IDLE, cnt=0, dst=0;
++    static uint16_t checksum=0;
++    static uint8_t crc_lo=0;
++    switch(state){
++    case G30_IDLE:
++        if(data==0x5A) state=G30_HEAD;
++        break;
++    case G30_HEAD:
++        state=(data==0xA5)?G30_LEN:G30_IDLE;
++        break;
++    case G30_LEN:
++        if(data>NinebotMaxPayload){state=G30_IDLE;break;}
++        message->len=data; checksum=data; cnt=0; state=G30_SRC;
++        break;
++    case G30_SRC:
++        message->addr=data; checksum=(uint16_t)(checksum+data); state=G30_DST;
++        break;
++    case G30_DST:
++        dst=data; checksum=(uint16_t)(checksum+data); state=G30_CMD;
++        break;
++    case G30_CMD:
++        message->cmd=data; checksum=(uint16_t)(checksum+data); state=G30_ARG;
++        break;
++    case G30_ARG:
++        message->arg=data; checksum=(uint16_t)(checksum+data);
++        state=message->len?G30_DATA:G30_CRC;
++        break;
++    case G30_DATA:
++        message->payload[cnt++]=data; checksum=(uint16_t)(checksum+data);
++        if(cnt>=message->len){cnt=0;state=G30_CRC;}
++        break;
++    case G30_CRC:
++        if(cnt==0){crc_lo=data;cnt=1;}
++        else{
++            uint16_t wire=(uint16_t)crc_lo|((uint16_t)data<<8);
++            uint16_t calc=(uint16_t)(~checksum);
++            state=G30_IDLE;cnt=0;
++            if(wire==calc && dst==0x20) return 0;
++        }
++        break;
++    default:
++        state=G30_IDLE;cnt=0;break;
++    }
++    return 1;
++#else
+ 	static uint8_t state = NIN_IDLE;
+ 	static uint8_t cnt = 0;
+ 	static uint16_t checksum=0;
+@@ -86,6 +138,7 @@ uint16_t ninebot_parse(uint8_t data , NinebotPack *message){
+ 	}
+ 
+ return 1;
++#endif
+ }
