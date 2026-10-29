@@ -145,7 +145,7 @@ once(app,"""                        g30_dash_metadata_seen=1u;""","""           
                         g30_dash_metadata_seen=1u;""")
 
 vesc=src/"VescCommand.c"
-once(vesc,"#ifdef G30P\nvoid commands_printf", "#ifdef G30P\nextern void g30_dash_diag_format(char *out, unsigned cap, unsigned page);\nvoid commands_printf")
+once(vesc,'#include "app.h"', '#include "app.h"\n#ifdef G30P\nextern void g30_dash_diag_format(char *out, unsigned cap, unsigned page);\n#endif')
 once(vesc,"""    case COMM_ALIVE:
         VescToSTM_timeout_reset();
         break;
