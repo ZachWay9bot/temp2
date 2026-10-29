@@ -312,7 +312,7 @@ jobs:
             'dash_cmd64_has_hall':'frame.cmd==0x64 || frame.cmd==0x65' in Path('SOURCE_KOXX3/common_files/src/app_uartcomm.c').read_text(),
             'dash_native_throttle_range':'197.0f-40.0f' in Path('SOURCE_KOXX3/common_files/src/app_uartcomm.c').read_text(),
             'dash_native_brake_range':'181.0f-41.0f' in Path('SOURCE_KOXX3/common_files/src/app_uartcomm.c').read_text(),
-            'dash_cmd64_reply_only':'if(frame.cmd==0x64) g30_dash_send_status(port);' in Path('SOURCE_KOXX3/common_files/src/app_uartcomm.c').read_text(),
+            'dash_cmd64_reply_only':'if(frame.cmd==0x64){' in Path('SOURCE_KOXX3/common_files/src/app_uartcomm.c').read_text() and 'g30_dash_send_status(port);' in Path('SOURCE_KOXX3/common_files/src/app_uartcomm.c').read_text(),
             'dash_cmd61_inert':'frame.cmd==0x61' not in Path('SOURCE_KOXX3/common_files/src/app_uartcomm.c').read_text(),
             'dash_brake_wins':'if(g30_brake>0.002f)' in Path('SOURCE_KOXX3/common_files/src/app_uartcomm.c').read_text() and 'VescToSTM_set_brake_current_rel(g30_brake);' in Path('SOURCE_KOXX3/common_files/src/app_uartcomm.c').read_text(),
             'dash_heartbeat_reply':'CMD64 is the periodic heartbeat/status request' in Path('SOURCE_KOXX3/common_files/src/app_uartcomm.c').read_text() and 'g30_dash_send_status(port);' in Path('SOURCE_KOXX3/common_files/src/app_uartcomm.c').read_text(),
