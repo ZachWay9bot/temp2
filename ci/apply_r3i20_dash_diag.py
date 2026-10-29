@@ -122,7 +122,7 @@ if old not in data:
     candidate=re.search(r'if\(ninebot_parse\(usart_rx_dma_buffer\[rd_ptr\]\s*,\s*&frame\)\s*==\s*0\)\s*\{',data)
     if not candidate: raise RuntimeError("Cannot find original ninebot_parse line")
     old=candidate.group(0)
-once(app,old,"dd_bytes++;\\n            "+old+"\\n                dd_frames++;".replace("\\n","\n"))
+once(app,old,("dd_bytes++;\\n            "+old+"\\n                dd_frames++;").replace("\\n","\n"))
 once(app,"""                        adc1=frame.payload[1];
                         adc2=frame.payload[2];
                         VescToSTM_timeout_reset();""",
