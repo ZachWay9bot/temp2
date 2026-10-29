@@ -1,8 +1,8 @@
-name: G30D R3I19 stock dashboard final compile
+name: G30D R3I20 stock-dashboard BLE VESC tunnel compile
 on:
   push:
     branches:
-      - r3i19-stock-dash-final-20261029
+      - r3i20-ble-vesc-tunnel-20261029
   workflow_dispatch:
 
 jobs:
@@ -217,6 +217,12 @@ jobs:
           grep -q 'g30_dash_send_heartbeat_ack' SOURCE_KOXX3/common_files/src/app_uartcomm.c
           grep -q 'frame.cmd==0x04 && frame.len==13u' SOURCE_KOXX3/common_files/src/app_uartcomm.c
           grep -q 'm365_to_display.light?100u:0u' SOURCE_KOXX3/common_files/src/app_uartcomm.c
+          patch -d SOURCE_KOXX3 -p1 --dry-run < ci/R3I20_BLE_VESC_TUNNEL_FROM_R3I19.patch
+          patch -d SOURCE_KOXX3 -p1 < ci/R3I20_BLE_VESC_TUNNEL_FROM_R3I19.patch
+          grep -q 'G30D-R3I20-BLE-VESC-TUNNEL' SOURCE_KOXX3/common_files/src/defines.h
+          grep -q 'G30_VESC_TUNNEL_CMD 0x7Eu' SOURCE_KOXX3/common_files/src/app_uartcomm.c
+          grep -q 'packet_init(g30_ble_vesc_putbuffer,g30_ble_vesc_process_packet,port)' SOURCE_KOXX3/common_files/src/app_uartcomm.c
+          grep -q 'phandle->reply_func = reply_func' SOURCE_KOXX3/common_files/src/VescCommand.c
 
       - name: Install ARM GNU GCC 13.2.1
         shell: bash
@@ -231,12 +237,12 @@ jobs:
           tar -xzf "$FILE"
           echo "/tmp/xpack-arm-none-eabi-gcc-13.2.1-1.1/bin" >> "$GITHUB_PATH"
 
-      - name: Compile and validate R3I19
+      - name: Compile and validate R3I20
         shell: bash
         run: |
           set -euo pipefail
           arm-none-eabi-gcc --version
-          sed -i 's/FO76_PUSHSTART_R3I9/R3I19_STOCK_DASH_FINAL/g' tools/build_native.py tools/validate_image.py
+          sed -i 's/FO76_PUSHSTART_R3I9/R3I20_BLE_VESC_TUNNEL/g' tools/build_native.py tools/validate_image.py
           sed -i 's/G30D-FO76-PUSHSTART-R3I9/G30D-R3I19-STOCK-DASH-FINAL/g' tools/validate_image.py
           mkdir -p OUTPUT
           python3 tools/build_native.py | tee OUTPUT/build.log
@@ -251,15 +257,32 @@ jobs:
           assert qcrc==0xFFBD, hex(qcrc)
           print('G30_DASH_CAPTURE_CRC=PASS')
           print('G30_DASH_METADATA_QUERY_CRC=PASS')
+          # R3I20 tunnel uses ordered Ninebot payload chunks carrying the raw VESC byte stream.
+          raw=bytes((i*37+11)&0xff for i in range(173))
+          frames=[]
+          for off in range(0,len(raw),0x38):
+              pl=raw[off:off+0x38]
+              body=bytes([len(pl),0x3e,0x20,0x7e,0x56])+pl
+              crc=(~sum(body)) & 0xffff
+              frames.append(bytes([0x5a,0xa5])+body+bytes([crc&0xff,crc>>8]))
+          rebuilt=b''
+          for f in frames:
+              assert f[:2]==b'\\x5a\\xa5' and f[5:7]==b'\\x7e\\x56'
+              n=f[2]
+              assert ((~sum(f[2:7+n])) & 0xffff)==(f[7+n] | (f[8+n]<<8))
+              rebuilt+=f[7:7+n]
+          assert rebuilt==raw
+          assert max(f[2] for f in frames)<=0x38
+          print('R3I20_TUNNEL_FRAGMENT_ROUNDTRIP=PASS')
           PY
-          BIN=OUTPUT/SmartESC_v2_G30D_R3I19_STOCK_DASH_FINAL_STLINK_APP_0x08001000.bin
+          BIN=OUTPUT/SmartESC_v2_G30D_R3I20_BLE_VESC_TUNNEL_STLINK_APP_0x08001000.bin
           ELF=OUTPUT/SmartESC_v2_G30D_R3I19_STOCK_DASH_FINAL.elf
           sha256sum "$BIN" > OUTPUT/SHA256_BIN.txt
           arm-none-eabi-size "$ELF" > OUTPUT/SIZE.txt
           arm-none-eabi-nm -S --size-sort "$ELF" | tail -40 > OUTPUT/LARGEST_SYMBOLS.txt
-          tar -czf OUTPUT/SOURCE_KOXX3_R3I19_EXACT.tgz SOURCE_KOXX3
+          tar -czf OUTPUT/SOURCE_KOXX3_R3I20_EXACT.tgz SOURCE_KOXX3
           cp ci/R3I18B_DASH_VERIFY_FROM_R3I18.patch OUTPUT/
-          python3 - <<'PY' | tee OUTPUT/R3I19_STATIC_GATES.txt
+          python3 - <<'PY' | tee OUTPUT/R3I20_STATIC_GATES.txt
           from pathlib import Path
           sh=Path('SOURCE_KOXX3/common_files/src/g30_fo76_shadow.c').read_text()
           vs=Path('SOURCE_KOXX3/common_files/src/VescToSTM.c').read_text()
@@ -302,7 +325,7 @@ jobs:
             'minimal_detect_no_hall': 'tune_mcpwm_foc_hall_detect' not in Path('SOURCE_KOXX3/common_files/src/conf_general.c').read_text()[Path('SOURCE_KOXX3/common_files/src/conf_general.c').read_text().index('#ifdef G30P',Path('SOURCE_KOXX3/common_files/src/conf_general.c').read_text().index('int conf_general_detect_apply_all_foc')):Path('SOURCE_KOXX3/common_files/src/conf_general.c').read_text().index('#else',Path('SOURCE_KOXX3/common_files/src/conf_general.c').read_text().index('int conf_general_detect_apply_all_foc'))],
             'minimal_detect_no_limit_rewrite':'saved->l_current_max =' not in Path('SOURCE_KOXX3/common_files/src/conf_general.c').read_text()[Path('SOURCE_KOXX3/common_files/src/conf_general.c').read_text().index('#ifdef G30P',Path('SOURCE_KOXX3/common_files/src/conf_general.c').read_text().index('int conf_general_detect_apply_all_foc')):Path('SOURCE_KOXX3/common_files/src/conf_general.c').read_text().index('#else',Path('SOURCE_KOXX3/common_files/src/conf_general.c').read_text().index('int conf_general_detect_apply_all_foc'))],
             'dash_native_header':'data==0x5A' in Path('SOURCE_KOXX3/common_files/src/ninebot.c').read_text() and 'data==0xA5' in Path('SOURCE_KOXX3/common_files/src/ninebot.c').read_text(),
-            'dash_native_addresses':'out[3]=0x20; out[4]=0x21;' in Path('SOURCE_KOXX3/common_files/src/app_uartcomm.c').read_text(),
+            'dash_native_addresses':'out[3]=0x20; out[4]=dst;' in Path('SOURCE_KOXX3/common_files/src/app_uartcomm.c').read_text(),
             'dash_controls':'frame.cmd==0x64 || frame.cmd==0x65' in Path('SOURCE_KOXX3/common_files/src/app_uartcomm.c').read_text(),
             'dash_brake_throttle':'adc1=frame.payload[1];' in Path('SOURCE_KOXX3/common_files/src/app_uartcomm.c').read_text() and 'adc2=frame.payload[2];' in Path('SOURCE_KOXX3/common_files/src/app_uartcomm.c').read_text(),
             'dash_no_false_mode_mirror':'m365_to_display.mode=frame.payload[0];' not in Path('SOURCE_KOXX3/common_files/src/app_uartcomm.c').read_text(),
@@ -316,23 +339,30 @@ jobs:
             'dash_brake_wins':'if(g30_brake>0.002f)' in Path('SOURCE_KOXX3/common_files/src/app_uartcomm.c').read_text() and 'VescToSTM_set_brake_current_rel(g30_brake);' in Path('SOURCE_KOXX3/common_files/src/app_uartcomm.c').read_text(),
             'dash_heartbeat_ack':'g30_dash_send_heartbeat_ack(port,query_due);' in Path('SOURCE_KOXX3/common_files/src/app_uartcomm.c').read_text(),
             'dash_cmd65_no_ack':'CMD65 is hall input only and deliberately has no ACK/reply.' in Path('SOURCE_KOXX3/common_files/src/app_uartcomm.c').read_text(),
-            'dash_metadata_query':'g30_dash_build_frame(0x01u,0x00u,NULL,0u' in Path('SOURCE_KOXX3/common_files/src/app_uartcomm.c').read_text(),
+            'dash_metadata_query':'g30_dash_build_frame(0x21u,0x01u,0x00u,NULL,0u' in Path('SOURCE_KOXX3/common_files/src/app_uartcomm.c').read_text(),
             'dash_metadata_ack':'frame.cmd==0x04 && frame.len==13u' in Path('SOURCE_KOXX3/common_files/src/app_uartcomm.c').read_text(),
             'dash_light_stock_level':'m365_to_display.light?100u:0u' in Path('SOURCE_KOXX3/common_files/src/app_uartcomm.c').read_text(),
             'dash_version_adaptive':'g30_dash_version>=0x0118u' in Path('SOURCE_KOXX3/common_files/src/app_uartcomm.c').read_text(),
             'dash_button_short':'case SINGLE_PRESS' in Path('SOURCE_KOXX3/common_files/src/task_pwr.c').read_text() and 'task_LED_set_brake_light' in Path('SOURCE_KOXX3/common_files/src/task_pwr.c').read_text(),
             'dash_button_double':'case DOUBLE_PRESS' in Path('SOURCE_KOXX3/common_files/src/task_pwr.c').read_text() and 'app_adc_speed_mode' in Path('SOURCE_KOXX3/common_files/src/task_pwr.c').read_text(),
             'dash_button_long':'case LONG_PRESS' in Path('SOURCE_KOXX3/common_files/src/task_pwr.c').read_text() and 'power_control(DEV_PWR_OFF)' in Path('SOURCE_KOXX3/common_files/src/task_pwr.c').read_text(),
+            'ble_tunnel_cmd':'G30_VESC_TUNNEL_CMD 0x7Eu' in Path('SOURCE_KOXX3/common_files/src/app_uartcomm.c').read_text() and 'G30_VESC_TUNNEL_ARG 0x56u' in Path('SOURCE_KOXX3/common_files/src/app_uartcomm.c').read_text(),
+            'ble_tunnel_dynamic_state':'packet_init(g30_ble_vesc_putbuffer,g30_ble_vesc_process_packet,port)' in Path('SOURCE_KOXX3/common_files/src/app_uartcomm.c').read_text(),
+            'ble_tunnel_stream_feed':'packet_process_byte(frame.payload[i],port->phandle)' in Path('SOURCE_KOXX3/common_files/src/app_uartcomm.c').read_text(),
+            'ble_tunnel_chunked_reply':'len>NinebotMaxPayload' in Path('SOURCE_KOXX3/common_files/src/app_uartcomm.c').read_text() and 'g30_vesc_tunnel_peer' in Path('SOURCE_KOXX3/common_files/src/app_uartcomm.c').read_text(),
+            'ble_tunnel_phone_sources':'frame.addr==0x3Du || frame.addr==0x3Eu || frame.addr==0x3Fu' in Path('SOURCE_KOXX3/common_files/src/app_uartcomm.c').read_text(),
+            'dual_vesc_reply_per_handle':'phandle->reply_func = reply_func' in Path('SOURCE_KOXX3/common_files/src/VescCommand.c').read_text() and 'reply_func' in Path('SOURCE_KOXX3/common_files/src/packet.h').read_text(),
+            'no_global_vesc_reply_pointer':'static void(* volatile send_func)' not in Path('SOURCE_KOXX3/common_files/src/VescCommand.c').read_text(),
           }
           for k,v in gates.items(): print(f'{k}={int(v)}')
           assert all(gates.values()), gates
-          print('R3I19_STATIC_GATES=PASS')
+          print('R3I20_STATIC_GATES=PASS')
           PY
 
-      - name: Upload R3I19 frozen candidate
+      - name: Upload R3I20 BLE tunnel candidate
         uses: actions/upload-artifact@v4
         with:
-          name: G30D_R3I19_STOCK_DASH_FINAL_COMPILED
+          name: G30D_R3I20_BLE_VESC_TUNNEL_COMPILED
           if-no-files-found: error
           retention-days: 7
           path: |
@@ -346,9 +376,10 @@ jobs:
             OUTPUT/LARGEST_SYMBOLS.txt
             OUTPUT/SOURCE_KOXX3_R3I19_EXACT.tgz
             OUTPUT/APPLY_R3I14_EXACT.py
-            OUTPUT/R3I19_BUILD_WORKFLOW.yml
+            OUTPUT/R3I20_BUILD_WORKFLOW.yml
             OUTPUT/R3I19_STATIC_GATES.txt
             ci/R3I19_DASH_FINAL_FROM_R3I18B.patch
+            ci/R3I20_BLE_VESC_TUNNEL_FROM_R3I19.patch
             ci/g30_r3i9_pushstart_test.py
             ci/01_AUTO_R3I14_TWO_PUSH_TEST.cmd
             OUTPUT/build.log
