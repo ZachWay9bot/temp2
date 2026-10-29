@@ -57,7 +57,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          gradle --no-daemon :app:assembleDebug
+          gradle --no-daemon :app:testDebugUnitTest :app:assembleDebug
           cp app/build/outputs/apk/debug/app-debug.apk G30VescBleBridge_R3I20_v0.1.0-debug.apk
           sha256sum G30VescBleBridge_R3I20_v0.1.0-debug.apk > SHA256_APK.txt
           ls -lh G30VescBleBridge_R3I20_v0.1.0-debug.apk
