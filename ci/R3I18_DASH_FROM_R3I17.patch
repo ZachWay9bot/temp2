@@ -22,6 +22,28 @@ diff --git a/common_files/src/app.c b/common_files/src/app.c
 diff --git a/common_files/src/app_uartcomm.c b/common_files/src/app_uartcomm.c
 --- a/common_files/src/app_uartcomm.c
 +++ b/common_files/src/app_uartcomm.c
+@@ -191,6 +191,21 @@
+ 	if(app_is_output_disabled()){
+ 		return;
+ 	}
+ 
++#ifdef G30P
++    /* Stock dash uses the same Hall/Sensorless command gate as VESC Tool.
++     * Brake always wins and remains electrical Coast on G30. */
++    if(brake>0.0f){
++        VescToSTM_g30_pushstart_command(false);
++        VescToSTM_set_brake_current_rel(brake);
++    }else if(pwr>0.0f){
++        VescToSTM_g30_pushstart_command(true);
++        VescToSTM_set_current_rel(pwr);
++    }else{
++        VescToSTM_g30_pushstart_command(false);
++    }
++    return;
++#endif
++
+ 	// Use the filtered and mapped voltage for control according to the configuration.
+ 	switch (config.ctrl_type) {
 @@ -283,6 +283,29 @@
  	xTimerChangePeriod(xTimer, app_updaterate(), 1000);
  }
