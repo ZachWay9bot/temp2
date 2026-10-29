@@ -147,21 +147,20 @@ once(app,"""                        g30_dash_metadata_seen=1u;""","""           
 vesc=src/"VescCommand.c"
 once(vesc,'#include "app.h"', '#include "app.h"\n#ifdef G30P\nextern void g30_dash_diag_format(char *out, unsigned cap, unsigned page);\n#endif')
 data=vesc.read_text()
-start=data.index("static void commands_process_packet_g30(")
-slot=data.index("switch (packet_id) {",start)+len("switch (packet_id) {")
+start=data.index("case COMM_TERMINAL_CMD:")
+slot=start+len("case COMM_TERMINAL_CMD:")
 insert=r"""
-    case COMM_TERMINAL_CMD:
-        /* Read-only diagnostics via IoT VESC Tool Terminal: g30dash */
-        if(len>=7u && memcmp(data,"g30dash",7u)==0){
-            for(unsigned page=0;page<3u;page++){
-                uint8_t sb[PACKET_SIZE(150)];
-                uint8_t *b=sb+PACKET_HEADER;
-                b[0]=COMM_PRINT;
-                g30_dash_diag_format((char*)(b+1),138u,page);
-                reply_func(sb,(unsigned int)(strlen((char*)b+1u)+2u),phandle);
-            }
-        }
-        break;
+                    /* R3I20 read-only dashboard stats via VESC Tool terminal. */
+                    if(len>=7u && memcmp(data,"g30dash",7u)==0){
+                        for(unsigned page=0;page<3u;page++){
+                            uint8_t sb[PACKET_SIZE(150)];
+                            uint8_t *b=sb+PACKET_HEADER;
+                            b[0]=COMM_PRINT;
+                            g30_dash_diag_format((char*)(b+1),138u,page);
+                            reply_func(sb,(unsigned int)(strlen((char*)b+1u)+2u),phandle);
+                        }
+                        break;
+                    }
 """
 vesc.write_text(data[:slot]+insert+data[slot:])
 
