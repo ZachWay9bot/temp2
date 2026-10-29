@@ -1,0 +1,75 @@
+name: R3I20 Android G30 VESC BLE bridge
+
+on:
+  push:
+    branches:
+      - r3i20-ble-vesc-tunnel-20261029
+  workflow_dispatch:
+
+jobs:
+  android:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android 35 SDK
+        shell: bash
+        run: |
+          set -euo pipefail
+          yes | sdkmanager --licenses >/dev/null || true
+          sdkmanager "platforms;android-35" "build-tools;35.0.0"
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.9"
+
+      - name: Static bridge gates
+        shell: bash
+        run: |
+          set -euo pipefail
+          ROOT=android/G30VescBleBridge
+          grep -q '127.0.0.1' "$ROOT/README.md"
+          grep -q '65102' "$ROOT/app/src/main/java/de/zachway/g30vescbridge/BridgeService.java"
+          grep -q 'TUNNEL_CMD = 0x7E' "$ROOT/app/src/main/java/de/zachway/g30vescbridge/BridgeService.java"
+          grep -q 'TUNNEL_ARG = 0x56' "$ROOT/app/src/main/java/de/zachway/g30vescbridge/BridgeService.java"
+          grep -q '6e400001-b5a3-f393-e0a9-e50e24dcca9e' "$ROOT/app/src/main/java/de/zachway/g30vescbridge/BridgeService.java"
+          grep -q 'AES/ECB/NoPadding' "$ROOT/app/src/main/java/de/zachway/g30vescbridge/NinebotCrypto.java"
+          grep -q 'SHA-1' "$ROOT/app/src/main/java/de/zachway/g30vescbridge/NinebotCrypto.java"
+          grep -q 'CMD_INIT = 0x5B' "$ROOT/app/src/main/java/de/zachway/g30vescbridge/NinebotCrypto.java"
+          grep -q 'CMD_PING = 0x5C' "$ROOT/app/src/main/java/de/zachway/g30vescbridge/NinebotCrypto.java"
+          grep -q 'CMD_PAIR = 0x5D' "$ROOT/app/src/main/java/de/zachway/g30vescbridge/NinebotCrypto.java"
+          echo R3I20_ANDROID_STATIC_GATES=PASS
+
+      - name: Build debug APK
+        working-directory: android/G30VescBleBridge
+        shell: bash
+        run: |
+          set -euo pipefail
+          gradle --no-daemon :app:assembleDebug
+          cp app/build/outputs/apk/debug/app-debug.apk G30VescBleBridge_R3I20_v0.1.0-debug.apk
+          sha256sum G30VescBleBridge_R3I20_v0.1.0-debug.apk > SHA256_APK.txt
+          ls -lh G30VescBleBridge_R3I20_v0.1.0-debug.apk
+          cat SHA256_APK.txt
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: G30VescBleBridge_R3I20_ANDROID_DEBUG
+          retention-days: 14
+          if-no-files-found: error
+          path: |
+            android/G30VescBleBridge/G30VescBleBridge_R3I20_v0.1.0-debug.apk
+            android/G30VescBleBridge/SHA256_APK.txt
+            android/G30VescBleBridge/README.md
