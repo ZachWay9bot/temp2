@@ -5,6 +5,7 @@ on:
       - r3i15hf4-dash-link-r1-20261029
       - hf4-dash-r2p1-build
       - r3i21-dash-button-20261101
+      - r3i22-dash-protocol-20261101
   workflow_dispatch:
 
 jobs:
@@ -220,6 +221,8 @@ jobs:
           /tmp/hf4_dash_r2_test | tee OUTPUT/DASH_R2_HOST_TESTS.txt
           cc -std=c11 -Wall -Wextra -Werror -fsanitize=address,undefined -fno-omit-frame-pointer ci/test_r3i21_button.c -o /tmp/r3i21_button_test
           for c in single150 single950 double_long2 double_bounce2 long verylong bounce; do ASAN_OPTIONS=detect_leaks=0 /tmp/r3i21_button_test "$c"; done | tee OUTPUT/POWER_BUTTON_HOST_TESTS.txt
+          cc -std=c11 -Wall -Wextra -Werror -fsanitize=address,undefined -fno-omit-frame-pointer -I SOURCE_KOXX3/common_files/src ci/test_r3i22_dash_protocol.c -o /tmp/r3i22_dash_protocol_test
+          ASAN_OPTIONS=detect_leaks=0 /tmp/r3i22_dash_protocol_test | tee OUTPUT/R3I22_DASH_PROTOCOL_SIM.txt
 
       - name: Install ARM GNU GCC 13.2.1
         shell: bash
@@ -334,6 +337,8 @@ jobs:
             OUTPUT/POWER_BUTTON_HOST_TESTS.txt
             ci/R3I21_DASH_BUTTON_FROM_R2P1.patch
             ci/test_r3i21_button.c
+            ci/test_r3i22_dash_protocol.c
+            OUTPUT/R3I22_DASH_PROTOCOL_SIM.txt
             OUTPUT/build.log
             OUTPUT/compile.log
             OUTPUT/validation.log
