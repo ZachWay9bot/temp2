@@ -228,6 +228,9 @@ jobs:
           ASAN_OPTIONS=detect_leaks=0 /tmp/r3i22_dash_protocol_test | tee OUTPUT/R3I22_DASH_PROTOCOL_SIM.txt
           cc -std=c11 -Wall -Wextra -Werror -fsanitize=address,undefined -fno-omit-frame-pointer ci/test_r3i22_mode_button.c -o /tmp/r3i22_mode_button_test
           ASAN_OPTIONS=detect_leaks=0 /tmp/r3i22_mode_button_test | tee OUTPUT/R3I22_MODE_BUTTON_TEST.txt
+          cc -std=c11 -Wall -Wextra -Werror -fsanitize=address,undefined -fno-omit-frame-pointer -I SOURCE_KOXX3/common_files/src ci/test_r3i22_dash_status.c -o /tmp/r3i22_dash_status_test
+          ASAN_OPTIONS=detect_leaks=0 /tmp/r3i22_dash_status_test | tee OUTPUT/R3I22_DASH_STATUS_TEST.txt
+          python3 ci/audit_r3i22_dash_status.py SOURCE_KOXX3 | tee OUTPUT/R3I22_DASH_STATUS_AUDIT.txt
 
       - name: Install ARM GNU GCC 13.2.1
         shell: bash
@@ -347,6 +350,10 @@ jobs:
             ci/R3I22_DASH_MODE_BUTTON.patch
             ci/test_r3i22_mode_button.c
             OUTPUT/R3I22_MODE_BUTTON_TEST.txt
+            ci/test_r3i22_dash_status.c
+            ci/audit_r3i22_dash_status.py
+            OUTPUT/R3I22_DASH_STATUS_TEST.txt
+            OUTPUT/R3I22_DASH_STATUS_AUDIT.txt
             OUTPUT/build.log
             OUTPUT/compile.log
             OUTPUT/validation.log
