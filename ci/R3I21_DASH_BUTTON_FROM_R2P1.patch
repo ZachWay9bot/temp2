@@ -1,0 +1,66 @@
+--- a/common_files/src/task_pwr.c
++++ b/common_files/src/task_pwr.c
+@@ -68,34 +68,42 @@
+ }
+ 
+ eButtonEvent getButtonEvent() {
+-    /* 300 ms was incorrectly treated as LONG_PRESS in R1/R2. A perfectly
+-     * ordinary click was therefore turning the controller off. Only a
+-     * deliberate >=2500 ms hold followed by RELEASE can request power off. */
+-    static uint8_t pressed, single_pending;
++    /* G30D button state machine. A normal dashboard click must never be
++     * interpreted as power-off. LONG_PRESS is emitted only after a deliberate
++     * >=2500 ms hold has been released. For double click, the second press must
++     * begin within 250 ms; its release does not have to fit into that window. */
++    /* pending: 0 = none, 1 = first short released, 2 = second press active */
++    static uint8_t pressed, pending;
+     static uint32_t pressed_at, released_at;
+     uint32_t now = HAL_GetTick();
+     uint8_t down = buttonState();
++
+     if(down && !pressed) {
+         pressed = 1u;
+         pressed_at = now;
++        if(pending == 1u && (uint32_t)(now - released_at) <= 250u)
++            pending = 2u;
+     } else if(!down && pressed) {
+         pressed = 0u;
+         uint32_t held_ms = (uint32_t)(now - pressed_at);
+         if(held_ms >= 2500u) {
+-            single_pending = 0u;
++            pending = 0u;
+             return LONG_PRESS;
+         }
+         if(held_ms >= 30u) {
+-            if(single_pending && (uint32_t)(now - released_at) <= 250u) {
+-                single_pending = 0u;
++            if(pending == 2u) {
++                pending = 0u;
+                 return DOUBLE_PRESS;
+             }
+-            single_pending = 1u;
++            pending = 1u;
+             released_at = now;
++        } else if(pending == 2u) {
++            /* A bounced/too-short second press must not consume click #1. */
++            pending = 1u;
+         }
+     }
+-    if(!pressed && single_pending && (uint32_t)(now - released_at) > 250u) {
+-        single_pending = 0u;
++    if(!pressed && pending == 1u && (uint32_t)(now - released_at) > 250u) {
++        pending = 0u;
+         return SINGLE_PRESS;
+     }
+     return NO_PRESS;
+--- a/common_files/src/defines.h
++++ b/common_files/src/defines.h
+@@ -2,7 +2,7 @@
+ #define DEFINES_H_
+ 
+ #ifdef G30P
+-#define HW_NAME "G30D-HF4-DASH-LINK-R2P1"
++#define HW_NAME "G30D-R3I21-DASH-BUTTON"
+ #else
+ #define HW_NAME "40"
+ #endif
