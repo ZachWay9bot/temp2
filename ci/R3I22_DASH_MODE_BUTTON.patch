@@ -1,18 +1,3 @@
---- a/common_files/src/task_pwr.c
-+++ b/common_files/src/task_pwr.c
-@@ -216,7 +216,11 @@
- 
- 			  } break ;
- 			  case DOUBLE_PRESS : {
-+				  /* Speed mode occupies only bits 0..2. TEMP/MPH/LOCK/etc. share
-+				   * the same dashboard status byte and must not break the mode
-+				   * cycle when one of those upper status bits is set. */
- 				  uint32_t kmh=0;
--				  switch(m365_to_display.mode){
-+				  switch(m365_to_display.mode & 0x07u){
- 				  	case M365_MODE_DRIVE:
- 				  		app_adc_speed_mode(M365_MODE_SPORT);
- 						kmh = mc_conf.modes_kmh_limits[2];
 --- a/common_files/src/defines.h
 +++ b/common_files/src/defines.h
 @@ -2,7 +2,7 @@
@@ -24,3 +9,17 @@
  #else
  #define HW_NAME "40"
  #endif
+--- a/common_files/src/task_pwr.c
++++ b/common_files/src/task_pwr.c
+@@ -216,7 +216,10 @@
+ 			  } break ;
+ 			  case DOUBLE_PRESS : {
+ 				  uint32_t kmh=0;
+-				  switch(m365_to_display.mode){
++				  /* Speed mode occupies only bits 0..2. TEMP/MPH/LOCK/etc. share
++				   * the same dashboard status byte and must not break the mode
++				   * cycle when one of those upper status bits is set. */
++				  switch(m365_to_display.mode & 0x07u){
+ 				  	case M365_MODE_DRIVE:
+ 				  		app_adc_speed_mode(M365_MODE_SPORT);
+ 						kmh = mc_conf.modes_kmh_limits[2];
