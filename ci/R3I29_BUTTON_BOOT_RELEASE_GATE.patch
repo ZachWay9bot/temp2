@@ -1,0 +1,38 @@
+--- a/common_files/src/task_pwr.c
++++ b/common_files/src/task_pwr.c
+@@ -77,9 +77,20 @@
+      * begin within 250 ms; its release does not have to fit into that window. */
+     /* pending: 0 = none, 1 = first short released, 2 = second press active */
+-    static uint8_t pressed, pending;
++    static uint8_t pressed, pending, startup_armed;
+     static uint32_t pressed_at, released_at;
+     uint32_t now = HAL_GetTick();
+     uint8_t down = buttonState();
+ 
++    /* The G30 is normally powered up by holding this same active-low button.
++     * That initial hold is a power-on gesture, not a light click. Ignore the
++     * complete boot press/release cycle and arm normal click handling only
++     * after the debounced input has been observed released once. */
++    if(!startup_armed) {
++        if(!down) {
++            startup_armed = 1u;
++            pressed = 0u;
++            pending = 0u;
++        }
++        return NO_PRESS;
++    }
++
+     if(down && !pressed) {
+         pressed = 1u;
+         pressed_at = now;
+--- a/common_files/src/defines.h
++++ b/common_files/src/defines.h
+@@ -2,7 +2,7 @@
+ #define DEFINES_H_
+ 
+ #ifdef G30P
+-#define HW_NAME "G30D-R3I28-BUTTON-PULLUP-LOW"
++#define HW_NAME "G30D-R3I29-BUTTON-BOOT-GATE"
+ #else
+ #define HW_NAME "40"
+ #endif
