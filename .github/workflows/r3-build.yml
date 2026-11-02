@@ -15,7 +15,7 @@ jobs:
   build:
     runs-on: ubuntu-24.04
     permissions:
-      contents: read
+      contents: write
     steps:
       - uses: actions/checkout@v4
 
@@ -394,3 +394,32 @@ jobs:
             OUTPUT/build.log
             OUTPUT/compile.log
             OUTPUT/validation.log
+
+      - name: Publish verified R3I25 application BIN in firmware branch
+        if: github.ref == 'refs/heads/r3i25-dash-light-button-20261102'
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p RELEASE_R3I25
+          cp OUTPUT/SmartESC_v2_G30D_R3I25_DASH_LIGHT_BUTTON_STLINK_APP_0x08001000.bin RELEASE_R3I25/
+          cp OUTPUT/SHA256_BIN.txt RELEASE_R3I25/
+          cp OUTPUT/MEMORY_GATE.txt RELEASE_R3I25/
+          cp OUTPUT/R3I25_DASH_LIGHT_AUDIT.txt RELEASE_R3I25/
+          cp OUTPUT/R3I25_BUTTON_TESTS.txt RELEASE_R3I25/
+          python3 - <<'PY'
+          from pathlib import Path
+          import hashlib
+          d=Path('RELEASE_R3I25')
+          img=d/'SmartESC_v2_G30D_R3I25_DASH_LIGHT_BUTTON_STLINK_APP_0x08001000.bin'
+          digest=hashlib.sha256(img.read_bytes()).hexdigest()
+          assert digest == (d/'SHA256_BIN.txt').read_text().split()[0]
+          assert 8192 < img.stat().st_size < 126976
+          print('Publish gate: BIN SHA256/length OK',digest)
+          PY
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git config user.name 'github-actions[bot]'
+          git add RELEASE_R3I25
+          if ! git diff --cached --quiet; then
+            git commit -m '[skip ci] Publish R3I25 verified application binary'
+            git push origin "HEAD:refs/heads/r3i25-dash-light-button-20261102"
+          fi
