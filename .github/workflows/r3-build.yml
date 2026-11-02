@@ -383,9 +383,9 @@ jobs:
             ci/R3I23_DASH_ONLY_DISABLE_ADC_TIMER.patch
             ci/audit_r3i23_dash_only.py
             OUTPUT/R3I23_DASH_ONLY_AUDIT.txt
-            ci/R3I25_DASH_LIGHT_BUTTON.patch
-            ci/audit_r3i25_dash_mode_safe.py
-            OUTPUT/R3I25_DASH_LIGHT_BUTTON_AUDIT.txt
+            ci/R3I24_DASH_MODE_SAFE.patch
+            ci/audit_r3i24_dash_mode_safe.py
+            OUTPUT/R3I24_DASH_MODE_SAFE_AUDIT.txt
             ci/R3I25_DASH_LIGHT_BUTTON.patch
             ci/audit_r3i25_dash_light_button.py
             ci/test_r3i25_button.c
