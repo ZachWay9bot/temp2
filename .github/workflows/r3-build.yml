@@ -1,4 +1,4 @@
-name: R3I28 button-pullup-active-low - flashable build
+name: R3I29 button-boot-release-gate - flashable build
 on:
   push:
     branches:
@@ -9,6 +9,7 @@ on:
       - r3i23-dash-only-20261102
       - r3i24-dash-mode-safe-20261102
       - r3i28-button-pullup-active-low-20261102
+      - r3i29-button-boot-release-gate-20261102
   workflow_dispatch:
 
 jobs:
@@ -254,6 +255,19 @@ jobs:
           grep -q 'GPIO_PIN_RESET' SOURCE_KOXX3/common_files/src/task_pwr.c
           grep -q 'status\[2\]=m365_to_display.light?100u:0u;' SOURCE_KOXX3/common_files/src/g30_dash_link.c
 
+      - name: Apply R3I29 boot-button release gate and run regression
+        shell: bash
+        run: |
+          set -euo pipefail
+          patch -d SOURCE_KOXX3 -p1 --dry-run < ci/R3I29_BUTTON_BOOT_RELEASE_GATE.patch
+          patch -d SOURCE_KOXX3 -p1 < ci/R3I29_BUTTON_BOOT_RELEASE_GATE.patch
+          python3 ci/audit_r3i29_button_boot_release_gate.py SOURCE_KOXX3 | tee OUTPUT/R3I29_BOOT_GATE_AUDIT.txt
+          python3 ci/test_r3i29_button_boot_gate.py | tee OUTPUT/R3I29_BOOT_GATE_HOST_TEST.txt
+          grep -q 'G30D-R3I29-BUTTON-BOOT-GATE' SOURCE_KOXX3/common_files/src/defines.h
+          grep -q 'startup_armed' SOURCE_KOXX3/common_files/src/task_pwr.c
+          grep -q 'GPIO_InitStruct.Pull = GPIO_PULLUP;' SOURCE_KOXX3/g30p/Src/main.c
+          grep -q 'status\[2\]=m365_to_display.light?100u:0u;' SOURCE_KOXX3/common_files/src/g30_dash_link.c
+
       - name: Install ARM GNU GCC 13.2.1
         shell: bash
         run: |
@@ -267,18 +281,18 @@ jobs:
           tar -xzf "$FILE"
           echo "/tmp/xpack-arm-none-eabi-gcc-13.2.1-1.1/bin" >> "$GITHUB_PATH"
 
-      - name: Compile and validate R3I28 button-pullup-active-low
+      - name: Compile and validate R3I29 button-boot-release-gate
         shell: bash
         run: |
           set -euo pipefail
           arm-none-eabi-gcc --version
-          sed -i 's/FO76_PUSHSTART_R3I9/R3I28_BUTTON_PULLUP_LOW/g' tools/build_native.py tools/validate_image.py
-          sed -i 's/G30D-FO76-PUSHSTART-R3I9/G30D-R3I28-BUTTON-PULLUP-LOW/g' tools/validate_image.py
+          sed -i 's/FO76_PUSHSTART_R3I9/R3I29_BUTTON_BOOT_GATE/g' tools/build_native.py tools/validate_image.py
+          sed -i 's/G30D-FO76-PUSHSTART-R3I9/G30D-R3I29-BUTTON-BOOT-GATE/g' tools/validate_image.py
           mkdir -p OUTPUT
           python3 tools/build_native.py | tee OUTPUT/build.log
           python3 tools/validate_image.py | tee OUTPUT/validation.log
-          BIN=OUTPUT/SmartESC_v2_G30D_R3I28_BUTTON_PULLUP_LOW_STLINK_APP_0x08001000.bin
-          ELF=OUTPUT/SmartESC_v2_G30D_R3I28_BUTTON_PULLUP_LOW.elf
+          BIN=OUTPUT/SmartESC_v2_G30D_R3I29_BUTTON_BOOT_GATE_STLINK_APP_0x08001000.bin
+          ELF=OUTPUT/SmartESC_v2_G30D_R3I29_BUTTON_BOOT_GATE.elf
           sha256sum "$BIN" > OUTPUT/SHA256_BIN.txt
           arm-none-eabi-size "$ELF" > OUTPUT/SIZE.txt
           python3 - <<'PY'
@@ -287,13 +301,13 @@ jobs:
           text,data,bss=map(int,parts[:3])
           ram=data+bss
           flash=text+data
-          print(f'R3I28_FLASH={flash} R3I28_RAM={ram}')
+          print(f'R3I29_FLASH={flash} R3I29_RAM={ram}')
           assert ram <= 20480, f'RAM overflow: {ram} > 20480'
           assert flash <= 126976, f'APP flash overflow: {flash} > 126976'
           Path('OUTPUT/MEMORY_GATE.txt').write_text(f'FLASH={flash}/126976\nRAM={ram}/20480\nPASS\n')
           PY
           arm-none-eabi-nm -S --size-sort "$ELF" | tail -40 > OUTPUT/LARGEST_SYMBOLS.txt
-          tar --exclude='SOURCE_KOXX3/.git' -czf OUTPUT/SOURCE_KOXX3_R3I28_BUTTON_PULLUP_LOW_EXACT.tgz SOURCE_KOXX3
+          tar --exclude='SOURCE_KOXX3/.git' -czf OUTPUT/SOURCE_KOXX3_R3I29_BUTTON_BOOT_GATE_EXACT.tgz SOURCE_KOXX3
           cp ci/R3I15HF4_FROM_R3I15HF3.patch OUTPUT/
           python3 - <<'PY' | tee OUTPUT/R3I15HF4_STATIC_GATES.txt
           from pathlib import Path
@@ -303,7 +317,7 @@ jobs:
           te=Path('SOURCE_KOXX3/common_files/src/terminal.c').read_text()
           de=Path('SOURCE_KOXX3/common_files/src/defines.h').read_text()
           gates={
-            'build_id':'G30D-R3I28-BUTTON-PULLUP-LOW' in de,
+            'build_id':'G30D-R3I29-BUTTON-BOOT-GATE' in de,
             'r3i12_catch_retained':'sensorless_catch_phase_q4=((int32_t)(uint16_t)obs_pred)<<4;' in sh and 'catch_phase=obs_pred;' in sh,
             'no_command_inversion':'erpm = -erpm;' not in vs,
             'speed_feedback_normalized':'(-(int32_t)odpp)' in mc,
@@ -334,23 +348,23 @@ jobs:
           print('R3I15HF4_STATIC_GATES=PASS')
           PY
 
-      - name: Upload flashable R3I28 button-pullup-active-low candidate
+      - name: Upload flashable R3I29 button-boot-release-gate candidate
         uses: actions/upload-artifact@v4
         with:
-          name: G30D_R3I28_BUTTON_PULLUP_LOW_COMPILED
+          name: G30D_R3I29_BUTTON_BOOT_GATE_COMPILED
           if-no-files-found: error
           retention-days: 7
           path: |
-            OUTPUT/SmartESC_v2_G30D_R3I28_BUTTON_PULLUP_LOW.elf
-            OUTPUT/SmartESC_v2_G30D_R3I28_BUTTON_PULLUP_LOW.map
-            OUTPUT/SmartESC_v2_G30D_R3I28_BUTTON_PULLUP_LOW_STLINK_APP_0x08001000.bin
-            OUTPUT/SmartESC_v2_G30D_R3I28_BUTTON_PULLUP_LOW_STLINK_APP_0x08001000.hex
+            OUTPUT/SmartESC_v2_G30D_R3I29_BUTTON_BOOT_GATE.elf
+            OUTPUT/SmartESC_v2_G30D_R3I29_BUTTON_BOOT_GATE.map
+            OUTPUT/SmartESC_v2_G30D_R3I29_BUTTON_BOOT_GATE_STLINK_APP_0x08001000.bin
+            OUTPUT/SmartESC_v2_G30D_R3I29_BUTTON_BOOT_GATE_STLINK_APP_0x08001000.hex
             OUTPUT/VERIFICATION.json
             OUTPUT/SHA256_BIN.txt
             OUTPUT/SIZE.txt
             OUTPUT/MEMORY_GATE.txt
             OUTPUT/LARGEST_SYMBOLS.txt
-            OUTPUT/SOURCE_KOXX3_R3I28_BUTTON_PULLUP_LOW_EXACT.tgz
+            OUTPUT/SOURCE_KOXX3_R3I29_BUTTON_BOOT_GATE_EXACT.tgz
             OUTPUT/APPLY_R3I14_EXACT.py
             OUTPUT/R3I15HF4_BUILD_WORKFLOW.yml
             OUTPUT/R3I15HF4_STATIC_GATES.txt
@@ -385,6 +399,11 @@ jobs:
             ci/R3I28_BUTTON_PULLUP_ACTIVE_LOW.patch
             ci/audit_r3i28_button_pullup_active_low.py
             OUTPUT/R3I28_BUTTON_PULLUP_ACTIVE_LOW_AUDIT.txt
+            ci/R3I29_BUTTON_BOOT_RELEASE_GATE.patch
+            ci/audit_r3i29_button_boot_release_gate.py
+            ci/test_r3i29_button_boot_gate.py
+            OUTPUT/R3I29_BOOT_GATE_AUDIT.txt
+            OUTPUT/R3I29_BOOT_GATE_HOST_TEST.txt
             OUTPUT/build.log
             OUTPUT/compile.log
             OUTPUT/validation.log
