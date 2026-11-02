@@ -1,4 +1,4 @@
-name: R3I22 dashboard protocol - flashable build
+name: R3I23 dash-only - flashable build
 on:
   push:
     branches:
@@ -6,6 +6,7 @@ on:
       - hf4-dash-r2p1-build
       - r3i21-dash-button-20261101
       - r3i22-dash-protocol-20261101
+      - r3i23-dash-only-20261102
   workflow_dispatch:
 
 jobs:
@@ -201,7 +202,7 @@ jobs:
           cc -std=c11 -Wall -Wextra -Werror -fsanitize=address,undefined -fno-omit-frame-pointer -Ici/hf4_dash_link_r1 ci/hf4_dash_link_r1/test_hf4_dash_proto.c -o /tmp/hf4_dash_proto_test
           ASAN_OPTIONS=detect_leaks=0 /tmp/hf4_dash_proto_test | tee OUTPUT/DASH_R1_HOST_TESTS.txt
 
-      - name: Apply dashboard drive, R3I21 button and R3I22 mode fix
+      - name: Apply dashboard drive, button fixes and R3I23 dash-only timer removal
         shell: bash
         run: |
           set -euo pipefail
@@ -215,7 +216,10 @@ jobs:
           patch -d SOURCE_KOXX3 -p1 < ci/R3I21_DASH_BUTTON_FROM_R2P1.patch
           patch -d SOURCE_KOXX3 -p1 --dry-run < ci/R3I22_DASH_MODE_BUTTON.patch
           patch -d SOURCE_KOXX3 -p1 < ci/R3I22_DASH_MODE_BUTTON.patch
-          grep -q 'G30D-R3I22-DASH-PROTOCOL' SOURCE_KOXX3/common_files/src/defines.h
+          patch -d SOURCE_KOXX3 -p1 --dry-run < ci/R3I23_DASH_ONLY_DISABLE_ADC_TIMER.patch
+          patch -d SOURCE_KOXX3 -p1 < ci/R3I23_DASH_ONLY_DISABLE_ADC_TIMER.patch
+          grep -q 'G30D-R3I23-DASH-ONLY' SOURCE_KOXX3/common_files/src/defines.h
+          python3 ci/audit_r3i23_dash_only.py SOURCE_KOXX3 | tee OUTPUT/R3I23_DASH_ONLY_AUDIT.txt
           grep -q 'switch(m365_to_display.mode & 0x07u)' SOURCE_KOXX3/common_files/src/task_pwr.c
           grep -q 'G30_DASH_R2_GAS_IDLE       67u' SOURCE_KOXX3/common_files/src/g30_dash_drive_logic.h
           grep -q 'held_ms >= 2500u' SOURCE_KOXX3/common_files/src/task_pwr.c
@@ -245,18 +249,18 @@ jobs:
           tar -xzf "$FILE"
           echo "/tmp/xpack-arm-none-eabi-gcc-13.2.1-1.1/bin" >> "$GITHUB_PATH"
 
-      - name: Compile and validate R3I22 dashboard protocol
+      - name: Compile and validate R3I23 dash-only
         shell: bash
         run: |
           set -euo pipefail
           arm-none-eabi-gcc --version
-          sed -i 's/FO76_PUSHSTART_R3I9/R3I22_DASH_PROTOCOL/g' tools/build_native.py tools/validate_image.py
-          sed -i 's/G30D-FO76-PUSHSTART-R3I9/G30D-R3I22-DASH-PROTOCOL/g' tools/validate_image.py
+          sed -i 's/FO76_PUSHSTART_R3I9/R3I23_DASH_ONLY/g' tools/build_native.py tools/validate_image.py
+          sed -i 's/G30D-FO76-PUSHSTART-R3I9/G30D-R3I23-DASH-ONLY/g' tools/validate_image.py
           mkdir -p OUTPUT
           python3 tools/build_native.py | tee OUTPUT/build.log
           python3 tools/validate_image.py | tee OUTPUT/validation.log
-          BIN=OUTPUT/SmartESC_v2_G30D_R3I22_DASH_PROTOCOL_STLINK_APP_0x08001000.bin
-          ELF=OUTPUT/SmartESC_v2_G30D_R3I22_DASH_PROTOCOL.elf
+          BIN=OUTPUT/SmartESC_v2_G30D_R3I23_DASH_ONLY_STLINK_APP_0x08001000.bin
+          ELF=OUTPUT/SmartESC_v2_G30D_R3I23_DASH_ONLY.elf
           sha256sum "$BIN" > OUTPUT/SHA256_BIN.txt
           arm-none-eabi-size "$ELF" > OUTPUT/SIZE.txt
           python3 - <<'PY'
@@ -265,13 +269,13 @@ jobs:
           text,data,bss=map(int,parts[:3])
           ram=data+bss
           flash=text+data
-          print(f'R3I22_FLASH={flash} R3I22_RAM={ram}')
+          print(f'R3I23_FLASH={flash} R3I23_RAM={ram}')
           assert ram <= 20480, f'RAM overflow: {ram} > 20480'
           assert flash <= 126976, f'APP flash overflow: {flash} > 126976'
           Path('OUTPUT/MEMORY_GATE.txt').write_text(f'FLASH={flash}/126976\nRAM={ram}/20480\nPASS\n')
           PY
           arm-none-eabi-nm -S --size-sort "$ELF" | tail -40 > OUTPUT/LARGEST_SYMBOLS.txt
-          tar --exclude='SOURCE_KOXX3/.git' -czf OUTPUT/SOURCE_KOXX3_R3I22_DASH_PROTOCOL_EXACT.tgz SOURCE_KOXX3
+          tar --exclude='SOURCE_KOXX3/.git' -czf OUTPUT/SOURCE_KOXX3_R3I23_DASH_ONLY_EXACT.tgz SOURCE_KOXX3
           cp ci/R3I15HF4_FROM_R3I15HF3.patch OUTPUT/
           python3 - <<'PY' | tee OUTPUT/R3I15HF4_STATIC_GATES.txt
           from pathlib import Path
@@ -281,7 +285,7 @@ jobs:
           te=Path('SOURCE_KOXX3/common_files/src/terminal.c').read_text()
           de=Path('SOURCE_KOXX3/common_files/src/defines.h').read_text()
           gates={
-            'build_id':'G30D-R3I22-DASH-PROTOCOL' in de,
+            'build_id':'G30D-R3I23-DASH-ONLY' in de,
             'r3i12_catch_retained':'sensorless_catch_phase_q4=((int32_t)(uint16_t)obs_pred)<<4;' in sh and 'catch_phase=obs_pred;' in sh,
             'no_command_inversion':'erpm = -erpm;' not in vs,
             'speed_feedback_normalized':'(-(int32_t)odpp)' in mc,
@@ -312,17 +316,17 @@ jobs:
           print('R3I15HF4_STATIC_GATES=PASS')
           PY
 
-      - name: Upload flashable R3I22 dashboard protocol candidate
+      - name: Upload flashable R3I23 dash-only candidate
         uses: actions/upload-artifact@v4
         with:
-          name: G30D_R3I22_DASH_PROTOCOL_COMPILED
+          name: G30D_R3I23_DASH_ONLY_COMPILED
           if-no-files-found: error
           retention-days: 7
           path: |
-            OUTPUT/SmartESC_v2_G30D_R3I22_DASH_PROTOCOL.elf
-            OUTPUT/SmartESC_v2_G30D_R3I22_DASH_PROTOCOL.map
-            OUTPUT/SmartESC_v2_G30D_R3I22_DASH_PROTOCOL_STLINK_APP_0x08001000.bin
-            OUTPUT/SmartESC_v2_G30D_R3I22_DASH_PROTOCOL_STLINK_APP_0x08001000.hex
+            OUTPUT/SmartESC_v2_G30D_R3I23_DASH_ONLY.elf
+            OUTPUT/SmartESC_v2_G30D_R3I23_DASH_ONLY.map
+            OUTPUT/SmartESC_v2_G30D_R3I23_DASH_ONLY_STLINK_APP_0x08001000.bin
+            OUTPUT/SmartESC_v2_G30D_R3I23_DASH_ONLY_STLINK_APP_0x08001000.hex
             OUTPUT/VERIFICATION.json
             OUTPUT/SHA256_BIN.txt
             OUTPUT/SIZE.txt
@@ -354,6 +358,9 @@ jobs:
             ci/audit_r3i22_dash_status.py
             OUTPUT/R3I22_DASH_STATUS_TEST.txt
             OUTPUT/R3I22_DASH_STATUS_AUDIT.txt
+            ci/R3I23_DASH_ONLY_DISABLE_ADC_TIMER.patch
+            ci/audit_r3i23_dash_only.py
+            OUTPUT/R3I23_DASH_ONLY_AUDIT.txt
             OUTPUT/build.log
             OUTPUT/compile.log
             OUTPUT/validation.log
