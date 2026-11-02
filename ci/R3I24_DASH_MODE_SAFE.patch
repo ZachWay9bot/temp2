@@ -1,6 +1,6 @@
 --- a/common_files/src/task_pwr.c
 +++ b/common_files/src/task_pwr.c
-@@ -174,1 +174,3 @@
+@@ -174,1 +174,2 @@
 -				  MCI_ExecSpeedRamp(pMCI[M1], VescToSTM_erpm_to_speed(mc_conf.lo_max_erpm), 0);
 +				  /* R3I24 DASH-MODE-SAFE: mode changes limits only.
 +				   * Never emit a motor command from the dashboard button path. */
