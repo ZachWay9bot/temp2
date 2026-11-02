@@ -1,0 +1,4 @@
+EXACT R3I24->R3I25 DIFF PASS: common_files/src/task_pwr.c
+EXACT R3I24->R3I25 DIFF PASS: common_files/src/g30_dash_link.c
+EXACT R3I24->R3I25 DIFF PASS: common_files/src/defines.h
+R3I25 DASH LIGHT + BUTTON AUDIT: PASS
