@@ -1,0 +1,13 @@
+build_id=1
+light_back_to_r3i24_100=1
+double_back_250=1
+button_diag_struct=1
+raw_pc14_diag=1
+edge_counter=1
+single_counter=1
+double_counter=1
+long_counter=1
+g30dash_print=1
+long_threshold_unchanged=1
+no_gpio_pull_change=1
+R3I26 BUTTON DIAG AUDIT: PASS
