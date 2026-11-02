@@ -7,7 +7,7 @@ on:
       - r3i21-dash-button-20261101
       - r3i22-dash-protocol-20261101
       - r3i23-dash-only-20261102
-      - r3i24-dash-light-button-20261102
+      - r3i24-dash-mode-safe-20261102
       - r3i25-dash-light-button-20261102
   workflow_dispatch:
 
@@ -222,10 +222,10 @@ jobs:
           patch -d SOURCE_KOXX3 -p1 < ci/R3I23_DASH_ONLY_DISABLE_ADC_TIMER.patch
           grep -q 'G30D-R3I23-DASH-ONLY' SOURCE_KOXX3/common_files/src/defines.h
           python3 ci/audit_r3i23_dash_only.py SOURCE_KOXX3 | tee OUTPUT/R3I23_DASH_ONLY_AUDIT.txt
-          patch -d SOURCE_KOXX3 -p1 --dry-run < ci/R3I24_DASH_LIGHT_BUTTON.patch
-          patch -d SOURCE_KOXX3 -p1 < ci/R3I24_DASH_LIGHT_BUTTON.patch
-          grep -q 'G30D-R3I24-DASH-LIGHT-BUTTON' SOURCE_KOXX3/common_files/src/defines.h
-          python3 ci/audit_r3i24_dash_mode_safe.py SOURCE_KOXX3 | tee OUTPUT/R3I24_DASH_LIGHT_BUTTON_AUDIT.txt
+          patch -d SOURCE_KOXX3 -p1 --dry-run < ci/R3I24_DASH_MODE_SAFE.patch
+          patch -d SOURCE_KOXX3 -p1 < ci/R3I24_DASH_MODE_SAFE.patch
+          grep -q 'G30D-R3I24-DASH-MODE-SAFE' SOURCE_KOXX3/common_files/src/defines.h
+          python3 ci/audit_r3i24_dash_mode_safe.py SOURCE_KOXX3 | tee OUTPUT/R3I24_DASH_MODE_SAFE_AUDIT.txt
           grep -q 'switch(m365_to_display.mode & 0x07u)' SOURCE_KOXX3/common_files/src/task_pwr.c
           grep -q 'G30_DASH_R2_GAS_IDLE       67u' SOURCE_KOXX3/common_files/src/g30_dash_drive_logic.h
           grep -q 'held_ms >= 2500u' SOURCE_KOXX3/common_files/src/task_pwr.c
