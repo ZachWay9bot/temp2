@@ -1,0 +1,56 @@
+--- a/common_files/src/g30_dash_drive_logic.h
++++ b/common_files/src/g30_dash_drive_logic.h
+@@ -17,6 +17,24 @@
+ #define G30_DASH_R2_COMMAND_MS    40u
+ #define G30_DASH_R2_VESC_HOLD_MS 1500u
+ 
++/* R3I23: the real G30D test catches cleanly around the measured half-throttle
++ * point (gas ~=121, which maps to almost exactly 40% relative torque) but can
++ * lose the sensorless catch when full throttle is applied immediately. Keep
++ * normal throttle scaling untouched and only cap the first 400 ms of a
++ * sensorless start, then release linearly to the requested value. */
++#define G30_DASH_R3I23_START_TORQUE 13107u /* 40% of 32768 */
++#define G30_DASH_R3I23_RAMP_MS        400u
++
++static inline uint16_t g30_dash_r3i23_startup_limit(uint16_t requested,
++        uint32_t sensorless_age_ms) {
++    if(requested <= G30_DASH_R3I23_START_TORQUE) return requested;
++    if(sensorless_age_ms >= G30_DASH_R3I23_RAMP_MS) return requested;
++    uint32_t span=32768u-G30_DASH_R3I23_START_TORQUE;
++    uint32_t cap=G30_DASH_R3I23_START_TORQUE +
++        (span*sensorless_age_ms)/G30_DASH_R3I23_RAMP_MS;
++    return requested < cap ? requested : (uint16_t)cap;
++}
++
+ typedef enum {
+     G30_DASH_R2_NONE = 0,
+     G30_DASH_R2_DRIVE = 1,
+--- a/common_files/src/g30_dash_link.c
++++ b/common_files/src/g30_dash_link.c
+@@ -6,6 +6,7 @@
+ #include "g30_dash_link.h"
+ #include "g30_dash_proto.h"
+ #include "g30_dash_drive_logic.h"
++#include "g30_r3i_pushstart.h"
+ #include "app.h"
+ #include "ninebot.h"
+ #include "VescToSTM.h"
+@@ -80,6 +81,7 @@
+         uint16_t torque=g30_dash_r2_scale(d->gas);
+         if(!torque) return;
+         VescToSTM_g30_pushstart_command(true);
++        torque=g30_dash_r3i23_startup_limit(torque,g30_r3i_active_age_ms());
+         VescToSTM_set_current_rel_int((int32_t)torque);
+         VescToSTM_timeout_reset();
+         d->drive_commands++;
+--- a/common_files/src/defines.h
++++ b/common_files/src/defines.h
+@@ -2,7 +2,7 @@
+ #define DEFINES_H_
+ 
+ #ifdef G30P
+-#define HW_NAME "G30D-R3I22-DASH-GAS-BRAKE"
++#define HW_NAME "G30D-R3I23-STARTUP-TORQUE-RAMP"
+ #else
+ #define HW_NAME "40"
+ #endif
