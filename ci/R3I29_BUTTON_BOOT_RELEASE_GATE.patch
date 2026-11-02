@@ -1,6 +1,7 @@
 --- a/common_files/src/task_pwr.c
 +++ b/common_files/src/task_pwr.c
-@@ -77,9 +77,20 @@
+@@ -76,11 +76,24 @@
+      * >=2500 ms hold has been released. For double click, the second press must
       * begin within 250 ms; its release does not have to fit into that window. */
      /* pending: 0 = none, 1 = first short released, 2 = second press active */
 -    static uint8_t pressed, pending;
