@@ -1,8 +1,6 @@
 --- a/common_files/src/app_uartcomm.c
 +++ b/common_files/src/app_uartcomm.c
-@@ -266,16 +266,28 @@
- uint32_t app_updaterate(){
- 	return 2000 / config.update_rate_hz;
+@@ -267,16 +267,29 @@
  }
  
  void app_check_timer(){
@@ -32,8 +30,6 @@
  }
  
  void app_timer_update_period(){
- 	xTimerChangePeriod(xTimer, app_updaterate(), 1000);
- }
 --- a/common_files/src/defines.h
 +++ b/common_files/src/defines.h
 @@ -2,7 +2,7 @@
