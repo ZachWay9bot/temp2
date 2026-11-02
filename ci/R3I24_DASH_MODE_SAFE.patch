@@ -1,0 +1,32 @@
+--- a/common_files/src/task_pwr.c
++++ b/common_files/src/task_pwr.c
+@@ -32,7 +32,6 @@
+ #include "music.h"
+ #include "ninebot.h"
+ #include "conf_general.h"
+-#include "VescToSTM.h"
+ #include "app.h"
+ 
+ //Not a real Task... it's called from safety task. No delays allowed
+@@ -171,7 +170,10 @@
+ 				  }else{
+ 					  mc_conf.lo_max_erpm = (((float)kmh * 1000.0 / 60.0)/(mc_conf.si_wheel_diameter*M_PI)) * mc_conf.si_motor_poles * mc_conf.si_gear_ratio;
+ 				  }
+-				  MCI_ExecSpeedRamp(pMCI[M1], VescToSTM_erpm_to_speed(mc_conf.lo_max_erpm), 0);
++				  /* R3I24 DASH-MODE-SAFE: changing the dashboard mode changes
++				   * limits only. Never issue a motor-control command from the
++				   * button path; the active Dash/VESC owner keeps control. */
+ 			  } break ;
+ 		 }
+ 	}
+--- a/common_files/src/defines.h
++++ b/common_files/src/defines.h
+@@ -2,7 +2,7 @@
+ #define DEFINES_H_
+ 
+ #ifdef G30P
+-#define HW_NAME "G30D-R3I23-DASH-ONLY"
++#define HW_NAME "G30D-R3I24-DASH-MODE-SAFE"
+ #else
+ #define HW_NAME "40"
+ #endif
