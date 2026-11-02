@@ -1,0 +1,11 @@
+--- a/common_files/src/defines.h
++++ b/common_files/src/defines.h
+@@ -2,7 +2,7 @@
+ #define DEFINES_H_
+ 
+ #ifdef G30P
+-#define HW_NAME "G30D-R3I21-DASH-BUTTON"
++#define HW_NAME "G30D-R3I22-DASH-GAS-BRAKE"
+ #else
+ #define HW_NAME "40"
+ #endif
