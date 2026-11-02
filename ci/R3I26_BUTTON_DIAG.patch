@@ -1,0 +1,153 @@
+--- a/common_files/src/task_pwr.h
++++ b/common_files/src/task_pwr.h
+@@ -49,5 +49,14 @@
+ void task_PWR(void *argument);
+ void PWR_set_shutdown_time(uint32_t seconds);
+ 
++#ifdef G30P
++typedef struct {
++    uint8_t raw, stable, pressed, pending, light;
++    uint32_t edges, single_count, double_count, long_count, very_long_count;
++    uint32_t last_hold_ms, last_gap_ms;
++} g30_button_diag;
++void task_PWR_get_button_diag(g30_button_diag *out);
++#endif
++
+ #endif /* TASK_PWR_H_ */
+ 
+--- a/common_files/src/task_pwr.c
++++ b/common_files/src/task_pwr.c
+@@ -43,6 +43,10 @@
+ //extern const uint8_t m365_mode[3];
+ uint32_t shutdown_limit = 0;
+ 
++#ifdef G30P
++static g30_button_diag g30_btn_diag;
++#endif
++
+ /* G30D: a normal dashboard-button press must never count as power-off. 
+  * Keep the legacy M365 implementation completely unchanged. */
+ #ifdef G30P
+@@ -53,6 +57,7 @@
+     static uint32_t candidate_since;
+     uint32_t now = HAL_GetTick();
+     uint8_t raw = (HAL_GPIO_ReadPin(PWR_BTN_GPIO_Port, PWR_BTN_Pin) == GPIO_PIN_SET);
++    g30_btn_diag.raw = raw;
+     if(!initialized) {
+         initialized = 1u;
+         stable = candidate = raw;
+@@ -62,8 +67,11 @@
+         candidate = raw;
+         candidate_since = now;
+     }
+-    if(candidate != stable && (uint32_t)(now - candidate_since) >= 30u)
++    if(candidate != stable && (uint32_t)(now - candidate_since) >= 30u) {
+         stable = candidate;
++        g30_btn_diag.edges++;
++    }
++    g30_btn_diag.stable = stable;
+     return stable;
+ }
+ 
+@@ -71,7 +79,7 @@
+     /* G30D button state machine. A normal dashboard click must never be
+      * interpreted as power-off. LONG_PRESS is emitted only after a deliberate
+      * >=2500 ms hold has been released. For double click, the second press must
+-     * begin within 500 ms; its release does not have to fit into that window. */
++     * begin within 250 ms; its release does not have to fit into that window. */
+     /* pending: 0 = none, 1 = first short released, 2 = second press active */
+     static uint8_t pressed, pending;
+     static uint32_t pressed_at, released_at;
+@@ -81,18 +89,24 @@
+     if(down && !pressed) {
+         pressed = 1u;
+         pressed_at = now;
+-        if(pending == 1u && (uint32_t)(now - released_at) <= 500u)
++        if(pending == 1u) g30_btn_diag.last_gap_ms = (uint32_t)(now - released_at);
++        if(pending == 1u && (uint32_t)(now - released_at) <= 250u)
+             pending = 2u;
+     } else if(!down && pressed) {
+         pressed = 0u;
+         uint32_t held_ms = (uint32_t)(now - pressed_at);
++        g30_btn_diag.last_hold_ms = held_ms;
+         if(held_ms >= 2500u) {
+             pending = 0u;
++            g30_btn_diag.long_count++;
++            g30_btn_diag.pressed = pressed; g30_btn_diag.pending = pending;
+             return LONG_PRESS;
+         }
+         if(held_ms >= 30u) {
+             if(pending == 2u) {
+                 pending = 0u;
++                g30_btn_diag.double_count++;
++                g30_btn_diag.pressed = pressed; g30_btn_diag.pending = pending;
+                 return DOUBLE_PRESS;
+             }
+             pending = 1u;
+@@ -102,12 +116,22 @@
+             pending = 1u;
+         }
+     }
+-    if(!pressed && pending == 1u && (uint32_t)(now - released_at) > 500u) {
++    if(!pressed && pending == 1u && (uint32_t)(now - released_at) > 250u) {
+         pending = 0u;
++        g30_btn_diag.single_count++;
++        g30_btn_diag.pressed = pressed; g30_btn_diag.pending = pending;
+         return SINGLE_PRESS;
+     }
++    g30_btn_diag.pressed = pressed; g30_btn_diag.pending = pending;
+     return NO_PRESS;
+ }
++
++void task_PWR_get_button_diag(g30_button_diag *out) {
++    if(!out) return;
++    *out = g30_btn_diag;
++    out->raw = (HAL_GPIO_ReadPin(PWR_BTN_GPIO_Port, PWR_BTN_Pin) == GPIO_PIN_SET);
++    out->light = m365_to_display.light ? 1u : 0u;
++}
+ #else
+ uint8_t buttonState() {
+     static const uint32_t DEBOUNCE_MILLIS = 20 ;
+--- a/common_files/src/g30_dash_link.c
++++ b/common_files/src/g30_dash_link.c
+@@ -11,6 +11,7 @@
+ #include "VescToSTM.h"
+ #include "VescCommand.h"
+ #include "task.h"
++#include "task_pwr.h"
+ #include <math.h>
+ 
+ typedef struct {
+@@ -101,7 +102,7 @@
+     if(!isfinite(speed)||speed<0.0f) speed=0.0f;
+     if(speed>255.0f) speed=255.0f;
+     status[1]=(uint8_t)(100.0f*level+0.5f);
+-    status[2]=m365_to_display.light?64u:0u;
++    status[2]=m365_to_display.light?100u:0u;
+     status[4]=(uint8_t)(speed+0.5f);
+     status[5]=(uint8_t)(pMCI[M1]->pSTM->hFaultOccurred&0xFFu);
+     unsigned len=g30_dash_status_frame(status,tx);
+@@ -193,6 +194,12 @@
+         (unsigned long)d->drive_commands,(unsigned long)d->coast_commands,
+         (unsigned long)d->remote_claims,
+         d->remote_claimed && (uint32_t)(HAL_GetTick()-d->last_remote_ms)<G30_DASH_R2_VESC_HOLD_MS);
++    g30_button_diag b; task_PWR_get_button_diag(&b);
++    commands_printf(phandle,"BTN raw=%u stable=%u pressed=%u pending=%u edges=%lu single=%lu double=%lu long=%lu very=%lu hold=%lums gap=%lums light=%u",
++        b.raw,b.stable,b.pressed,b.pending,(unsigned long)b.edges,
++        (unsigned long)b.single_count,(unsigned long)b.double_count,
++        (unsigned long)b.long_count,(unsigned long)b.very_long_count,
++        (unsigned long)b.last_hold_ms,(unsigned long)b.last_gap_ms,b.light);
+     UART_HandleTypeDef *u=d->port->uart;
+     commands_printf(phandle,"USART2 SR=%04lx CR1=%04lx CR3=%04lx CNDTR=%lu rxErr=%lu stackFree=%u heap=%u",
+         (unsigned long)u->Instance->SR,(unsigned long)u->Instance->CR1,(unsigned long)u->Instance->CR3,
+--- a/common_files/src/defines.h
++++ b/common_files/src/defines.h
+@@ -2,7 +2,7 @@
+ #define DEFINES_H_
+ 
+ #ifdef G30P
+-#define HW_NAME "G30D-R3I25-DASH-LIGHT-BUTTON"
++#define HW_NAME "G30D-R3I26-BUTTON-DIAG"
+ #else
+ #define HW_NAME "40"
+ #endif
