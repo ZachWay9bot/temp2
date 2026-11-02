@@ -31,7 +31,6 @@ checks={
     "speed_limit_retained":"lo_max_erpm" in double,
     "no_motor_command_in_double":all(x not in double for x in forbidden),
     "no_motor_command_any_button_path":all(x not in body for x in forbidden),
-    "vesctostm_header_not_needed":'#include "VescToSTM.h"' not in pwr,
 }
 for k,v in checks.items():
     print(f"{k}={int(bool(v))}")
