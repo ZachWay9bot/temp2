@@ -11,7 +11,7 @@
  #endif
 --- a/common_files/src/g30_dash_link.c
 +++ b/common_files/src/g30_dash_link.c
-@@ -63,11 +63,14 @@ static void handle_control(dash_link_state *d) {
+@@ -63,11 +63,15 @@
      bool remote_busy=d->remote_claimed &&
          (uint32_t)(now-d->last_remote_ms) < G30_DASH_R2_VESC_HOLD_MS;
      if(!remote_busy) d->remote_claimed=0u;
@@ -29,3 +29,4 @@
 +        VescToSTM_get_fault()==FAULT_CODE_NONE;
      g30_dash_r2_action action=g30_dash_r2_step(&d->control,now,
          d->gas,d->brake,fresh,remote_busy,ready);
+     if(action==G30_DASH_R2_COAST) {
