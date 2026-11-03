@@ -1,0 +1,50 @@
+--- a/common_files/src/defines.h
++++ b/common_files/src/defines.h
+@@ -2,7 +2,7 @@
+ #define DEFINES_H_
+ 
+ #ifdef G30P
+-#define HW_NAME "G30D-R3I23-HS3-DASH-VBUS-GATE-FIX"
++#define HW_NAME "G30D-R3I23-HS4-SENSORLESS-REARM-RACE"
+ #else
+ #define HW_NAME "40"
+ #endif
+--- a/common_files/src/VescToSTM.c
++++ b/common_files/src/VescToSTM.c
+@@ -409,18 +409,31 @@
+     g30_r3i_diag_t ps=g30_r3i_get_diag();
+     g30_r3i_set_drive_request(1u);
+     if(ps.mode==2u){
+-        /* HF4: FO76 can request Coast after a catch/observer fallback while
+-         * g30_r3i still says mode 2. Do not leave Auto-Arm in this zombie
+-         * state. Clear the failed takeover once and return to armed BEMF
+-         * capture. Repeated VESC drive packets will then restart MCSDK as
+-         * soon as its stop state reaches IDLE. */
++        /* HS4: FO76 can request Coast after a catch/observer fallback while
++         * g30_r3i still says mode 2. Keep that coast latched until MCSDK has
++         * actually completed its RUN -> ANY_STOP -> STOP -> STOP_IDLE -> IDLE
++         * transition. Clearing the latch here immediately used to race the
++         * medium-frequency RUN handler: a VESC/Dash packet could erase the
++         * coast request before MCI_StopMotor() saw it, leaving RUN + PWM-off
++         * and no reliable re-entry path until power cycle. */
+         if(!g30_fo76_coast_requested()) return;
+-        VescToSTM_pwm_stop();
++
++        stm_state st=STM_GetState(&STM[M1]);
++        if(st==RUN){
++            (void)MCI_StopMotor(pMCI[M1]);
++            VescToSTM_pwm_stop();
++            return;
++        }
++        if(st!=IDLE){
++            VescToSTM_pwm_stop();
++            return;
++        }
++
++        /* Only once IDLE is real may we drop the old observer/fallback state
++         * and re-arm passive BEMF capture for the next rolling start. */
+         g30_fo76_sensorless_clear();
+         g30_fo76_request_takeover(0u);
+         g30_r3i_request_arm(1u);
+         ps=g30_r3i_get_diag();
+     }
