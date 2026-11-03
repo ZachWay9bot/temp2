@@ -1,4 +1,4 @@
-name: R3I23-HS1 Hall/Sensorless dual-mode - flashable build
+name: R3I23-HS2 Hall gas ramp - flashable build
 on:
   push:
     branches:
@@ -8,6 +8,7 @@ on:
       - r3i22-dash-gas-brake-20261103
       - r3i23-startup-torque-ramp-20261103
       - r3i23hs1-hall-sensorless-switch-20261103
+      - r3i23hs2-hall-gas-ramp-20261103
   workflow_dispatch:
 
 jobs:
@@ -220,9 +221,15 @@ jobs:
           patch -d SOURCE_KOXX3 -p1 --dry-run < ci/R3I23_STARTUP_TORQUE_RAMP_FROM_R3I22.patch
           patch -d SOURCE_KOXX3 -p1 < ci/R3I23_STARTUP_TORQUE_RAMP_FROM_R3I22.patch
           grep -q 'G30D-R3I23-STARTUP-TORQUE-RAMP' SOURCE_KOXX3/common_files/src/defines.h
-          patch -d SOURCE_KOXX3 -p1 --dry-run < ci/R3I23_HS1_DUALMODE_FROM_R3I23.patch
+          patch -d SOURCE_KOXX3 -p1 --dry-run < ci/R3I23_HS2_HALL_GAS_RAMP_FROM_R3I23.patch
           patch -d SOURCE_KOXX3 -p1 < ci/R3I23_HS1_DUALMODE_FROM_R3I23.patch
-          grep -q 'G30D-R3I23-HS1-DUALMODE' SOURCE_KOXX3/common_files/src/defines.h
+          grep -q 'G30D-R3I23-HS2-HALL-GAS-RAMP' SOURCE_KOXX3/common_files/src/defines.h
+          patch -d SOURCE_KOXX3 -p1 --dry-run < ci/R3I23_HS2_HALL_GAS_RAMP_FROM_HS1.patch
+          patch -d SOURCE_KOXX3 -p1 < ci/R3I23_HS2_HALL_GAS_RAMP_FROM_HS1.patch
+          grep -q 'G30D-R3I23-HS2-HALL-GAS-RAMP' SOURCE_KOXX3/common_files/src/defines.h
+          grep -q 'drive_start_ms' SOURCE_KOXX3/common_files/src/g30_dash_drive_logic.h
+          grep -q 'g30_dash_r2_drive_age_ms' SOURCE_KOXX3/common_files/src/g30_dash_drive_logic.h
+          grep -q 'Hall starts so a loaded 53.9 A mc_conf' SOURCE_KOXX3/common_files/src/g30_dash_link.c
           grep -q '#define R3I_MIN_DPP 64' SOURCE_KOXX3/common_files/src/g30_r3i_pushstart.c
           grep -q 'VescToSTM_g30_hall_selected' SOURCE_KOXX3/common_files/src/VescToSTM.c
           grep -q 'VescToSTM_g30_sensorless_selected' SOURCE_KOXX3/common_files/src/VescToSTM.c
@@ -273,7 +280,7 @@ jobs:
           tar -xzf "$FILE"
           echo "/tmp/xpack-arm-none-eabi-gcc-13.2.1-1.1/bin" >> "$GITHUB_PATH"
 
-      - name: Compile and validate R3I23-HS1 dual mode
+      - name: Compile and validate R3I23-HS2 Hall gas ramp
         shell: bash
         run: |
           set -euo pipefail
@@ -293,13 +300,13 @@ jobs:
           text,data,bss=map(int,parts[:3])
           ram=data+bss
           flash=text+data
-          print(f'R3I23_HS1_FLASH={flash} R3I23_HS1_RAM={ram}')
+          print(f'R3I23_HS2_FLASH={flash} R3I23_HS2_RAM={ram}')
           assert ram <= 20480, f'RAM overflow: {ram} > 20480'
           assert flash <= 126976, f'APP flash overflow: {flash} > 126976'
           Path('OUTPUT/MEMORY_GATE.txt').write_text(f'FLASH={flash}/126976\nRAM={ram}/20480\nPASS\n')
           PY
           arm-none-eabi-nm -S --size-sort "$ELF" | tail -40 > OUTPUT/LARGEST_SYMBOLS.txt
-          tar --exclude='SOURCE_KOXX3/.git' -czf OUTPUT/SOURCE_KOXX3_R3I23_HS1_DUALMODE_EXACT.tgz SOURCE_KOXX3
+          tar --exclude='SOURCE_KOXX3/.git' -czf OUTPUT/SOURCE_KOXX3_R3I23_HS2_HALL_GAS_RAMP_EXACT.tgz SOURCE_KOXX3
           cp ci/R3I15HF4_FROM_R3I15HF3.patch OUTPUT/
           python3 - <<'PY' | tee OUTPUT/R3I15HF4_STATIC_GATES.txt
           from pathlib import Path
@@ -310,7 +317,7 @@ jobs:
           de=Path('SOURCE_KOXX3/common_files/src/defines.h').read_text()
           gates={
             'build_id':'G30D-R3I23-HS1-DUALMODE' in de,
-            'dual_mode_helpers':'VescToSTM_g30_hall_selected' in vs and 'VescToSTM_g30_sensorless_selected' in vs,
+            'hs2_dual_mode_helpers':'VescToSTM_g30_hall_selected' in vs and 'VescToSTM_g30_sensorless_selected' in vs,
             'hall_zero_speed_path':'if(VescToSTM_g30_hall_selected())' in vs and 'MCI_StartMotor(pMCI[M1])' in vs,
             'sensorless_start_dpp_64':'#define R3I_MIN_DPP 64' in Path('SOURCE_KOXX3/common_files/src/g30_r3i_pushstart.c').read_text(),
             'sensorless_tick_gated':'if(VescToSTM_g30_sensorless_selected())' in mc,
@@ -345,10 +352,10 @@ jobs:
           print('R3I15HF4_STATIC_GATES=PASS')
           PY
 
-      - name: Upload flashable R3I23-HS1 dual-mode candidate
+      - name: Upload flashable R3I23-HS2 Hall gas ramp candidate
         uses: actions/upload-artifact@v4
         with:
-          name: G30D_R3I23_HS1_DUALMODE_COMPILED
+          name: G30D_R3I23_HS2_HALL_GAS_RAMP_COMPILED
           if-no-files-found: error
           retention-days: 7
           path: |
@@ -380,6 +387,7 @@ jobs:
             ci/R3I22_GAS_BRAKE_FROM_R3I21.patch
             ci/R3I23_STARTUP_TORQUE_RAMP_FROM_R3I22.patch
             ci/R3I23_HS1_DUALMODE_FROM_R3I23.patch
+            ci/R3I23_HS2_HALL_GAS_RAMP_FROM_HS1.patch
             ci/test_r3i23_startup_ramp.c
             ci/test_r3i22_gas_brake.c
             ci/test_r3i21_button.c
