@@ -1,8 +1,9 @@
-name: G30D R3I15HF4 fallback rearm compile
+name: G30D R3I15HF4 reference A/B compile
 on:
   push:
     branches:
       - r3i15hf4-fallback-rearm-20261029
+      - r3i15hf4-reference-ab-20261104
   workflow_dispatch:
 
 jobs:
