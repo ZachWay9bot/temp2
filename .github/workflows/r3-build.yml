@@ -1,4 +1,4 @@
-name: R3I26 button-diag - flashable build
+name: R3I31 light-split boot-gate - flashable build
 on:
   push:
     branches:
@@ -10,6 +10,7 @@ on:
       - r3i24-dash-mode-safe-20261102
       - r3i25-dash-light-button-20261102
       - r3i26-button-diag-20261102
+      - r3i31-light-split-bootgate-20261103
   workflow_dispatch:
 
 jobs:
@@ -270,6 +271,18 @@ jobs:
           grep -q 'status\[2\]=m365_to_display.light?100u:0u;' SOURCE_KOXX3/common_files/src/g30_dash_link.c
           grep -q 'BTN raw=%u stable=%u pressed=%u pending=%u edges=%lu single=%lu double=%lu long=%lu' SOURCE_KOXX3/common_files/src/g30_dash_link.c
 
+      - name: Apply R3I31 boot-release gate and separate rear-light GPIO
+        shell: bash
+        run: |
+          set -euo pipefail
+          patch -d SOURCE_KOXX3 -p1 --dry-run < ci/R3I31_LIGHT_SPLIT_BOOTGATE.patch
+          patch -d SOURCE_KOXX3 -p1 < ci/R3I31_LIGHT_SPLIT_BOOTGATE.patch
+          python3 ci/audit_r3i31_light_split_bootgate.py SOURCE_KOXX3 | tee OUTPUT/R3I31_LIGHT_SPLIT_BOOTGATE_AUDIT.txt
+          python3 ci/test_r3i31_boot_gate.py | tee OUTPUT/R3I31_BOOT_GATE_HOST_TEST.txt
+          grep -q 'G30D-R3I31-LIGHT-SPLIT-BOOTGATE' SOURCE_KOXX3/common_files/src/defines.h
+          grep -q 'status\[2\]=m365_to_display.light?100u:0u;' SOURCE_KOXX3/common_files/src/g30_dash_link.c
+          ! sed -n '/case SINGLE_PRESS/,/case LONG_PRESS/p' SOURCE_KOXX3/common_files/src/task_pwr.c | grep -q 'task_LED_set_brake_light'
+
       - name: Install ARM GNU GCC 13.2.1
         shell: bash
         run: |
@@ -283,18 +296,18 @@ jobs:
           tar -xzf "$FILE"
           echo "/tmp/xpack-arm-none-eabi-gcc-13.2.1-1.1/bin" >> "$GITHUB_PATH"
 
-      - name: Compile and validate R3I26 button-diag
+      - name: Compile and validate R3I31 light-split boot-gate
         shell: bash
         run: |
           set -euo pipefail
           arm-none-eabi-gcc --version
-          sed -i 's/FO76_PUSHSTART_R3I9/R3I26_BUTTON_DIAG/g' tools/build_native.py tools/validate_image.py
-          sed -i 's/G30D-FO76-PUSHSTART-R3I9/G30D-R3I26-BUTTON-DIAG/g' tools/validate_image.py
+          sed -i 's/FO76_PUSHSTART_R3I9/R3I31_LIGHT_SPLIT_BOOTGATE/g' tools/build_native.py tools/validate_image.py
+          sed -i 's/G30D-FO76-PUSHSTART-R3I9/G30D-R3I31-LIGHT-SPLIT-BOOTGATE/g' tools/validate_image.py
           mkdir -p OUTPUT
           python3 tools/build_native.py | tee OUTPUT/build.log
           python3 tools/validate_image.py | tee OUTPUT/validation.log
-          BIN=OUTPUT/SmartESC_v2_G30D_R3I26_BUTTON_DIAG_STLINK_APP_0x08001000.bin
-          ELF=OUTPUT/SmartESC_v2_G30D_R3I26_BUTTON_DIAG.elf
+          BIN=OUTPUT/SmartESC_v2_G30D_R3I31_LIGHT_SPLIT_BOOTGATE_STLINK_APP_0x08001000.bin
+          ELF=OUTPUT/SmartESC_v2_G30D_R3I31_LIGHT_SPLIT_BOOTGATE.elf
           sha256sum "$BIN" > OUTPUT/SHA256_BIN.txt
           arm-none-eabi-size "$ELF" > OUTPUT/SIZE.txt
           python3 - <<'PY'
@@ -303,13 +316,13 @@ jobs:
           text,data,bss=map(int,parts[:3])
           ram=data+bss
           flash=text+data
-          print(f'R3I26_FLASH={flash} R3I26_RAM={ram}')
+          print(f'R3I31_FLASH={flash} R3I31_RAM={ram}')
           assert ram <= 20480, f'RAM overflow: {ram} > 20480'
           assert flash <= 126976, f'APP flash overflow: {flash} > 126976'
           Path('OUTPUT/MEMORY_GATE.txt').write_text(f'FLASH={flash}/126976\nRAM={ram}/20480\nPASS\n')
           PY
           arm-none-eabi-nm -S --size-sort "$ELF" | tail -40 > OUTPUT/LARGEST_SYMBOLS.txt
-          tar --exclude='SOURCE_KOXX3/.git' -czf OUTPUT/SOURCE_KOXX3_R3I26_BUTTON_DIAG_EXACT.tgz SOURCE_KOXX3
+          tar --exclude='SOURCE_KOXX3/.git' -czf OUTPUT/SOURCE_KOXX3_R3I31_LIGHT_SPLIT_BOOTGATE_EXACT.tgz SOURCE_KOXX3
           cp ci/R3I15HF4_FROM_R3I15HF3.patch OUTPUT/
           python3 - <<'PY' | tee OUTPUT/R3I15HF4_STATIC_GATES.txt
           from pathlib import Path
@@ -319,7 +332,7 @@ jobs:
           te=Path('SOURCE_KOXX3/common_files/src/terminal.c').read_text()
           de=Path('SOURCE_KOXX3/common_files/src/defines.h').read_text()
           gates={
-            'build_id':'G30D-R3I26-BUTTON-DIAG' in de,
+            'build_id':'G30D-R3I31-LIGHT-SPLIT-BOOTGATE' in de,
             'r3i12_catch_retained':'sensorless_catch_phase_q4=((int32_t)(uint16_t)obs_pred)<<4;' in sh and 'catch_phase=obs_pred;' in sh,
             'no_command_inversion':'erpm = -erpm;' not in vs,
             'speed_feedback_normalized':'(-(int32_t)odpp)' in mc,
@@ -350,23 +363,23 @@ jobs:
           print('R3I15HF4_STATIC_GATES=PASS')
           PY
 
-      - name: Upload flashable R3I26 button-diag candidate
+      - name: Upload flashable R3I31 light-split boot-gate candidate
         uses: actions/upload-artifact@v4
         with:
-          name: G30D_R3I26_BUTTON_DIAG_COMPILED
+          name: G30D_R3I31_LIGHT_SPLIT_BOOTGATE_COMPILED
           if-no-files-found: error
           retention-days: 7
           path: |
-            OUTPUT/SmartESC_v2_G30D_R3I26_BUTTON_DIAG.elf
-            OUTPUT/SmartESC_v2_G30D_R3I26_BUTTON_DIAG.map
-            OUTPUT/SmartESC_v2_G30D_R3I26_BUTTON_DIAG_STLINK_APP_0x08001000.bin
-            OUTPUT/SmartESC_v2_G30D_R3I26_BUTTON_DIAG_STLINK_APP_0x08001000.hex
+            OUTPUT/SmartESC_v2_G30D_R3I31_LIGHT_SPLIT_BOOTGATE.elf
+            OUTPUT/SmartESC_v2_G30D_R3I31_LIGHT_SPLIT_BOOTGATE.map
+            OUTPUT/SmartESC_v2_G30D_R3I31_LIGHT_SPLIT_BOOTGATE_STLINK_APP_0x08001000.bin
+            OUTPUT/SmartESC_v2_G30D_R3I31_LIGHT_SPLIT_BOOTGATE_STLINK_APP_0x08001000.hex
             OUTPUT/VERIFICATION.json
             OUTPUT/SHA256_BIN.txt
             OUTPUT/SIZE.txt
             OUTPUT/MEMORY_GATE.txt
             OUTPUT/LARGEST_SYMBOLS.txt
-            OUTPUT/SOURCE_KOXX3_R3I26_BUTTON_DIAG_EXACT.tgz
+            OUTPUT/SOURCE_KOXX3_R3I31_LIGHT_SPLIT_BOOTGATE_EXACT.tgz
             OUTPUT/APPLY_R3I14_EXACT.py
             OUTPUT/R3I15HF4_BUILD_WORKFLOW.yml
             OUTPUT/R3I15HF4_STATIC_GATES.txt
@@ -406,6 +419,11 @@ jobs:
             ci/R3I26_BUTTON_DIAG.patch
             ci/audit_r3i26_button_diag.py
             OUTPUT/R3I26_BUTTON_DIAG_AUDIT.txt
+            ci/R3I31_LIGHT_SPLIT_BOOTGATE.patch
+            ci/audit_r3i31_light_split_bootgate.py
+            ci/test_r3i31_boot_gate.py
+            OUTPUT/R3I31_LIGHT_SPLIT_BOOTGATE_AUDIT.txt
+            OUTPUT/R3I31_BOOT_GATE_HOST_TEST.txt
             OUTPUT/build.log
             OUTPUT/compile.log
             OUTPUT/validation.log

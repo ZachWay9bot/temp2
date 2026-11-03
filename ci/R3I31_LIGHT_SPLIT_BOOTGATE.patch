@@ -1,0 +1,83 @@
+--- a/common_files/src/task_pwr.h
++++ b/common_files/src/task_pwr.h
+@@ -51,7 +51,7 @@
+ 
+ #ifdef G30P
+ typedef struct {
+-    uint8_t raw, stable, pressed, pending, light;
++    uint8_t raw, stable, pressed, pending, startup_armed, light;
+     uint32_t edges, single_count, double_count, long_count, very_long_count;
+     uint32_t last_hold_ms, last_gap_ms;
+ } g30_button_diag;
+--- a/common_files/src/task_pwr.c
++++ b/common_files/src/task_pwr.c
+@@ -81,11 +81,28 @@
+      * >=2500 ms hold has been released. For double click, the second press must
+      * begin within 250 ms; its release does not have to fit into that window. */
+     /* pending: 0 = none, 1 = first short released, 2 = second press active */
+-    static uint8_t pressed, pending;
++    static uint8_t pressed, pending, startup_armed;
+     static uint32_t pressed_at, released_at;
+     uint32_t now = HAL_GetTick();
+     uint8_t down = buttonState();
+ 
++    /* Power-on uses the same physical button. Ignore the complete boot press
++     * and its release. Arm normal click handling only after the debounced
++     * input has been observed released once. External 5-V boot arms here
++     * immediately because the button is already released. */
++    if(!startup_armed) {
++        if(!down) {
++            startup_armed = 1u;
++            pressed = 0u;
++            pending = 0u;
++        }
++        g30_btn_diag.startup_armed = startup_armed;
++        g30_btn_diag.pressed = pressed;
++        g30_btn_diag.pending = pending;
++        return NO_PRESS;
++    }
++    g30_btn_diag.startup_armed = startup_armed;
++
+     if(down && !pressed) {
+         pressed = 1u;
+         pressed_at = now;
+@@ -223,12 +240,10 @@
+ 		switch( getButtonEvent() ){
+ 			  case NO_PRESS : break ;
+ 			  case SINGLE_PRESS : {
++				  /* Front light is controlled by the stock dashboard via CMD64.
++				   * Do not mirror this command onto the ESC's separate rear/brake
++				   * light GPIO. */
+ 				  m365_to_display.light = !m365_to_display.light;
+-				  if(m365_to_display.light){
+-					  task_LED_set_brake_light(BRAKE_LIGHT_ON);
+-				  }else{
+-					  task_LED_set_brake_light(BRAKE_LIGHT_OFF);
+-				  }
+ 
+ 			  } break ;
+ 			  case LONG_PRESS :   {
+--- a/common_files/src/g30_dash_link.c
++++ b/common_files/src/g30_dash_link.c
+@@ -195,8 +195,8 @@
+         (unsigned long)d->remote_claims,
+         d->remote_claimed && (uint32_t)(HAL_GetTick()-d->last_remote_ms)<G30_DASH_R2_VESC_HOLD_MS);
+     g30_button_diag b; task_PWR_get_button_diag(&b);
+-    commands_printf(phandle,"BTN raw=%u stable=%u pressed=%u pending=%u edges=%lu single=%lu double=%lu long=%lu very=%lu hold=%lums gap=%lums light=%u",
+-        b.raw,b.stable,b.pressed,b.pending,(unsigned long)b.edges,
++    commands_printf(phandle,"BTN raw=%u stable=%u pressed=%u pending=%u bootArmed=%u edges=%lu single=%lu double=%lu long=%lu very=%lu hold=%lums gap=%lums light=%u",
++        b.raw,b.stable,b.pressed,b.pending,b.startup_armed,(unsigned long)b.edges,
+         (unsigned long)b.single_count,(unsigned long)b.double_count,
+         (unsigned long)b.long_count,(unsigned long)b.very_long_count,
+         (unsigned long)b.last_hold_ms,(unsigned long)b.last_gap_ms,b.light);
+--- a/common_files/src/defines.h
++++ b/common_files/src/defines.h
+@@ -2,7 +2,7 @@
+ #define DEFINES_H_
+ 
+ #ifdef G30P
+-#define HW_NAME "G30D-R3I26-BUTTON-DIAG"
++#define HW_NAME "G30D-R3I31-LIGHT-SPLIT-BOOTGATE"
+ #else
+ #define HW_NAME "40"
+ #endif
