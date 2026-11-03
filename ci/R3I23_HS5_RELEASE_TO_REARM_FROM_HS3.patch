@@ -1,0 +1,51 @@
+--- a/common_files/src/defines.h
++++ b/common_files/src/defines.h
+@@ -2,7 +2,7 @@
+ #define DEFINES_H_
+ 
+ #ifdef G30P
+-#define HW_NAME "G30D-R3I23-HS3-DASH-VBUS-GATE-FIX"
++#define HW_NAME "G30D-R3I23-HS5-RELEASE-TO-REARM"
+ #else
+ #define HW_NAME "40"
+ #endif
+--- a/common_files/src/VescToSTM.c
++++ b/common_files/src/VescToSTM.c
+@@ -364,6 +364,15 @@
+      * braking / DC-bus spike. */
+     VescToSTM_pwm_stop();
+ 
++    /* HS5: sensorless MCSDK state must also leave RUN on a real zero/coast
++     * command. PWM-off alone can leave RUN latched forever, which is why a
++     * later start could require a power cycle. Do this only after the user
++     * has actually released throttle/FWD. Never auto-restart under a held
++     * command. */
++    if(VescToSTM_g30_sensorless_selected() && STM_GetState(&STM[M1])==RUN){
++        (void)MCI_StopMotor(pMCI[M1]);
++    }
++
+     g30_r3i_diag_t ps=g30_r3i_get_diag();
+     if(ps.mode==1u){
+         /* VESC Tool repeats zero commands while the key is released. Do not
+@@ -409,17 +418,13 @@
+     g30_r3i_diag_t ps=g30_r3i_get_diag();
+     g30_r3i_set_drive_request(1u);
+     if(ps.mode==2u){
+-        /* HF4: FO76 can request Coast after a catch/observer fallback while
+-         * g30_r3i still says mode 2. Do not leave Auto-Arm in this zombie
+-         * state. Clear the failed takeover once and return to armed BEMF
+-         * capture. Repeated VESC drive packets will then restart MCSDK as
+-         * soon as its stop state reaches IDLE. */
++        /* HS5: a fallback while throttle/FWD is still held stays coasted.
++         * Do NOT clear and re-arm here, otherwise repeated drive packets turn
++         * one fallback into a stop/start relaxation oscillator. Re-arm only
++         * after a real zero/coast command passes through g30_coast_rearm(). */
+         if(!g30_fo76_coast_requested()) return;
+         VescToSTM_pwm_stop();
+-        g30_fo76_sensorless_clear();
+-        g30_fo76_request_takeover(0u);
+-        g30_r3i_request_arm(1u);
+-        ps=g30_r3i_get_diag();
++        return;
+     }
+     if(ps.mode==1u){
