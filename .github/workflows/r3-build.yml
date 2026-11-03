@@ -276,11 +276,11 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          patch -d SOURCE_KOXX3 -p1 --dry-run < ci/R3I32_CMD64_STOCKBYTE.patch
-          patch -d SOURCE_KOXX3 -p1 < ci/R3I32_CMD64_STOCKBYTE.patch
-          python3 ci/audit_r3i31_light_split_bootgate.py SOURCE_KOXX3 | tee OUTPUT/R3I32_CMD64_STOCKBYTE_AUDIT.txt
+          patch -d SOURCE_KOXX3 -p1 --dry-run < ci/R3I31_LIGHT_SPLIT_BOOTGATE.patch
+          patch -d SOURCE_KOXX3 -p1 < ci/R3I31_LIGHT_SPLIT_BOOTGATE.patch
+          python3 ci/audit_r3i31_light_split_bootgate.py SOURCE_KOXX3 | tee OUTPUT/R3I31_LIGHT_SPLIT_BOOTGATE_AUDIT.txt
           python3 ci/test_r3i31_boot_gate.py | tee OUTPUT/R3I31_BOOT_GATE_HOST_TEST.txt
-          grep -q 'G30D-R3I32-CMD64-STOCKBYTE' SOURCE_KOXX3/common_files/src/defines.h
+          grep -q 'G30D-R3I31-LIGHT-SPLIT-BOOTGATE' SOURCE_KOXX3/common_files/src/defines.h
           grep -q 'status\[2\]=m365_to_display.light?100u:0u;' SOURCE_KOXX3/common_files/src/g30_dash_link.c
           ! sed -n '/case SINGLE_PRESS/,/case LONG_PRESS/p' SOURCE_KOXX3/common_files/src/task_pwr.c | grep -q 'task_LED_set_brake_light'
 
