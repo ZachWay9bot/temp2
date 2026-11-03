@@ -1,0 +1,26 @@
+--- a/common_files/src/g30_dash_link.c
++++ b/common_files/src/g30_dash_link.c
+@@ -99,7 +99,10 @@
+     if(!isfinite(level)||level<0.0f) level=0.0f;
+     if(level>1.0f) level=1.0f;
+     if(!isfinite(speed)||speed<0.0f) speed=0.0f;
+     if(speed>255.0f) speed=255.0f;
+-    status[1]=(uint8_t)(100.0f*level+0.5f);
++    /* Exact stock DRV126 capture with dashboard v0x0117: this byte stays 0.
++     * It is NOT battery percentage in the observed stock CMD64 reply.
++     * Keep the light byte itself stock-exact at 0/100. */
++    status[1]=0u;
+     status[2]=m365_to_display.light?100u:0u;
+     status[4]=(uint8_t)(speed+0.5f);
+     status[5]=(uint8_t)(pMCI[M1]->pSTM->hFaultOccurred&0xFFu);
+--- a/common_files/src/defines.h
++++ b/common_files/src/defines.h
+@@ -2,7 +2,7 @@
+ #define DEFINES_H_
+ 
+ #ifdef G30P
+-#define HW_NAME "G30D-R3I31-LIGHT-SPLIT-BOOTGATE"
++#define HW_NAME "G30D-R3I32-CMD64-STOCKBYTE"
+ #else
+ #define HW_NAME "40"
+ #endif
