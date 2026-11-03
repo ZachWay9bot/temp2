@@ -227,7 +227,7 @@ jobs:
           grep -q 'G30D-R3I23-HS1-DUALMODE' SOURCE_KOXX3/common_files/src/defines.h
           patch -d SOURCE_KOXX3 -p1 --dry-run < ci/R3I23_HS3_DASH_VBUS_GATE_FROM_HS1.patch
           patch -d SOURCE_KOXX3 -p1 < ci/R3I23_HS3_DASH_VBUS_GATE_FROM_HS1.patch
-          grep -q 'G30D-R3I23-HS3-HF4SL1' SOURCE_KOXX3/common_files/src/defines.h
+          grep -q 'G30D-R3I23-HS3-DASH-VBUS-GATE-FIX' SOURCE_KOXX3/common_files/src/defines.h
           patch -d SOURCE_KOXX3 -p1 --dry-run < ci/HS3_HF4SL1_SENSORLESS_TRANSPLANT.patch
           patch -d SOURCE_KOXX3 -p1 < ci/HS3_HF4SL1_SENSORLESS_TRANSPLANT.patch
           grep -q 'G30D-R3I23-HS3-HF4SL1' SOURCE_KOXX3/common_files/src/defines.h
@@ -309,7 +309,7 @@ jobs:
           text,data,bss=map(int,parts[:3])
           ram=data+bss
           flash=text+data
-          print(f'R3I23_HS3_FLASH={flash} R3I23_HS3_RAM={ram}')
+          print(f'R3I23_HS3_HF4SL1_FLASH={flash} R3I23_HS3_HF4SL1_RAM={ram}')
           assert ram <= 20480, f'RAM overflow: {ram} > 20480'
           assert flash <= 126976, f'APP flash overflow: {flash} > 126976'
           Path('OUTPUT/MEMORY_GATE.txt').write_text(f'FLASH={flash}/126976\nRAM={ram}/20480\nPASS\n')
@@ -330,7 +330,7 @@ jobs:
             'hall_zero_speed_path':'if(VescToSTM_g30_hall_selected())' in vs and 'MCI_StartMotor(pMCI[M1])' in vs,
             'sensorless_start_dpp_64':'#define R3I_MIN_DPP 64' in Path('SOURCE_KOXX3/common_files/src/g30_r3i_pushstart.c').read_text(),
             'sensorless_tick_gated':'if(VescToSTM_g30_sensorless_selected())' in mc,
-            'dash_ramp_sensorless_only':'if(VescToSTM_g30_sensorless_selected())' in Path('SOURCE_KOXX3/common_files/src/g30_dash_link.c').read_text(),
+            'dash_hf4_no_startup_shape':'torque=g30_dash_r3i23_startup_limit' not in Path('SOURCE_KOXX3/common_files/src/g30_dash_link.c').read_text(),
             'r3i12_catch_retained':'sensorless_catch_phase_q4=((int32_t)(uint16_t)obs_pred)<<4;' in sh and 'catch_phase=obs_pred;' in sh,
             'no_command_inversion':'erpm = -erpm;' not in vs,
             'speed_feedback_normalized':'(-(int32_t)odpp)' in mc,
