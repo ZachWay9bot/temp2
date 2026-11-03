@@ -40,7 +40,7 @@ checks={
  "battery_liion": 'MCCONF_SI_BATTERY_TYPE' in defs and 'BATTERY_TYPE_LIION_3_0__4_2' in defs,
  "speed_uses_pole_pairs": 'VescToSTM_pole_pairs()' in vesc[vesc.index('float VescToSTM_get_speed'):vesc.index('}',vesc.index('float VescToSTM_get_speed'))+1],
  "legacy_light_comment_not_proof": 'if(MS->light)ui8_tx_buffer[8]=64;' in nine,
- "runtime_light_currently_100": 'status[2]=m365_to_display.light?100u:0u;' in dash,
+ "runtime_light_test_0_1": 'status[2]=m365_to_display.light?1u:0u;' in dash,
 }
 for k,v in checks.items():
     print(f"{k}={int(bool(v))}")
@@ -67,4 +67,4 @@ assert speed(float('nan'))==0
 
 print("R3I22 DASH STATUS SOURCE AUDIT: PASS")
 print("battery=0..100 rounded; speed=abs(km/h) 0..255 rounded; fault=raw MCSDK low byte")
-print("LIGHT UNRESOLVED: runtime currently emits 0/100; legacy comment mentions 0/64; no ON capture means no change is authorized")
+print("LIGHT01 EXPERIMENT: only CMD64 light field changed to 0/1; no claim of stock equivalence or hardware validation")

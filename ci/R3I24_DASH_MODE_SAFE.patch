@@ -8,4 +8,4 @@
 +++ b/common_files/src/defines.h
 @@ -5,1 +5,1 @@
 -#define HW_NAME "G30D-R3I23-DASH-ONLY"
-+#define HW_NAME "G30D-R3I24-DASH-MODE-SAFE"
++#define HW_NAME "G30D-R3I24-LIGHT01-TEST"

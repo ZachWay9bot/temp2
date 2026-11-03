@@ -25,7 +25,7 @@ forbidden=[
     "PWMC_SwitchOffPWM",
 ]
 checks={
-    "build_id":"G30D-R3I24-DASH-MODE-SAFE" in defs,
+    "build_id":"G30D-R3I24-LIGHT01-TEST" in defs,
     "mode_cycle_retained":"switch(m365_to_display.mode & 0x07u)" in double,
     "current_limit_retained":"lo_current_max_scale" in double,
     "speed_limit_retained":"lo_max_erpm" in double,

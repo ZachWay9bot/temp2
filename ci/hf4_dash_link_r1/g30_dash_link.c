@@ -40,7 +40,7 @@ static void send_status(dash_link_state *d) {
     if(!isfinite(speed)||speed<0.0f) speed=0.0f;
     if(speed>255.0f) speed=255.0f;
     status[1]=(uint8_t)(100.0f*level+0.5f);
-    status[2]=m365_to_display.light?100u:0u;
+    status[2]=m365_to_display.light?1u:0u;
     status[4]=(uint8_t)(speed+0.5f);
     status[5]=(uint8_t)(pMCI[M1]->pSTM->hFaultOccurred&0xFFu);
     unsigned len=g30_dash_status_frame(status,tx);
