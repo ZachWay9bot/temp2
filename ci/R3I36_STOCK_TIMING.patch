@@ -1,6 +1,6 @@
 --- a/common_files/src/g30_dash_link.c
 +++ b/common_files/src/g30_dash_link.c
-@@ -155,7 +155,13 @@
+@@ -155,7 +155,14 @@
              }
          }
          /* Do not switch away from RX in the middle of a newly arriving frame. */
