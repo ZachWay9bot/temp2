@@ -290,7 +290,7 @@ jobs:
         run: |
           set -euo pipefail
           patch -d SOURCE_KOXX3 -p1 --dry-run < ci/R3I34_G30_LIGHT_BIT0.patch
-          patch -d SOURCE_KOXX3 -p1 < ci/R3I35_IMMEDIATE_LIGHT_RELEASE.patch
+          patch -d SOURCE_KOXX3 -p1 < ci/R3I34_G30_LIGHT_BIT0.patch
           python3 ci/audit_r3i34_g30_light_bit0.py SOURCE_KOXX3 | tee OUTPUT/R3I34_G30_LIGHT_BIT0_AUDIT.txt
           grep -q 'G30D-R3I34-G30-LIGHT-BIT0' SOURCE_KOXX3/common_files/src/defines.h
           grep -q 'status\[2\]=m365_to_display.light?1u:0u;' SOURCE_KOXX3/common_files/src/g30_dash_link.c
