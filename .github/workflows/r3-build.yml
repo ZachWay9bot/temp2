@@ -303,6 +303,7 @@ jobs:
           patch -d SOURCE_KOXX3 -p1 --dry-run < ci/R3I35_IMMEDIATE_LIGHT_RELEASE.patch
           patch -d SOURCE_KOXX3 -p1 < ci/R3I35_IMMEDIATE_LIGHT_RELEASE.patch
           python3 ci/audit_r3i35_immediate_light_release.py SOURCE_KOXX3 | tee OUTPUT/R3I35_IMMEDIATE_LIGHT_RELEASE_AUDIT.txt
+          python3 ci/test_r3i35_immediate_light.py | tee OUTPUT/R3I35_IMMEDIATE_LIGHT_HOST_TEST.txt
           grep -q 'G30D-R3I35-IMMEDIATE-LIGHT' SOURCE_KOXX3/common_files/src/defines.h
           grep -q 'light_previewed' SOURCE_KOXX3/common_files/src/task_pwr.c
           grep -q 'status\[2\]=m365_to_display.light?1u:0u;' SOURCE_KOXX3/common_files/src/g30_dash_link.c
