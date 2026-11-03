@@ -1,0 +1,31 @@
+--- a/common_files/src/defines.h
++++ b/common_files/src/defines.h
+@@ -2,7 +2,7 @@
+ #define DEFINES_H_
+ 
+ #ifdef G30P
+-#define HW_NAME "G30D-R3I23-HS1-DUALMODE"
++#define HW_NAME "G30D-R3I23-HS3-DASH-VBUS-GATE-FIX"
+ #else
+ #define HW_NAME "40"
+ #endif
+--- a/common_files/src/g30_dash_link.c
++++ b/common_files/src/g30_dash_link.c
+@@ -63,11 +63,14 @@ static void handle_control(dash_link_state *d) {
+     bool remote_busy=d->remote_claimed &&
+         (uint32_t)(now-d->last_remote_ms) < G30_DASH_R2_VESC_HOLD_MS;
+     if(!remote_busy) d->remote_claimed=0u;
+-    /* Undervoltage/MCSDK faults block any torque while on 5V logic alone. */
++    /* HS3: do not duplicate the motor battery-cut with a hard 18 V dashboard
++     * coast edge. VescToSTM_Iq_lim_hook() already applies the configured
++     * 20.4 -> 18.0 V current reduction. The extra boolean 18 V gate caused
++     * drive/coast oscillation on the 24 V + series-lamp bench because Vbus
++     * recovered immediately after every coast. Real MCSDK faults still block
++     * dashboard torque exactly as before. */
+     bool ready=pMCI[M1] && pMCI[M1]->pSTM &&
+         !app_is_output_disabled() &&
+-        VescToSTM_get_fault()==FAULT_CODE_NONE &&
+-        VescToSTM_get_bus_voltage()>=18.0f;
++        VescToSTM_get_fault()==FAULT_CODE_NONE;
+     g30_dash_r2_action action=g30_dash_r2_step(&d->control,now,
+         d->gas,d->brake,fresh,remote_busy,ready);
