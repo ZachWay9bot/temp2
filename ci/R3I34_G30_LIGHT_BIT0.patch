@@ -1,0 +1,10 @@
+--- a/common_files/src/g30_dash_link.c
++++ b/common_files/src/g30_dash_link.c
+@@ -107,1 +107,1 @@
+-    status[2]=m365_to_display.light?100u:0u;
++    status[2]=m365_to_display.light?1u:0u;
+--- a/common_files/src/defines.h
++++ b/common_files/src/defines.h
+@@ -5,1 +5,1 @@
+-#define HW_NAME "G30D-R3I31-LIGHT-SPLIT-BOOTGATE"
++#define HW_NAME "G30D-R3I34-G30-LIGHT-BIT0"
