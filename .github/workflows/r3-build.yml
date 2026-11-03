@@ -1,4 +1,4 @@
-name: R3I23-HS3 dashboard Vbus gate fix - flashable build
+name: R3I23-HS4 sensorless rearm race fix - flashable build
 on:
   push:
     branches:
@@ -9,6 +9,7 @@ on:
       - r3i23-startup-torque-ramp-20261103
       - r3i23hs1-hall-sensorless-switch-20261103
       - r3i23hs3-dash-vbus-gate-fix-20261103
+      - r3i23hs4-sensorless-rearm-race-fix-20261104
   workflow_dispatch:
 
 jobs:
@@ -226,7 +227,13 @@ jobs:
           grep -q 'G30D-R3I23-HS1-DUALMODE' SOURCE_KOXX3/common_files/src/defines.h
           patch -d SOURCE_KOXX3 -p1 --dry-run < ci/R3I23_HS3_DASH_VBUS_GATE_FROM_HS1.patch
           patch -d SOURCE_KOXX3 -p1 < ci/R3I23_HS3_DASH_VBUS_GATE_FROM_HS1.patch
-          grep -q 'G30D-R3I23-HS3-DASH-VBUS-GATE-FIX' SOURCE_KOXX3/common_files/src/defines.h
+          grep -q 'G30D-R3I23-HS4-SENSORLESS-REARM-RACE' SOURCE_KOXX3/common_files/src/defines.h
+          patch -d SOURCE_KOXX3 -p1 --dry-run < ci/R3I23_HS4_SENSORLESS_REARM_RACE_FROM_HS3.patch
+          patch -d SOURCE_KOXX3 -p1 < ci/R3I23_HS4_SENSORLESS_REARM_RACE_FROM_HS3.patch
+          grep -q 'G30D-R3I23-HS4-SENSORLESS-REARM-RACE' SOURCE_KOXX3/common_files/src/defines.h
+          grep -q 'Keep that coast latched until MCSDK has' SOURCE_KOXX3/common_files/src/VescToSTM.c
+          grep -q 'if(st==RUN)' SOURCE_KOXX3/common_files/src/VescToSTM.c
+          grep -q 'if(st!=IDLE)' SOURCE_KOXX3/common_files/src/VescToSTM.c
           grep -q 'do not duplicate the motor battery-cut' SOURCE_KOXX3/common_files/src/g30_dash_link.c
           ! grep -q 'VescToSTM_get_bus_voltage()>=18.0f' SOURCE_KOXX3/common_files/src/g30_dash_link.c
           grep -q '#define R3I_MIN_DPP 64' SOURCE_KOXX3/common_files/src/g30_r3i_pushstart.c
@@ -279,18 +286,18 @@ jobs:
           tar -xzf "$FILE"
           echo "/tmp/xpack-arm-none-eabi-gcc-13.2.1-1.1/bin" >> "$GITHUB_PATH"
 
-      - name: Compile and validate R3I23-HS3 dashboard Vbus gate fix
+      - name: Compile and validate R3I23-HS4 sensorless rearm race fix
         shell: bash
         run: |
           set -euo pipefail
           arm-none-eabi-gcc --version
-          sed -i 's/FO76_PUSHSTART_R3I9/R3I23_HS3_DASH_VBUS_GATE_FIX/g' tools/build_native.py tools/validate_image.py
-          sed -i 's/G30D-FO76-PUSHSTART-R3I9/G30D-R3I23-HS3-DASH-VBUS-GATE-FIX/g' tools/validate_image.py
+          sed -i 's/FO76_PUSHSTART_R3I9/R3I23_HS4_SENSORLESS_REARM_RACE/g' tools/build_native.py tools/validate_image.py
+          sed -i 's/G30D-FO76-PUSHSTART-R3I9/G30D-R3I23-HS4-SENSORLESS-REARM-RACE/g' tools/validate_image.py
           mkdir -p OUTPUT
           python3 tools/build_native.py | tee OUTPUT/build.log
           python3 tools/validate_image.py | tee OUTPUT/validation.log
-          BIN=OUTPUT/SmartESC_v2_G30D_R3I23_HS3_DASH_VBUS_GATE_FIX_STLINK_APP_0x08001000.bin
-          ELF=OUTPUT/SmartESC_v2_G30D_R3I23_HS3_DASH_VBUS_GATE_FIX.elf
+          BIN=OUTPUT/SmartESC_v2_G30D_R3I23_HS4_SENSORLESS_REARM_RACE_STLINK_APP_0x08001000.bin
+          ELF=OUTPUT/SmartESC_v2_G30D_R3I23_HS4_SENSORLESS_REARM_RACE.elf
           sha256sum "$BIN" > OUTPUT/SHA256_BIN.txt
           arm-none-eabi-size "$ELF" > OUTPUT/SIZE.txt
           python3 - <<'PY'
@@ -305,7 +312,7 @@ jobs:
           Path('OUTPUT/MEMORY_GATE.txt').write_text(f'FLASH={flash}/126976\nRAM={ram}/20480\nPASS\n')
           PY
           arm-none-eabi-nm -S --size-sort "$ELF" | tail -40 > OUTPUT/LARGEST_SYMBOLS.txt
-          tar --exclude='SOURCE_KOXX3/.git' -czf OUTPUT/SOURCE_KOXX3_R3I23_HS3_DASH_VBUS_GATE_FIX_EXACT.tgz SOURCE_KOXX3
+          tar --exclude='SOURCE_KOXX3/.git' -czf OUTPUT/SOURCE_KOXX3_R3I23_HS4_SENSORLESS_REARM_RACE_EXACT.tgz SOURCE_KOXX3
           cp ci/R3I15HF4_FROM_R3I15HF3.patch OUTPUT/
           python3 - <<'PY' | tee OUTPUT/R3I15HF4_STATIC_GATES.txt
           from pathlib import Path
@@ -315,7 +322,7 @@ jobs:
           te=Path('SOURCE_KOXX3/common_files/src/terminal.c').read_text()
           de=Path('SOURCE_KOXX3/common_files/src/defines.h').read_text()
           gates={
-            'build_id':'G30D-R3I23-HS3-DASH-VBUS-GATE-FIX' in de,
+            'build_id':'G30D-R3I23-HS4-SENSORLESS-REARM-RACE' in de,
             'dual_mode_helpers':'VescToSTM_g30_hall_selected' in vs and 'VescToSTM_g30_sensorless_selected' in vs,
             'hall_zero_speed_path':'if(VescToSTM_g30_hall_selected())' in vs and 'MCI_StartMotor(pMCI[M1])' in vs,
             'sensorless_start_dpp_64':'#define R3I_MIN_DPP 64' in Path('SOURCE_KOXX3/common_files/src/g30_r3i_pushstart.c').read_text(),
@@ -342,7 +349,7 @@ jobs:
             'pwm_off_before_takeover':(lambda stop: stop.index('PWMC_SwitchOffPWM') < stop.index('g30_fo76_request_takeover(0u)'))(vs[vs.index('void VescToSTM_pwm_stop'):vs.index('void VescToSTM_prepare_sensorless_start')]),
             'takeover_requires_drive':'drive_request && d.forward_edges' in Path('SOURCE_KOXX3/common_files/src/g30_r3i_pushstart.c').read_text(),
             'coast_clears_drive_request':'g30_r3i_set_drive_request(0u);' in vs,
-            'fallback_auto_rearm':'if(!g30_fo76_coast_requested()) return;' in vs and 'ps=g30_r3i_get_diag();' in vs,
+            'fallback_auto_rearm':'if(!g30_fo76_coast_requested()) return;' in vs and 'if(st==RUN)' in vs and 'if(st!=IDLE)' in vs and 'ps=g30_r3i_get_diag();' in vs,
             'mode1_preserves_bemf':'if(STM_GetState(&STM[M1])==IDLE)' in vs,
             'fallback_returns_armed':'g30_fo76_sensorless_clear();' in vs and 'g30_r3i_request_arm(1u);' in vs,
           }
@@ -351,23 +358,23 @@ jobs:
           print('R3I15HF4_STATIC_GATES=PASS')
           PY
 
-      - name: Upload flashable R3I23-HS3 dashboard Vbus gate fix candidate
+      - name: Upload flashable R3I23-HS4 sensorless rearm race fix candidate
         uses: actions/upload-artifact@v4
         with:
-          name: G30D_R3I23_HS3_DASH_VBUS_GATE_FIX_COMPILED
+          name: G30D_R3I23_HS4_SENSORLESS_REARM_RACE_COMPILED
           if-no-files-found: error
           retention-days: 7
           path: |
-            OUTPUT/SmartESC_v2_G30D_R3I23_HS3_DASH_VBUS_GATE_FIX.elf
-            OUTPUT/SmartESC_v2_G30D_R3I23_HS3_DASH_VBUS_GATE_FIX.map
-            OUTPUT/SmartESC_v2_G30D_R3I23_HS3_DASH_VBUS_GATE_FIX_STLINK_APP_0x08001000.bin
-            OUTPUT/SmartESC_v2_G30D_R3I23_HS3_DASH_VBUS_GATE_FIX_STLINK_APP_0x08001000.hex
+            OUTPUT/SmartESC_v2_G30D_R3I23_HS4_SENSORLESS_REARM_RACE.elf
+            OUTPUT/SmartESC_v2_G30D_R3I23_HS4_SENSORLESS_REARM_RACE.map
+            OUTPUT/SmartESC_v2_G30D_R3I23_HS4_SENSORLESS_REARM_RACE_STLINK_APP_0x08001000.bin
+            OUTPUT/SmartESC_v2_G30D_R3I23_HS4_SENSORLESS_REARM_RACE_STLINK_APP_0x08001000.hex
             OUTPUT/VERIFICATION.json
             OUTPUT/SHA256_BIN.txt
             OUTPUT/SIZE.txt
             OUTPUT/MEMORY_GATE.txt
             OUTPUT/LARGEST_SYMBOLS.txt
-            OUTPUT/SOURCE_KOXX3_R3I23_HS3_DASH_VBUS_GATE_FIX_EXACT.tgz
+            OUTPUT/SOURCE_KOXX3_R3I23_HS4_SENSORLESS_REARM_RACE_EXACT.tgz
             OUTPUT/APPLY_R3I14_EXACT.py
             OUTPUT/R3I15HF4_BUILD_WORKFLOW.yml
             OUTPUT/R3I15HF4_STATIC_GATES.txt
@@ -387,6 +394,7 @@ jobs:
             ci/R3I23_STARTUP_TORQUE_RAMP_FROM_R3I22.patch
             ci/R3I23_HS1_DUALMODE_FROM_R3I23.patch
             ci/R3I23_HS3_DASH_VBUS_GATE_FROM_HS1.patch
+            ci/R3I23_HS4_SENSORLESS_REARM_RACE_FROM_HS3.patch
             ci/test_r3i23_startup_ramp.c
             ci/test_r3i22_gas_brake.c
             ci/test_r3i21_button.c
