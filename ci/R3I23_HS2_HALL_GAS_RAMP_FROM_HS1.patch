@@ -1,0 +1,80 @@
+--- a/common_files/src/defines.h	2026-11-03 21:10:58.000000000 +0000
++++ b/common_files/src/defines.h	2026-11-03 21:57:21.227018994 +0000
+@@ -2,7 +2,7 @@
+ #define DEFINES_H_
+ 
+ #ifdef G30P
+-#define HW_NAME "G30D-R3I23-HS1-DUALMODE"
++#define HW_NAME "G30D-R3I23-HS2-HALL-GAS-RAMP"
+ #else
+ #define HW_NAME "40"
+ #endif
+--- a/common_files/src/g30_dash_drive_logic.h	2026-11-03 21:10:58.000000000 +0000
++++ b/common_files/src/g30_dash_drive_logic.h	2026-11-03 21:57:21.226801842 +0000
+@@ -41,7 +41,7 @@
+     G30_DASH_R2_COAST = 2
+ } g30_dash_r2_action;
+ typedef struct {
+-    uint32_t neutral_since_ms, last_drive_ms;
++    uint32_t neutral_since_ms, last_drive_ms, drive_start_ms;
+     uint8_t neutral_started, armed, driving, brake_override;
+ } g30_dash_r2_control;
+ 
+@@ -57,6 +57,7 @@
+     c->driving=0u;
+     c->armed=0u;
+     c->neutral_started=0u;
++    c->drive_start_ms=0u;
+ }
+ 
+ static inline g30_dash_r2_action g30_dash_r2_step(g30_dash_r2_control *c,
+@@ -75,6 +76,7 @@
+         c->driving=0u;
+         c->armed=0u;
+         c->neutral_started=0u;
++        c->drive_start_ms=0u;
+         return need_coast ? G30_DASH_R2_COAST : G30_DASH_R2_NONE;
+     }
+     c->brake_override=0u;
+@@ -104,15 +106,22 @@
+     if(!request) {
+         if(c->driving) {
+             c->driving=0u;
++            c->drive_start_ms=0u;
+             return G30_DASH_R2_COAST;
+         }
+         return G30_DASH_R2_NONE;
+     }
+     if(!c->driving || (uint32_t)(now_ms-c->last_drive_ms)>=G30_DASH_R2_COMMAND_MS) {
++        if(!c->driving) c->drive_start_ms=now_ms;
+         c->driving=1u;
+         c->last_drive_ms=now_ms;
+         return G30_DASH_R2_DRIVE;
+     }
+     return G30_DASH_R2_NONE;
+ }
++static inline uint32_t g30_dash_r2_drive_age_ms(const g30_dash_r2_control *c,
++        uint32_t now_ms) {
++    return c->driving ? (uint32_t)(now_ms-c->drive_start_ms) : 0u;
++}
++
+ #endif
+--- a/common_files/src/g30_dash_link.c	2026-11-03 21:10:58.000000000 +0000
++++ b/common_files/src/g30_dash_link.c	2026-11-03 21:57:21.226954625 +0000
+@@ -81,8 +81,14 @@
+         uint16_t torque=g30_dash_r2_scale(d->gas);
+         if(!torque) return;
+         VescToSTM_g30_pushstart_command(true);
+-        if(VescToSTM_g30_sensorless_selected())
+-            torque=g30_dash_r3i23_startup_limit(torque,g30_r3i_active_age_ms());
++        /* HS2: dashboard gas is a torque/current-limited path. Keep the
++         * proven sensorless ramp and apply the same 40->100% / 400 ms ramp to
++         * Hall starts so a loaded 53.9 A mc_conf cannot be requested in one
++         * step from standstill. VESC RPM arrows are intentionally untouched. */
++        uint32_t ramp_age = VescToSTM_g30_sensorless_selected()
++            ? g30_r3i_active_age_ms()
++            : g30_dash_r2_drive_age_ms(&d->control,now);
++        torque=g30_dash_r3i23_startup_limit(torque,ramp_age);
+         VescToSTM_set_current_rel_int((int32_t)torque);
+         VescToSTM_timeout_reset();
+         d->drive_commands++;
