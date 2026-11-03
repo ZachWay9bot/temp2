@@ -277,7 +277,7 @@ jobs:
         run: |
           set -euo pipefail
           patch -d SOURCE_KOXX3 -p1 --dry-run < ci/R3I31_LIGHT_SPLIT_BOOTGATE.patch
-          patch -d SOURCE_KOXX3 -p1 < ci/R3I34_G30_LIGHT_BIT0.patch
+          patch -d SOURCE_KOXX3 -p1 < ci/R3I31_LIGHT_SPLIT_BOOTGATE.patch
           python3 ci/audit_r3i31_light_split_bootgate.py SOURCE_KOXX3 | tee OUTPUT/R3I31_LIGHT_SPLIT_BOOTGATE_AUDIT.txt
           python3 ci/test_r3i31_boot_gate.py | tee OUTPUT/R3I31_BOOT_GATE_HOST_TEST.txt
           grep -q 'G30D-R3I31-LIGHT-SPLIT-BOOTGATE' SOURCE_KOXX3/common_files/src/defines.h
