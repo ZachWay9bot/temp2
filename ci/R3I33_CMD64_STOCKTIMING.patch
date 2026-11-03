@@ -1,6 +1,6 @@
 --- a/common_files/src/g30_dash_link.c
 +++ b/common_files/src/g30_dash_link.c
-@@ -94,1 +94,7 @@
+@@ -94,1 +94,6 @@
 -        if(reply_pending && d->parser.state==0u && rd==rx_pos(d)) send_status(d);
 +        if(reply_pending && d->parser.state==0u && rd==rx_pos(d)) {
 +            /* Stock DRV126 capture replies about 2.8..3.0 ms after DASH64.
