@@ -1,27 +1,15 @@
 --- a/common_files/src/g30_dash_link.c
 +++ b/common_files/src/g30_dash_link.c
-@@ -151,7 +151,12 @@
-         }
-         /* Do not switch away from RX in the middle of a newly arriving frame. */
+@@ -94,1 +94,7 @@
 -        if(reply_pending && d->parser.state==0u && rd==rx_pos(d)) send_status(d);
 +        if(reply_pending && d->parser.state==0u && rd==rx_pos(d)) {
-+            /* Stock DRV126 capture replies about 2.8..3.0 ms after DASH64
-+             * frame completion. The custom path was about 2.0 ms and showed
-+             * missing/corrupted ESC64 frames. Two 2-kHz RTOS ticks add ~1 ms. */
++            /* Stock DRV126 capture replies about 2.8..3.0 ms after DASH64.
++             * Add ~1 ms to move the custom reply into the observed stock window. */
 +            vTaskDelay(2);
 +            send_status(d);
 +        }
-         if(u->Instance->SR&(USART_SR_ORE|USART_SR_FE|USART_SR_NE|USART_SR_PE)) {
-             d->rx_errors++;
-             __HAL_UART_CLEAR_OREFLAG(u);
 --- a/common_files/src/defines.h
 +++ b/common_files/src/defines.h
-@@ -2,7 +2,7 @@
- #define DEFINES_H_
- 
- #ifdef G30P
+@@ -5,1 +5,1 @@
 -#define HW_NAME "G30D-R3I32-CMD64-STOCKBYTE"
 +#define HW_NAME "G30D-R3I33-CMD64-STOCKTIMING"
- #else
- #define HW_NAME "40"
- #endif
