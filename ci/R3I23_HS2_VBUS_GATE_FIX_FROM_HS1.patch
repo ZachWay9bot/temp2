@@ -1,0 +1,20 @@
+--- a/common_files/src/defines.h
++++ b/common_files/src/defines.h
+@@
+-#define HW_NAME "G30D-R3I23-HS1-DUALMODE"
++#define HW_NAME "G30D-R3I23-HS2-VBUS-GATE-FIX"
+--- a/common_files/src/g30_dash_link.c
++++ b/common_files/src/g30_dash_link.c
+@@
+-    /* Undervoltage/MCSDK faults block any torque while on 5V logic alone. */
++    /* MCSDK faults and explicit output-disable block torque.
++     * Do NOT hard-gate dashboard drive on Vbus here: the existing
++     * VescToSTM_Iq_lim_hook() already applies the configured battery-cut
++     * ramp (20.4 V -> 18.0 V on the current G30 config). A second boolean
++     * Vbus>=18 V gate made the dashboard path alternate DRIVE/COAST on the
++     * series-lamp bench whenever a hard throttle step caused a brief sag. */
+     bool ready=pMCI[M1] && pMCI[M1]->pSTM &&
+         !app_is_output_disabled() &&
+-        VescToSTM_get_fault()==FAULT_CODE_NONE &&
+-        VescToSTM_get_bus_voltage()>=18.0f;
++        VescToSTM_get_fault()==FAULT_CODE_NONE;
