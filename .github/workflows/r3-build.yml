@@ -221,9 +221,9 @@ jobs:
           patch -d SOURCE_KOXX3 -p1 --dry-run < ci/R3I23_STARTUP_TORQUE_RAMP_FROM_R3I22.patch
           patch -d SOURCE_KOXX3 -p1 < ci/R3I23_STARTUP_TORQUE_RAMP_FROM_R3I22.patch
           grep -q 'G30D-R3I23-STARTUP-TORQUE-RAMP' SOURCE_KOXX3/common_files/src/defines.h
-          patch -d SOURCE_KOXX3 -p1 --dry-run < ci/R3I23_HS2_HALL_GAS_RAMP_FROM_R3I23.patch
+          patch -d SOURCE_KOXX3 -p1 --dry-run < ci/R3I23_HS1_DUALMODE_FROM_R3I23.patch
           patch -d SOURCE_KOXX3 -p1 < ci/R3I23_HS1_DUALMODE_FROM_R3I23.patch
-          grep -q 'G30D-R3I23-HS2-HALL-GAS-RAMP' SOURCE_KOXX3/common_files/src/defines.h
+          grep -q 'G30D-R3I23-HS1-DUALMODE' SOURCE_KOXX3/common_files/src/defines.h
           patch -d SOURCE_KOXX3 -p1 --dry-run < ci/R3I23_HS2_HALL_GAS_RAMP_FROM_HS1.patch
           patch -d SOURCE_KOXX3 -p1 < ci/R3I23_HS2_HALL_GAS_RAMP_FROM_HS1.patch
           grep -q 'G30D-R3I23-HS2-HALL-GAS-RAMP' SOURCE_KOXX3/common_files/src/defines.h
@@ -234,7 +234,7 @@ jobs:
           grep -q 'VescToSTM_g30_hall_selected' SOURCE_KOXX3/common_files/src/VescToSTM.c
           grep -q 'VescToSTM_g30_sensorless_selected' SOURCE_KOXX3/common_files/src/VescToSTM.c
           grep -q 'if(VescToSTM_g30_sensorless_selected())' SOURCE_KOXX3/common_files/src/mc_tasks.c
-          grep -q 'if(VescToSTM_g30_sensorless_selected())' SOURCE_KOXX3/common_files/src/g30_dash_link.c
+          grep -q 'g30_dash_r2_drive_age_ms(&d->control,now)' SOURCE_KOXX3/common_files/src/g30_dash_link.c
           python3 - <<'PY'
           from pathlib import Path
           conf=Path('SOURCE_KOXX3/common_files/src/conf_general.c').read_text()
@@ -249,12 +249,13 @@ jobs:
           assert 'if(VescToSTM_g30_hall_selected())' in vs
           assert 'g30_r3i_request_arm(VescToSTM_g30_sensorless_selected() ? 1u : 0u);' in vs
           dash=Path('SOURCE_KOXX3/common_files/src/g30_dash_link.c').read_text()
-          assert 'if(VescToSTM_g30_sensorless_selected())' in dash
+          assert 'g30_dash_r2_drive_age_ms(&d->control,now)' in dash
+          assert 'g30_r3i_active_age_ms()' in dash
           print('R3I23_HS1_MODE_GATES=PASS')
           PY
           grep -q 'G30_DASH_R3I23_START_TORQUE 13107u' SOURCE_KOXX3/common_files/src/g30_dash_drive_logic.h
           grep -q 'G30_DASH_R3I23_RAMP_MS        400u' SOURCE_KOXX3/common_files/src/g30_dash_drive_logic.h
-          grep -q 'g30_dash_r3i23_startup_limit(torque,g30_r3i_active_age_ms())' SOURCE_KOXX3/common_files/src/g30_dash_link.c
+          grep -q 'torque=g30_dash_r3i23_startup_limit(torque,ramp_age);' SOURCE_KOXX3/common_files/src/g30_dash_link.c
           grep -q 'G30_DASH_R2_GAS_IDLE       67u' SOURCE_KOXX3/common_files/src/g30_dash_drive_logic.h
           grep -q 'held_ms >= 2500u' SOURCE_KOXX3/common_files/src/task_pwr.c
           grep -q 'pending == 2u' SOURCE_KOXX3/common_files/src/task_pwr.c
@@ -316,12 +317,12 @@ jobs:
           te=Path('SOURCE_KOXX3/common_files/src/terminal.c').read_text()
           de=Path('SOURCE_KOXX3/common_files/src/defines.h').read_text()
           gates={
-            'build_id':'G30D-R3I23-HS1-DUALMODE' in de,
+            'build_id':'G30D-R3I23-HS2-HALL-GAS-RAMP' in de,
             'hs2_dual_mode_helpers':'VescToSTM_g30_hall_selected' in vs and 'VescToSTM_g30_sensorless_selected' in vs,
             'hall_zero_speed_path':'if(VescToSTM_g30_hall_selected())' in vs and 'MCI_StartMotor(pMCI[M1])' in vs,
             'sensorless_start_dpp_64':'#define R3I_MIN_DPP 64' in Path('SOURCE_KOXX3/common_files/src/g30_r3i_pushstart.c').read_text(),
             'sensorless_tick_gated':'if(VescToSTM_g30_sensorless_selected())' in mc,
-            'dash_ramp_sensorless_only':'if(VescToSTM_g30_sensorless_selected())' in Path('SOURCE_KOXX3/common_files/src/g30_dash_link.c').read_text(),
+            'dash_ramp_hall_and_sensorless':'g30_dash_r2_drive_age_ms(&d->control,now)' in Path('SOURCE_KOXX3/common_files/src/g30_dash_link.c').read_text() and 'g30_r3i_active_age_ms()' in Path('SOURCE_KOXX3/common_files/src/g30_dash_link.c').read_text(),
             'r3i12_catch_retained':'sensorless_catch_phase_q4=((int32_t)(uint16_t)obs_pred)<<4;' in sh and 'catch_phase=obs_pred;' in sh,
             'no_command_inversion':'erpm = -erpm;' not in vs,
             'speed_feedback_normalized':'(-(int32_t)odpp)' in mc,
