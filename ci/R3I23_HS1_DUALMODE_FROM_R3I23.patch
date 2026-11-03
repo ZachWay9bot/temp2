@@ -1,0 +1,234 @@
+--- a/common_files/src/VescToSTM.c	2026-11-02 23:24:34.000000000 +0000
++++ b/common_files/src/VescToSTM.c	2026-11-03 21:06:06.577695720 +0000
+@@ -338,6 +338,25 @@
+ 
+ 
+ #ifdef G30P
++bool VescToSTM_g30_sensorless_selected(void){
++    return mc_conf.foc_sensor_mode == FOC_SENSOR_MODE_SENSORLESS;
++}
++
++bool VescToSTM_g30_hall_selected(void){
++    return mc_conf.foc_sensor_mode == FOC_SENSOR_MODE_HALL;
++}
++
++void VescToSTM_g30_sensor_mode_sync(void){
++    /* R3I23-HS1: changing Hall/Sensorless is a real control-source change.
++     * De-energize first, then clear every observer/pushstart latch. Hall mode
++     * stays fully Hall-driven; Sensorless mode arms only passive BEMF capture. */
++    g30_r3i_set_drive_request(0u);
++    VescToSTM_pwm_stop();
++    g30_fo76_sensorless_clear();
++    g30_fo76_request_takeover(0u);
++    g30_r3i_request_arm(VescToSTM_g30_sensorless_selected() ? 1u : 0u);
++}
++
+ static void VescToSTM_g30_coast_rearm(void){
+     g30_r3i_set_drive_request(0u);
+     /* HF2: electrical coast must happen BEFORE observer/takeover state is
+@@ -358,9 +377,9 @@
+     VescToSTM_set_open_loop(false,0,0);
+     VescToSTM_set_current(0.0f,0.0f);
+     SpeednTorqCtrlM1.PISpeed->wIntegralTerm=0;
+-    /* Stay armed while coasting so Hall-free BEMF capture continues and a
+-     * later non-zero VESC command can catch the already-rolling wheel. */
+-    g30_r3i_request_arm(1u);
++    /* Only Sensorless stays armed while coasting. Hall mode must remain
++     * completely disconnected from the pushstart/observer state machine. */
++    g30_r3i_request_arm(VescToSTM_g30_sensorless_selected() ? 1u : 0u);
+ }
+ 
+ void VescToSTM_g30_pushstart_command(bool active){
+@@ -369,6 +388,20 @@
+         return;
+     }
+ 
++    if(VescToSTM_g30_hall_selected()){
++        /* Exact R2 Hall-FOC start path: no BEMF gate and no observer takeover.
++         * A non-zero command may therefore start from standstill. */
++        g30_r3i_set_drive_request(0u);
++        g30_r3i_request_arm(0u);
++        if(STM_GetState(&STM[M1])==IDLE){
++            MCI_ExecSpeedRamp(pMCI[M1],0,0);
++            (void)MCI_StartMotor(pMCI[M1]);
++        }else if(STM_GetState(&STM[M1])==RUN){
++            VescToSTM_pwm_start();
++        }
++        return;
++    }
++
+     /* R3I15: the R3I14 hardware test armed pushstart through the terminal
+      * before sending COMM_SET_RPM. VESC Tool does not send that terminal
+      * command. Arm exactly once on the first non-zero VESC drive request.
+@@ -435,7 +468,7 @@
+ #ifdef G30P
+     /* May also be called from MCSDK CLEAR immediately before its direct
+      * SwitchOnPWM. Never overwrite a running current controller. */
+-    if(!g30_r3i_sensorless_active() || !PWM_Handle_M1._Super.PWM_off) return;
++    if(!VescToSTM_g30_sensorless_selected() || !g30_r3i_sensorless_active() || !PWM_Handle_M1._Super.PWM_off) return;
+     uint16_t lambda=g30_fo76_model_lambda_uwb();
+     int16_t speed=g30_fo76_control_speed_dpp();
+     float bus_v=VescToSTM_get_bus_voltage();
+@@ -476,13 +509,13 @@
+ 
+ void VescToSTM_pwm_start(void){
+ #ifdef G30P
+-    if(g30_r3i_block_pwm_start()) return;
++    if(VescToSTM_g30_sensorless_selected() && g30_r3i_block_pwm_start()) return;
+ #endif
+     /* This guard owns initialization. Repeated calls while PWM is already
+      * running must leave both PI integrators completely untouched. */
+     if(PWM_Handle_M1._Super.PWM_off){
+ #ifdef G30P
+-        if(g30_r3i_sensorless_active()){
++        if(VescToSTM_g30_sensorless_selected() && g30_r3i_sensorless_active()){
+             VescToSTM_prepare_sensorless_start();
+         }else
+ #endif
+--- a/common_files/src/VescToSTM.h	2026-11-02 23:24:34.000000000 +0000
++++ b/common_files/src/VescToSTM.h	2026-11-03 21:03:33.708953269 +0000
+@@ -50,6 +50,9 @@
+ void VescToSTM_pwm_stop(void);
+ #ifdef G30P
+ void VescToSTM_g30_pushstart_command(bool active);
++bool VescToSTM_g30_sensorless_selected(void);
++bool VescToSTM_g30_hall_selected(void);
++void VescToSTM_g30_sensor_mode_sync(void);
+ #endif
+ void VescToSTM_pwm_start(void);
+ void VescToSTM_prepare_sensorless_start(void);
+--- a/common_files/src/conf_general.c	2026-10-27 22:35:12.000000000 +0000
++++ b/common_files/src/conf_general.c	2026-11-03 21:03:33.710977278 +0000
+@@ -444,12 +444,20 @@
+         conf_general_bus_voltage_limit_counts(mcconf->l_max_vin);
+ 	VescToSTM_set_battery_cut(mcconf->l_battery_cut_start, mcconf->l_battery_cut_end);
+ 
+-	// BLDC switching and drive
++	// G30D supports two explicit FOC sensor modes: validated Hall-FOC or
++	// validated Hall-free FO76 pushstart. Do not silently force Hall here;
++	// this field is the VESC Tool selector the user actually changes.
++	if(mcconf->foc_sensor_mode != FOC_SENSOR_MODE_HALL &&
++	   mcconf->foc_sensor_mode != FOC_SENSOR_MODE_SENSORLESS){
++		mcconf->foc_sensor_mode = FOC_SENSOR_MODE_HALL;
++	}
+ 	mcconf->motor_type = MOTOR_TYPE_FOC;
+ 	mcconf->sensor_mode = SENSOR_MODE_SENSORED;
+ 	mcconf->pwm_mode = PWM_MODE_SYNCHRONOUS;
+-	mcconf->foc_sensor_mode = FOC_SENSOR_MODE_HALL;
+ 
++	/* Keep the exact R2 Hall decoder/LUT path initialized even in Sensorless
++	 * mode. It is inert as a control source there, but remains available for
++	 * diagnostics and makes switching back to Hall deterministic. */
+ 	HALL_Init(&HALL_M1);
+ 
+     /* Conversion coefficients are constants for this confirmed G30 power
+@@ -463,6 +471,12 @@
+ 
+ 	VescToSTM_init_odometer(mcconf);
+ 	mc_conf = *mcconf;
++#ifdef G30P
++	/* Flush stale observer/pushstart state whenever the VESC Tool applies a
++	 * motor configuration. Hall then starts from zero; Sensorless waits for
++	 * the existing >=3 km/h passive-BEMF gate. */
++	VescToSTM_g30_sensor_mode_sync();
++#endif
+ 
+ }
+ 
+--- a/common_files/src/defines.h	2026-11-02 23:24:35.000000000 +0000
++++ b/common_files/src/defines.h	2026-11-03 21:03:33.708281637 +0000
+@@ -2,7 +2,7 @@
+ #define DEFINES_H_
+ 
+ #ifdef G30P
+-#define HW_NAME "G30D-R3I23-STARTUP-TORQUE-RAMP"
++#define HW_NAME "G30D-R3I23-HS1-DUALMODE"
+ #else
+ #define HW_NAME "40"
+ #endif
+--- a/common_files/src/g30_dash_link.c	2026-11-02 23:24:35.000000000 +0000
++++ b/common_files/src/g30_dash_link.c	2026-11-03 21:03:33.711854621 +0000
+@@ -81,7 +81,8 @@
+         uint16_t torque=g30_dash_r2_scale(d->gas);
+         if(!torque) return;
+         VescToSTM_g30_pushstart_command(true);
+-        torque=g30_dash_r3i23_startup_limit(torque,g30_r3i_active_age_ms());
++        if(VescToSTM_g30_sensorless_selected())
++            torque=g30_dash_r3i23_startup_limit(torque,g30_r3i_active_age_ms());
+         VescToSTM_set_current_rel_int((int32_t)torque);
+         VescToSTM_timeout_reset();
+         d->drive_commands++;
+--- a/common_files/src/mc_tasks.c	2026-11-02 23:24:34.000000000 +0000
++++ b/common_files/src/mc_tasks.c	2026-11-03 21:03:33.711531700 +0000
+@@ -363,7 +363,7 @@
+   bool IsSpeedReliable;
+ #ifdef G30P
+   g30_r3i_diag_t r3i_diag=g30_r3i_get_diag();
+-  if(g30_fo76_sensorless_active()){
++  if(VescToSTM_g30_sensorless_selected() && g30_fo76_sensorless_active()){
+     int16_t odpp=g30_fo76_control_speed_dpp();
+     /* R3I14: validated physical FWD observer rotation is negative DPP, while
+      * VESC uses positive ERPM for FWD. Keep electrical angle/speed DPP in the
+@@ -375,7 +375,7 @@
+     HALL_M1.AvrElSpeedDpp=odpp;
+     HALL_M1._Super.hAvrMecSpeedUnit=wAux;
+     IsSpeedReliable=true;
+-  }else if(r3i_diag.mode==1u){
++  }else if(VescToSTM_g30_sensorless_selected() && r3i_diag.mode==1u){
+     /* HF1: while waiting for the Hall-free pushstart, do not let missing/floating
+      * Hall inputs trip MC_SPEED_FDBK. Use passive BEMF speed when available. */
+     int16_t bdpp=g30_r3i_speed_dpp();
+@@ -443,7 +443,7 @@
+       FOC_Clear( M1 );
+ 
+ #ifdef G30P
+-      if(g30_fo76_sensorless_active()) VescToSTM_prepare_sensorless_start();
++      if(VescToSTM_g30_sensorless_selected() && g30_fo76_sensorless_active()) VescToSTM_prepare_sensorless_start();
+ #endif
+       R3_2_SwitchOnPWM( pwmcHandle[M1] );
+     }
+@@ -745,7 +745,7 @@
+ 	uint16_t hFOCreturn;
+ 
+ #ifdef G30P
+-    if(!g30_fo76_sensorless_active()) HALL_CalcElAngle (&HALL_M1);
++    if(!VescToSTM_g30_sensorless_selected() || !g30_fo76_sensorless_active()) HALL_CalcElAngle (&HALL_M1);
+ #else
+     HALL_CalcElAngle (&HALL_M1);
+ #endif
+@@ -855,7 +855,7 @@
+   /* R3G2: Hall implementation updates hElSpeedDpp, but does not populate
+    * InstantaneousElSpeedDpp in this MCSDK tree. Use the same valid Hall speed
+    * source that the FO76 observer already consumes. */
+-  hElSpeedDpp = g30_fo76_sensorless_active()?g30_fo76_control_speed_dpp():SPD_GetElSpeedDpp(speedHandle);
++  hElSpeedDpp = (VescToSTM_g30_sensorless_selected() && g30_fo76_sensorless_active())?g30_fo76_control_speed_dpp():SPD_GetElSpeedDpp(speedHandle);
+ #else
+   hElSpeedDpp = SPD_GetInstElSpeedDpp(speedHandle);
+ #endif
+@@ -952,9 +952,11 @@
+   {
+ 	  uint16_t voltage_fault = RVBS_CalcAvVbus(pBusSensorM1);
+ #ifdef G30P
+-      g30_r3i_tick((uint8_t)PWM_Handle_M1._Super.PWM_off,
+-                   (uint16_t)HALL_M1.MeasuredElAngle,
+-                   HALL_M1._Super.hElSpeedDpp);
++      if(VescToSTM_g30_sensorless_selected()){
++          g30_r3i_tick((uint8_t)PWM_Handle_M1._Super.PWM_off,
++                       (uint16_t)HALL_M1.MeasuredElAngle,
++                       HALL_M1._Super.hElSpeedDpp);
++      }
+ #endif
+ 	  if(voltage_fault==MC_UNDER_VOLT){
+ 		  CodeReturn |=  errMask[bMotor] & voltage_fault;
+--- a/common_files/src/terminal.c	2026-11-02 23:24:34.000000000 +0000
++++ b/common_files/src/terminal.c	2026-11-03 21:06:06.577467610 +0000
+@@ -124,6 +124,9 @@
+             (long)(mc_conf.l_battery_cut_start*1000.0f),
+             (long)(mc_conf.l_battery_cut_end*1000.0f),
+             (unsigned)HALL_M1.HallState, (unsigned)xPortGetFreeHeapSize());
++        commands_printf(phandle, "DriveSensor=%s sensorlessActive=%u minStartDpp=64",
++            VescToSTM_g30_hall_selected()?"HALL":"SENSORLESS",
++            (unsigned)g30_r3i_sensorless_active());
+     }else if (strcmp(argv[0], "g30_observer") == 0){
+         if(argc==3 && strcmp(argv[1],"lambda")==0){
+             char *end;
