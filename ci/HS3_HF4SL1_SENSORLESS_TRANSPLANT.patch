@@ -1,0 +1,46 @@
+--- a/common_files/src/defines.h
++++ b/common_files/src/defines.h
+@@ -2,7 +2,7 @@
+ #define DEFINES_H_
+ 
+ #ifdef G30P
+-#define HW_NAME "G30D-R3I23-HS3-DASH-VBUS-GATE-FIX"
++#define HW_NAME "G30D-R3I23-HS3-HF4SL1"
+ #else
+ #define HW_NAME "40"
+ #endif
+--- a/common_files/src/VescToSTM.c
++++ b/common_files/src/VescToSTM.c
+@@ -347,14 +347,15 @@
+ }
+ 
+ void VescToSTM_g30_sensor_mode_sync(void){
+-    /* R3I23-HS1: changing Hall/Sensorless is a real control-source change.
+-     * De-energize first, then clear every observer/pushstart latch. Hall mode
+-     * stays fully Hall-driven; Sensorless mode arms only passive BEMF capture. */
++    /* HF4SL1: mode switching only resets the control source. The original
++     * R3I15HF4 sensorless path starts from mode 0 and performs its ARM/MCSDK
++     * start sequence on the first real non-zero drive command. Do not pre-arm
++     * sensorless merely because Motor Configuration was loaded/written. */
+     g30_r3i_set_drive_request(0u);
+     VescToSTM_pwm_stop();
+     g30_fo76_sensorless_clear();
+     g30_fo76_request_takeover(0u);
+-    g30_r3i_request_arm(VescToSTM_g30_sensorless_selected() ? 1u : 0u);
++    g30_r3i_request_arm(0u);
+ }
+ 
+ static void VescToSTM_g30_coast_rearm(void){
+--- a/common_files/src/g30_dash_link.c
++++ b/common_files/src/g30_dash_link.c
+@@ -85,8 +85,8 @@
+         uint16_t torque=g30_dash_r2_scale(d->gas);
+         if(!torque) return;
+         VescToSTM_g30_pushstart_command(true);
+-        if(VescToSTM_g30_sensorless_selected())
+-            torque=g30_dash_r3i23_startup_limit(torque,g30_r3i_active_age_ms());
++        /* HF4SL1: no post-HF4 sensorless startup torque shaping here. The
++         * dashboard is only an input adapter; motor start/catch stays HF4. */
+         VescToSTM_set_current_rel_int((int32_t)torque);
+         VescToSTM_timeout_reset();
+         d->drive_commands++;
