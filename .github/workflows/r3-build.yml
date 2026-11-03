@@ -227,7 +227,7 @@ jobs:
           grep -q 'G30D-R3I23-HS1-DUALMODE' SOURCE_KOXX3/common_files/src/defines.h
           patch -d SOURCE_KOXX3 -p1 --dry-run < ci/R3I23_HS3_DASH_VBUS_GATE_FROM_HS1.patch
           patch -d SOURCE_KOXX3 -p1 < ci/R3I23_HS3_DASH_VBUS_GATE_FROM_HS1.patch
-          grep -q 'G30D-R3I23-HS4-SENSORLESS-REARM-RACE' SOURCE_KOXX3/common_files/src/defines.h
+          grep -q 'G30D-R3I23-HS3-DASH-VBUS-GATE-FIX' SOURCE_KOXX3/common_files/src/defines.h
           patch -d SOURCE_KOXX3 -p1 --dry-run < ci/R3I23_HS4_SENSORLESS_REARM_RACE_FROM_HS3.patch
           patch -d SOURCE_KOXX3 -p1 < ci/R3I23_HS4_SENSORLESS_REARM_RACE_FROM_HS3.patch
           grep -q 'G30D-R3I23-HS4-SENSORLESS-REARM-RACE' SOURCE_KOXX3/common_files/src/defines.h
@@ -306,7 +306,7 @@ jobs:
           text,data,bss=map(int,parts[:3])
           ram=data+bss
           flash=text+data
-          print(f'R3I23_HS3_FLASH={flash} R3I23_HS3_RAM={ram}')
+          print(f'R3I23_HS4_FLASH={flash} R3I23_HS4_RAM={ram}')
           assert ram <= 20480, f'RAM overflow: {ram} > 20480'
           assert flash <= 126976, f'APP flash overflow: {flash} > 126976'
           Path('OUTPUT/MEMORY_GATE.txt').write_text(f'FLASH={flash}/126976\nRAM={ram}/20480\nPASS\n')
