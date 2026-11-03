@@ -1,0 +1,222 @@
+--- a/common_files/src/defines.h
++++ b/common_files/src/defines.h
+@@ -2,7 +2,7 @@
+ #define DEFINES_H_
+ 
+ #ifdef G30P
+-#define HW_NAME "G30D-R3I23-STARTUP-TORQUE-RAMP"
++#define HW_NAME "G30D-R3I30-BMS-UART3"
+ #else
+ #define HW_NAME "40"
+ #endif
+--- /dev/null
++++ b/common_files/src/g30_bms_link.c
+@@ -0,0 +1,84 @@
++/* R3I30: one BMS-UART3 owner, serviced by the existing DASH task. No motor
++ * setters, no BMS writes/flash, no extra task or stack, no IoT UART changes. */
++#include "main.h"
++#include "task_init.h"
++#include "g30_bms_link.h"
++#include "g30_bms_logic.h"
++#include "VescCommand.h"
++
++#ifdef G30P
++typedef struct {
++    g30_dash_parser parser;
++    g30_bms_control control;
++    uint32_t bytes, valid, bad, ignored, tx_ok, tx_fail, rx_errors;
++    uint8_t rx[128];
++    uint8_t rd, rx_result;
++} g30_bms_link_state;
++
++static g30_bms_link_state *bms;
++static uint32_t alloc_failed;
++
++void g30_bms_link_start(void) {
++    if(bms) return;
++    g30_bms_link_state *d=pvPortMalloc(sizeof(*d));
++    if(!d){alloc_failed++;return;}
++    memset(d,0,sizeof(*d)); bms=d;
++    /* main.c / MSP already configure USART3, PB10 TX / PB11 RX at 115200 8N1.
++     * Do not reinitialize any UART or change the existing USART1 IoT owner. */
++    d->rx_result=(uint8_t)HAL_UART_Receive_DMA(&huart3,d->rx,sizeof(d->rx))+1u;
++    if(d->rx_result==1u) {
++        CLEAR_BIT(huart3.Instance->CR3,USART_CR3_EIE);
++        __HAL_DMA_DISABLE_IT(huart3.hdmarx,DMA_IT_HT|DMA_IT_TC);
++    }
++}
++
++void g30_bms_link_poll(void) {
++    g30_bms_link_state *d=bms;
++    if(!d || d->rx_result!=1u) return;
++    uint32_t now=HAL_GetTick();
++    /* Bounded drain even with a continuously noisy or wrongly wired input. */
++    for(unsigned budget=0;budget<sizeof(d->rx);budget++) {
++        unsigned wr=(128u-huart3.hdmarx->Instance->CNDTR)&127u;
++        if(d->rd==wr) break;
++        uint8_t byte=d->rx[d->rd]; d->rd=(uint8_t)((d->rd+1u)&127u); d->bytes++;
++        int result=g30_dash_feed(&d->parser,byte,now);
++        if(result<0) d->bad++;
++        if(result==1) {
++            if(g30_bms_accept(&d->control,&d->parser,now)) d->valid++;
++            else d->ignored++;
++        }
++    }
++    if(huart3.Instance->SR&(USART_SR_ORE|USART_SR_FE|USART_SR_NE|USART_SR_PE)) {
++        d->rx_errors++; __HAL_UART_CLEAR_OREFLAG(&huart3);
++    }
++    uint8_t tx[10];
++    if(g30_bms_next_read(&d->control,now,tx)) {
++        /* Full-duplex: RX DMA stays enabled during TX. Ten bytes take <1 ms.
++         * Bounded blocking TX avoids a buffer lifetime/DMA callback dependency. */
++        if(HAL_UART_Transmit(&huart3,tx,sizeof(tx),3u)==HAL_OK) d->tx_ok++;
++        else d->tx_fail++;
++    }
++}
++
++void g30_bms_link_print(PACKET_STATE_t *phandle) {
++    g30_bms_link_state *d=bms;
++    if(!d){commands_printf(phandle,"BMS UART3 started=0 allocFail=%lu",(unsigned long)alloc_failed);return;}
++    uint32_t now=HAL_GetTick();
++    commands_printf(phandle,"BMS UART3 tx=PB10 rx=PB11 baud=115200 rxDMA=%u bytes=%lu valid=%lu bad=%lu ignored=%lu",
++        d->rx_result,(unsigned long)d->bytes,(unsigned long)d->valid,
++        (unsigned long)d->bad,(unsigned long)d->ignored);
++    commands_printf(phandle,"BMS txOK=%lu txFail=%lu rxErr=%lu identity=%u status=%u fresh=%u poll_ms=%u age_ms=%lu",
++        (unsigned long)d->tx_ok,(unsigned long)d->tx_fail,(unsigned long)d->rx_errors,
++        d->control.identity_seen,d->control.status_seen,g30_bms_status_fresh(&d->control,now),
++        G30_BMS_POLL_MS,(unsigned long)(d->control.status_seen?now-d->control.last_status_ms:0u));
++    /* Raw register values: no claim that a reply proves 40 A capability. */
++    const uint8_t *s=d->control.status;
++    commands_printf(phandle,"BMS regs30_35=%02x%02x,%02x%02x,%02x%02x,%02x%02x,%02x%02x,%02x%02x",
++        s[1],s[0],s[3],s[2],s[5],s[4],s[7],s[6],s[9],s[8],s[11],s[10]);
++    commands_printf(phandle,"BMS requests=READ_ONLY id=5AA50120220110109BFF status=5AA501202201300C7FFF");
++}
++#else
++void g30_bms_link_start(void) {}
++void g30_bms_link_poll(void) {}
++void g30_bms_link_print(PACKET_STATE_t *phandle) {(void)phandle;}
++#endif
+--- /dev/null
++++ b/common_files/src/g30_bms_link.h
+@@ -0,0 +1,7 @@
++#ifndef G30_BMS_LINK_H
++#define G30_BMS_LINK_H
++#include "packet.h"
++void g30_bms_link_start(void);
++void g30_bms_link_poll(void);
++void g30_bms_link_print(PACKET_STATE_t *phandle);
++#endif
+--- /dev/null
++++ b/common_files/src/g30_bms_logic.h
+@@ -0,0 +1,54 @@
++/* G30 stock-BMS reads. Golden wire bytes are derived from DRV126, not G2. */
++#ifndef G30_BMS_LOGIC_H
++#define G30_BMS_LOGIC_H
++#include "g30_dash_proto.h"
++#include <stdbool.h>
++
++#define G30_BMS_POLL_MS 105u
++#define G30_BMS_FRESH_MS 1000u
++
++typedef struct {
++    uint32_t last_tx_ms, last_status_ms;
++    uint8_t tx_started, identity_seen, status_seen;
++    uint8_t identity[16], status[12];
++} g30_bms_control;
++
++/* 5A A5 01 20 22 01 REG COUNT CKlo CKhi. LEN is included in the sum. */
++static inline void g30_bms_read_frame(uint8_t reg, uint8_t count, uint8_t out[10]) {
++    out[0]=0x5a; out[1]=0xa5; out[2]=1; out[3]=0x20; out[4]=0x22;
++    out[5]=1; out[6]=reg; out[7]=count;
++    uint16_t sum=0;
++    for(unsigned i=2;i<8;i++) sum+=out[i];
++    sum^=0xffffu; out[8]=(uint8_t)sum; out[9]=(uint8_t)(sum>>8);
++}
++
++/* First read identity; retry while disconnected. There is no motor interlock.
++ * Successful identity reception switches subsequent requests to status. */
++static inline bool g30_bms_next_read(g30_bms_control *c, uint32_t now,
++        uint8_t out[10]) {
++    if(c->tx_started && (uint32_t)(now-c->last_tx_ms)<G30_BMS_POLL_MS) return false;
++    c->last_tx_ms=now; c->tx_started=1;
++    if(c->identity_seen) g30_bms_read_frame(0x30,12,out);
++    else g30_bms_read_frame(0x10,16,out);
++    return true;
++}
++
++/* Call only after the parser validated the checksum. Accept exact stock read
++ * replies, never echo requests or frames from dashboard/external batteries. */
++static inline bool g30_bms_accept(g30_bms_control *c,
++        const g30_dash_parser *p, uint32_t now) {
++    if(p->src!=0x22 || p->dst!=0x20 || p->cmd!=4) return false;
++    if(p->arg==0x10 && p->len==16) {
++        memcpy(c->identity,p->payload,16); c->identity_seen=1; return true;
++    }
++    if(p->arg==0x30 && p->len==12) {
++        memcpy(c->status,p->payload,12); c->status_seen=1;
++        c->last_status_ms=now; return true;
++    }
++    return false;
++}
++
++static inline bool g30_bms_status_fresh(const g30_bms_control *c, uint32_t now) {
++    return c->status_seen && (uint32_t)(now-c->last_status_ms)<=G30_BMS_FRESH_MS;
++}
++#endif
+--- a/common_files/src/g30_dash_link.c
++++ b/common_files/src/g30_dash_link.c
+@@ -7,6 +7,7 @@
+ #include "g30_dash_proto.h"
+ #include "g30_dash_drive_logic.h"
+ #include "g30_r3i_pushstart.h"
++#include "g30_bms_link.h"
+ #include "app.h"
+ #include "ninebot.h"
+ #include "VescToSTM.h"
+@@ -123,6 +124,7 @@
+     dash_link_state *d=(dash_link_state*)arg;
+     UART_HandleTypeDef *u=d->port->uart;
+     unsigned rd=0;
++    g30_bms_link_start();
+     d->init_result=(uint8_t)HAL_HalfDuplex_Init(u)+1u;
+     if(d->init_result==1u && HAL_HalfDuplex_EnableReceiver(u)==HAL_OK)
+         d->rx_result=(uint8_t)HAL_UART_Receive_DMA(u,d->rx,sizeof(d->rx))+1u;
+@@ -135,6 +137,7 @@
+      * these DMA interrupts; hardware DMA continues to fill the ring. */
+     __HAL_DMA_DISABLE_IT(u->hdmarx,DMA_IT_HT|DMA_IT_TC);
+     for(;;) {
++        g30_bms_link_poll();
+         unsigned reply_pending=0;
+         while(rd!=rx_pos(d)) {
+             uint8_t b=d->rx[rd]; rd=(rd+1u)&127u; d->bytes++;
+--- a/common_files/src/terminal.c
++++ b/common_files/src/terminal.c
+@@ -17,6 +17,7 @@
+ #include "g30_hall_trace.h"
+ #include "g30_r3i_pushstart.h"
+ #include "g30_dash_link.h"
++#include "g30_bms_link.h"
+ 
+ static uint32_t terminal_foc_load_percent(uint32_t cycles, uint32_t frequency_hz) {
+     return (uint32_t)(((uint64_t)cycles * frequency_hz * 100u) / CPU_CLOCK);
+@@ -101,6 +102,10 @@
+ 
+     if (strcmp(argv[0], "g30dash") == 0) {
+         g30_dash_link_print(phandle);
++        return;
++    }
++    if (strcmp(argv[0], "g30bms") == 0) {
++        g30_bms_link_print(phandle);
+         return;
+     }
+ 	if (strcmp(argv[0], "ping") == 0) {
+--- a/g30p/STM32CubeIDE/.project
++++ b/g30p/STM32CubeIDE/.project
+@@ -656,5 +656,6 @@
+             <type>1</type>
+             <locationURI>PARENT-2-PROJECT_LOC/common_files/src/g30_dash_link.c</locationURI>
+         </link>
+-	</linkedResources>
++	<link><name>Application/User/VESC/src/g30_bms_link.c</name><type>1</type><locationURI>PARENT-2-PROJECT_LOC/common_files/src/g30_bms_link.c</locationURI></link>
++</linkedResources>
+ </projectDescription>

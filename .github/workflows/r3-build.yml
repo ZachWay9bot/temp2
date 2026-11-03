@@ -1,4 +1,4 @@
-name: R3I23 startup torque ramp - flashable build
+name: R3I30 G30 BMS UART3
 on:
   push:
     branches:
@@ -7,6 +7,7 @@ on:
       - r3i21-dash-button-20261101
       - r3i22-dash-gas-brake-20261103
       - r3i23-startup-torque-ramp-20261103
+      - r3i30-bms-uart3-20261103
   workflow_dispatch:
 
 jobs:
@@ -234,6 +235,14 @@ jobs:
           cc -std=c11 -Wall -Wextra -Werror -fsanitize=address,undefined -fno-omit-frame-pointer ci/test_r3i21_button.c -o /tmp/r3i21_button_test
           for c in single150 single950 double_long2 double_bounce2 long verylong bounce; do ASAN_OPTIONS=detect_leaks=0 /tmp/r3i21_button_test "$c"; done | tee OUTPUT/POWER_BUTTON_HOST_TESTS.txt
 
+      - name: Apply and test R3I30 BMS UART3
+        shell: bash
+        run: |
+          set -euo pipefail
+          patch -d SOURCE_KOXX3 -p1 < ci/R3I30_BMS_FROM_R3I23.patch
+          cc -std=c11 -Wall -Wextra -Werror -I SOURCE_KOXX3/common_files/src ci/test_r3i30_bms.c -o /tmp/test_bms
+          /tmp/test_bms | tee OUTPUT/R3I30_BMS_HOST_TESTS.txt
+
       - name: Install ARM GNU GCC 13.2.1
         shell: bash
         run: |
@@ -252,13 +261,13 @@ jobs:
         run: |
           set -euo pipefail
           arm-none-eabi-gcc --version
-          sed -i 's/FO76_PUSHSTART_R3I9/R3I23_STARTUP_TORQUE_RAMP/g' tools/build_native.py tools/validate_image.py
-          sed -i 's/G30D-FO76-PUSHSTART-R3I9/G30D-R3I23-STARTUP-TORQUE-RAMP/g' tools/validate_image.py
+          sed -i 's/FO76_PUSHSTART_R3I9/R3I30_BMS_UART3/g' tools/build_native.py tools/validate_image.py
+          sed -i 's/G30D-FO76-PUSHSTART-R3I9/G30D-R3I30-BMS-UART3/g' tools/validate_image.py
           mkdir -p OUTPUT
           python3 tools/build_native.py | tee OUTPUT/build.log
           python3 tools/validate_image.py | tee OUTPUT/validation.log
-          BIN=OUTPUT/SmartESC_v2_G30D_R3I23_STARTUP_TORQUE_RAMP_STLINK_APP_0x08001000.bin
-          ELF=OUTPUT/SmartESC_v2_G30D_R3I23_STARTUP_TORQUE_RAMP.elf
+          BIN=OUTPUT/SmartESC_v2_G30D_R3I30_BMS_UART3_STLINK_APP_0x08001000.bin
+          ELF=OUTPUT/SmartESC_v2_G30D_R3I30_BMS_UART3.elf
           sha256sum "$BIN" > OUTPUT/SHA256_BIN.txt
           arm-none-eabi-size "$ELF" > OUTPUT/SIZE.txt
           python3 - <<'PY'
@@ -273,7 +282,7 @@ jobs:
           Path('OUTPUT/MEMORY_GATE.txt').write_text(f'FLASH={flash}/126976\nRAM={ram}/20480\nPASS\n')
           PY
           arm-none-eabi-nm -S --size-sort "$ELF" | tail -40 > OUTPUT/LARGEST_SYMBOLS.txt
-          tar --exclude='SOURCE_KOXX3/.git' -czf OUTPUT/SOURCE_KOXX3_R3I23_STARTUP_TORQUE_RAMP_EXACT.tgz SOURCE_KOXX3
+          tar --exclude='SOURCE_KOXX3/.git' -czf OUTPUT/SOURCE_KOXX3_R3I30_BMS_UART3_EXACT.tgz SOURCE_KOXX3
           cp ci/R3I15HF4_FROM_R3I15HF3.patch OUTPUT/
           python3 - <<'PY' | tee OUTPUT/R3I15HF4_STATIC_GATES.txt
           from pathlib import Path
@@ -283,7 +292,7 @@ jobs:
           te=Path('SOURCE_KOXX3/common_files/src/terminal.c').read_text()
           de=Path('SOURCE_KOXX3/common_files/src/defines.h').read_text()
           gates={
-            'build_id':'G30D-R3I23-STARTUP-TORQUE-RAMP' in de,
+            'build_id':'G30D-R3I30-BMS-UART3' in de,
             'r3i12_catch_retained':'sensorless_catch_phase_q4=((int32_t)(uint16_t)obs_pred)<<4;' in sh and 'catch_phase=obs_pred;' in sh,
             'no_command_inversion':'erpm = -erpm;' not in vs,
             'speed_feedback_normalized':'(-(int32_t)odpp)' in mc,
@@ -317,20 +326,20 @@ jobs:
       - name: Upload flashable R3I23 startup torque ramp candidate
         uses: actions/upload-artifact@v4
         with:
-          name: G30D_R3I23_STARTUP_TORQUE_RAMP_COMPILED
+          name: G30D_R3I30_BMS_UART3_COMPILED
           if-no-files-found: error
           retention-days: 7
           path: |
-            OUTPUT/SmartESC_v2_G30D_R3I23_STARTUP_TORQUE_RAMP.elf
-            OUTPUT/SmartESC_v2_G30D_R3I23_STARTUP_TORQUE_RAMP.map
-            OUTPUT/SmartESC_v2_G30D_R3I23_STARTUP_TORQUE_RAMP_STLINK_APP_0x08001000.bin
-            OUTPUT/SmartESC_v2_G30D_R3I23_STARTUP_TORQUE_RAMP_STLINK_APP_0x08001000.hex
+            OUTPUT/SmartESC_v2_G30D_R3I30_BMS_UART3.elf
+            OUTPUT/SmartESC_v2_G30D_R3I30_BMS_UART3.map
+            OUTPUT/SmartESC_v2_G30D_R3I30_BMS_UART3_STLINK_APP_0x08001000.bin
+            OUTPUT/SmartESC_v2_G30D_R3I30_BMS_UART3_STLINK_APP_0x08001000.hex
             OUTPUT/VERIFICATION.json
             OUTPUT/SHA256_BIN.txt
             OUTPUT/SIZE.txt
             OUTPUT/MEMORY_GATE.txt
             OUTPUT/LARGEST_SYMBOLS.txt
-            OUTPUT/SOURCE_KOXX3_R3I23_STARTUP_TORQUE_RAMP_EXACT.tgz
+            OUTPUT/SOURCE_KOXX3_R3I30_BMS_UART3_EXACT.tgz
             OUTPUT/APPLY_R3I14_EXACT.py
             OUTPUT/R3I15HF4_BUILD_WORKFLOW.yml
             OUTPUT/R3I15HF4_STATIC_GATES.txt
@@ -347,7 +356,7 @@ jobs:
             OUTPUT/POWER_BUTTON_HOST_TESTS.txt
             ci/R3I21_DASH_BUTTON_FROM_R2P1.patch
             ci/R3I22_GAS_BRAKE_FROM_R3I21.patch
-            ci/R3I23_STARTUP_TORQUE_RAMP_FROM_R3I22.patch
+            ci/R3I30_BMS_UART3_FROM_R3I22.patch
             ci/test_r3i23_startup_ramp.c
             ci/test_r3i22_gas_brake.c
             ci/test_r3i21_button.c
@@ -356,3 +365,6 @@ jobs:
             OUTPUT/build.log
             OUTPUT/compile.log
             OUTPUT/validation.log
+            OUTPUT/R3I30_BMS_HOST_TESTS.txt
+            ci/R3I30_BMS_FROM_R3I23.patch
+            ci/test_r3i30_bms.c
