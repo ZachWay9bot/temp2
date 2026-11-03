@@ -1,0 +1,84 @@
+--- a/common_files/src/task_pwr.c
++++ b/common_files/src/task_pwr.c
+@@ -84,7 +84,7 @@
+      * begin within 250 ms; its release does not have to fit into that window. */
+     /* pending: 0 = none, 1 = first short released, 2 = second press active */
+-    static uint8_t pressed, pending, startup_armed;
++    static uint8_t pressed, pending, startup_armed, light_previewed;
+     static uint32_t pressed_at, released_at;
+     uint32_t now = HAL_GetTick();
+     uint8_t down = buttonState();
+@@ -107,8 +107,15 @@
+         pressed = 1u;
+         pressed_at = now;
+         if(pending == 1u) g30_btn_diag.last_gap_ms = (uint32_t)(now - released_at);
+-        if(pending == 1u && (uint32_t)(now - released_at) <= 250u)
++        if(pending == 1u && (uint32_t)(now - released_at) <= 250u) {
+             pending = 2u;
++            /* First release provisionally changed the front-light state so the
++             * dashboard sees it immediately. A real second press means this is
++             * a double click instead, so cancel that provisional light toggle. */
++            if(light_previewed) {
++                m365_to_display.light = !m365_to_display.light;
++                light_previewed = 0u;
++            }
++        }
+     } else if(!down && pressed) {
+         pressed = 0u;
+         uint32_t held_ms = (uint32_t)(now - pressed_at);
+@@ -116,6 +123,7 @@
+         if(held_ms >= 2500u) {
+             pending = 0u;
++            light_previewed = 0u;
+             g30_btn_diag.long_count++;
+             g30_btn_diag.pressed = pressed; g30_btn_diag.pending = pending;
+             return LONG_PRESS;
+@@ -129,15 +137,29 @@
+                 g30_btn_diag.pressed = pressed; g30_btn_diag.pending = pending;
+                 return DOUBLE_PRESS;
+             }
++            /* Do not wait out the 250-ms double-click window before changing
++             * the dashboard output. The stock dash also sees the physical
++             * button, so stale ON frames after release can re-latch the lamp.
++             * Commit provisionally now; a second press above cancels it. */
++            m365_to_display.light = !m365_to_display.light;
++            light_previewed = 1u;
+             pending = 1u;
+             released_at = now;
+         } else if(pending == 2u) {
+             /* A bounced/too-short second press must not consume click #1. */
+             pending = 1u;
++            /* Restore the first click's provisional light state because the
++             * second edge was only bounce and no valid double click exists. */
++            if(!light_previewed) {
++                m365_to_display.light = !m365_to_display.light;
++                light_previewed = 1u;
++            }
++            released_at = now;
+         }
+     }
+     if(!pressed && pending == 1u && (uint32_t)(now - released_at) > 250u) {
+         pending = 0u;
++        light_previewed = 0u;
+         g30_btn_diag.single_count++;
+         g30_btn_diag.pressed = pressed; g30_btn_diag.pending = pending;
+         return SINGLE_PRESS;
+@@ -242,10 +264,9 @@
+ 		switch( getButtonEvent() ){
+ 			  case NO_PRESS : break ;
+ 			  case SINGLE_PRESS : {
+-				  /* Front light is controlled by the stock dashboard via CMD64.
+-				   * Do not mirror this command onto the ESC's separate rear/brake
+-				   * light GPIO. */
+-				  m365_to_display.light = !m365_to_display.light;
++				  /* Front-light state was already committed at the first short
++				   * release so CMD64 changes without the 250-ms double-click delay.
++				   * Keep this event for gesture accounting only. */
+ 
+ 			  } break ;
+ 			  case LONG_PRESS :   {
+--- a/common_files/src/defines.h
++++ b/common_files/src/defines.h
+@@ -5,1 +5,1 @@
+-#define HW_NAME "G30D-R3I34-G30-LIGHT-BIT0"
++#define HW_NAME "G30D-R3I35-IMMEDIATE-LIGHT"
