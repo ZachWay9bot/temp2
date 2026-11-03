@@ -1,6 +1,7 @@
 --- a/common_files/src/task_pwr.c
 +++ b/common_files/src/task_pwr.c
-@@ -84,7 +84,7 @@
+@@ -81,7 +81,7 @@
+      * >=2500 ms hold has been released. For double click, the second press must
       * begin within 250 ms; its release does not have to fit into that window. */
      /* pending: 0 = none, 1 = first short released, 2 = second press active */
 -    static uint8_t pressed, pending, startup_armed;
@@ -8,7 +9,7 @@
      static uint32_t pressed_at, released_at;
      uint32_t now = HAL_GetTick();
      uint8_t down = buttonState();
-@@ -107,8 +107,15 @@
+@@ -107,14 +107,23 @@
          pressed = 1u;
          pressed_at = now;
          if(pending == 1u) g30_btn_diag.last_gap_ms = (uint32_t)(now - released_at);
@@ -26,14 +27,14 @@
      } else if(!down && pressed) {
          pressed = 0u;
          uint32_t held_ms = (uint32_t)(now - pressed_at);
-@@ -116,6 +123,7 @@
+         g30_btn_diag.last_hold_ms = held_ms;
          if(held_ms >= 2500u) {
              pending = 0u;
 +            light_previewed = 0u;
              g30_btn_diag.long_count++;
              g30_btn_diag.pressed = pressed; g30_btn_diag.pending = pending;
              return LONG_PRESS;
-@@ -129,15 +137,29 @@
+@@ -126,15 +135,29 @@
                  g30_btn_diag.pressed = pressed; g30_btn_diag.pending = pending;
                  return DOUBLE_PRESS;
              }
@@ -63,7 +64,7 @@
          g30_btn_diag.single_count++;
          g30_btn_diag.pressed = pressed; g30_btn_diag.pending = pending;
          return SINGLE_PRESS;
-@@ -242,10 +264,9 @@
+@@ -240,10 +263,9 @@
  		switch( getButtonEvent() ){
  			  case NO_PRESS : break ;
  			  case SINGLE_PRESS : {
@@ -79,6 +80,12 @@
  			  case LONG_PRESS :   {
 --- a/common_files/src/defines.h
 +++ b/common_files/src/defines.h
-@@ -5,1 +5,1 @@
+@@ -2,7 +2,7 @@
+ #define DEFINES_H_
+ 
+ #ifdef G30P
 -#define HW_NAME "G30D-R3I34-G30-LIGHT-BIT0"
 +#define HW_NAME "G30D-R3I35-IMMEDIATE-LIGHT"
+ #else
+ #define HW_NAME "40"
+ #endif
