@@ -250,6 +250,7 @@ jobs:
           grep -q 'LL_TIM_DisableAllOutputs(TIM1);' SOURCE_KOXX3/common_files/src/stm32f10x_mc_it.c
           grep -q 'coast_deadband_speed_unit=20' SOURCE_KOXX3/common_files/src/VescToSTM.c
           grep -q 'static bool g30_hall_lut_valid(void)' SOURCE_KOXX3/common_files/src/VescToSTM.c
+          grep -q 'after reconnect/fault recovery there is no valid' SOURCE_KOXX3/common_files/MotorControl/MCSDK/MCLib/Any/Src/hall_speed_pos_fdbk.c
           grep -q 'HALL_LUT_PLAUSIBILITY' ci/test_sesc_hall_devv01.py
           grep -q 'HALL_SINGLE_BIT_TRANSITION_GUARD' ci/test_sesc_hall_devv01.py
           python3 ci/test_sesc_hall_devv01.py | tee OUTPUT/HALL_DEVV01_HOST_TESTS.txt
@@ -396,6 +397,7 @@ jobs:
             'hall_command_precheck':'!VescToSTM_g30_hall_direction_allowed(raw)' in Path('SOURCE_KOXX3/common_files/src/VescCommand.c').read_text(),
             'hall_dash_precheck':'!VescToSTM_g30_hall_direction_allowed(1)' in Path('SOURCE_KOXX3/common_files/src/g30_dash_link.c').read_text(),
             'hall_lut_guard':'static bool g30_hall_lut_valid(void)' in vs and 'mag<25 || mag>65' in vs,
+            'hall_safe_reseed':'after reconnect/fault recovery there is no valid' in Path('SOURCE_KOXX3/common_files/MotorControl/MCSDK/MCLib/Any/Src/hall_speed_pos_fdbk.c').read_text(),
             'sensorless_observer_untouched':'G30_DEVV01_RUN_BAD_GRACE_1K 4u' in sh and '#define R3I_MIN_DPP 64' in Path('SOURCE_KOXX3/common_files/src/g30_r3i_pushstart.c').read_text(),
           }
           for k,v in gates.items(): print(f'{k}={int(v)}')
