@@ -379,12 +379,12 @@ jobs:
           set -euo pipefail
           arm-none-eabi-gcc --version
           sed -i 's/FO76_PUSHSTART_R3I9/SESC_DRV126_R1_GATED/g' tools/build_native.py tools/validate_image.py
-          sed -i 's/G30D-FO76-PUSHSTART-R3I9/SESC-DRV126-SHADOW-R0.3/g' tools/validate_image.py
+          sed -i 's/G30D-FO76-PUSHSTART-R3I9/SESC-DRV126-MOTORCORE-R1-GATED/g' tools/validate_image.py
           mkdir -p OUTPUT
           python3 tools/build_native.py | tee OUTPUT/build.log
           python3 tools/validate_image.py | tee OUTPUT/validation.log
-          BIN=OUTPUT/SmartESC_v2_G30D_SESC_DRV126_SHADOW_R03_STLINK_APP_0x08001000.bin
-          ELF=OUTPUT/SmartESC_v2_G30D_SESC_DRV126_SHADOW_R03.elf
+          BIN=OUTPUT/SmartESC_v2_G30D_SESC_DRV126_R1_GATED_STLINK_APP_0x08001000.bin
+          ELF=OUTPUT/SmartESC_v2_G30D_SESC_DRV126_R1_GATED.elf
           sha256sum "$BIN" > OUTPUT/SHA256_BIN.txt
           arm-none-eabi-size "$ELF" > OUTPUT/SIZE.txt
           python3 - <<'PY'
@@ -393,7 +393,7 @@ jobs:
           text,data,bss=map(int,parts[:3])
           ram=data+bss
           flash=text+data
-          print(f'SESC_DRV126_SHADOW_R03_FLASH={flash} SESC_DRV126_SHADOW_R03_RAM={ram}')
+          print(f'SESC_DRV126_R1_GATED_FLASH={flash} SESC_DRV126_R1_GATED_RAM={ram}')
           assert ram <= 20480, f'RAM overflow: {ram} > 20480'
           assert flash <= 118784, f'APP flash overflow: {flash} > 118784'
           Path('OUTPUT/MEMORY_GATE.txt').write_text(f'FLASH={flash}/118784\nRAM={ram}/20480\nPASS\n')
@@ -410,7 +410,7 @@ jobs:
           de=Path('SOURCE_KOXX3/common_files/src/defines.h').read_text()
           hf=mc[mc.index('__weak uint8_t TSK_HighFrequencyTask'):mc.index('inline uint16_t FOC_CurrControllerM1')]
           gates={
-            'build_id':'SESC-DRV126-SHADOW-R0.3' in de,
+            'build_id':'SESC-DRV126-MOTORCORE-R1-GATED' in de,
             'drv126_r1_gated':'mode=GATED_4K owner=%s' in te and 'g30_drv126_r1_command' in te,
             'drv126_r1_in_hf':'g30_drv126_r1_step(pwmcHandle[M1]' in mc,
             'drv126_r1_no_medium_shadow':'g30_drv126_shadow_tick_1k();' not in mc,
@@ -427,9 +427,8 @@ jobs:
             'drv126_atomic_snapshot':'__get_PRIMASK()' in mc and '__disable_irq();' in mc and '__set_PRIMASK(pm);' in mc,
             'drv126_invpark':'g30_drv126_stock_invpark' in mc and 'co*(int32_t)q' in mc and 'si*(int32_t)q' in mc,
             'drv126_svpwm':'g30_drv126_stock_svpwm' in mc and 'const int32_t per=4000,lim=3920' in mc,
-            'drv126_r1_existing_adc_writer':'pHdl->pFctSetADCSampPointSectX(pHdl)' in mc and 'TIM1->CCR1' not in mc[mc.index('DRV126 MotorCore R1 R0.3'):mc.index('#endif',mc.index('DRV126 Shadow R0.3'))],
-            'drv126_pwm_compare':'orderMis=%u ccrErrMax=%u' in te,
-            'drv126_snapshot_vqd':'g30_drv126_sh_sesc_vq=x.vq' in mc and 'SESCsnap=%d,%d' in te,
+            'drv126_r1_existing_adc_writer':'pHdl->pFctSetADCSampPointSectX(pHdl)' in mc and 'TIM1->CCR1' not in mc,
+            'drv126_r1_diag':'DRV126R1 core qrefU=' in te and 'DRV126R1 PWM sec=' in te,
             'motorpath_diag':'strcmp(argv[0], "g30_motorpath")' in te and 'MP dtcomp enabled=' in te and 'MP cpu last=' in te and 'MP sample ccr4=' in te and 'g30_motorpath_reset' in te,
             'dtcomp_stays_off':'DTTest = 0' in Path('SOURCE_KOXX3/common_files/src/mc_config.c').read_text() and 'DTTest = 0u' in Path('SOURCE_KOXX3/common_files/MotorControl/MCSDK/MCLib/F1xx/Src/r3_2_f1xx_pwm_curr_fdbk.c').read_text(),
             'physical_deadtime_unchanged':'#define SW_DEADTIME_NS                   1000' in Path('SOURCE_KOXX3/common_files/inc/drive_parameters.h').read_text(),
@@ -501,16 +500,16 @@ jobs:
           if-no-files-found: error
           retention-days: 7
           path: |
-            OUTPUT/SmartESC_v2_G30D_SESC_DRV126_SHADOW_R03.elf
-            OUTPUT/SmartESC_v2_G30D_SESC_DRV126_SHADOW_R03.map
-            OUTPUT/SmartESC_v2_G30D_SESC_DRV126_SHADOW_R03_STLINK_APP_0x08001000.bin
-            OUTPUT/SmartESC_v2_G30D_SESC_DRV126_SHADOW_R03_STLINK_APP_0x08001000.hex
+            OUTPUT/SmartESC_v2_G30D_SESC_DRV126_R1_GATED.elf
+            OUTPUT/SmartESC_v2_G30D_SESC_DRV126_R1_GATED.map
+            OUTPUT/SmartESC_v2_G30D_SESC_DRV126_R1_GATED_STLINK_APP_0x08001000.bin
+            OUTPUT/SmartESC_v2_G30D_SESC_DRV126_R1_GATED_STLINK_APP_0x08001000.hex
             OUTPUT/VERIFICATION.json
             OUTPUT/SHA256_BIN.txt
             OUTPUT/SIZE.txt
             OUTPUT/MEMORY_GATE.txt
             OUTPUT/LARGEST_SYMBOLS.txt
-            OUTPUT/SOURCE_KOXX3_SESC_DRV126_SHADOW_R03_EXACT.tgz
+            OUTPUT/SOURCE_KOXX3_SESC_DRV126_R1_GATED_EXACT.tgz
             OUTPUT/APPLY_R3I14_EXACT.py
             OUTPUT/R3I15HF4_BUILD_WORKFLOW.yml
             OUTPUT/R3I15HF4_STATIC_GATES.txt
