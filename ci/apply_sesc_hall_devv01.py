@@ -420,4 +420,58 @@ assert old in x
 p.write_text(x.replace(old,new))
 print("SESC Hall DevV0.1 LUT plausibility guard applied")
 
+
+# Safe Hall-angle re-seed after an earlier invalid 000/111 state.
+p=root/"common_files/MotorControl/MCSDK/MCLib/Any/Src/hall_speed_pos_fdbk.c"
+x=p.read_text()
+old='''static void HALL_Init_Electrical_Angle( HALL_Handle_t * pHandle )
+{
+\tuint8_t bPrevHallState;
+\tbPrevHallState = pHandle->lut[pHandle->HallState];
+
+\tpHandle->HallState  = HALL_read(pHandle);'''
+new='''static void HALL_Init_Electrical_Angle( HALL_Handle_t * pHandle )
+{
+\tuint8_t bPrevHallState;
+#ifdef G30P
+    uint8_t g30PrevRawHall=pHandle->HallState;
+#endif
+\tbPrevHallState = pHandle->lut[pHandle->HallState];
+
+\tpHandle->HallState  = HALL_read(pHandle);'''
+assert old in x
+x=x.replace(old,new)
+
+old='''\t\tint diff = pHandle->lut[pHandle->HallState] - bPrevHallState;
+
+\t\tif (diff > 100) {
+\t\t\tdiff -= 255;
+\t\t} else if (diff < -100) {
+\t\t\tdiff += 255;
+\t\t}
+
+\t\tif(diff){'''
+new='''        int diff;
+#ifdef G30P
+        if(g30PrevRawHall==0u || g30PrevRawHall==7u || bPrevHallState==255u){
+            /* HallDevV0.1: after reconnect/fault recovery there is no valid
+             * previous sector. Seed exactly at the live sector centre. */
+            diff=0;
+        }else
+#endif
+        {
+\t\t    diff = pHandle->lut[pHandle->HallState] - bPrevHallState;
+\t\t    if (diff > 100) {
+\t\t\t    diff -= 255;
+\t\t    } else if (diff < -100) {
+\t\t\t    diff += 255;
+\t\t    }
+        }
+
+\t\tif(diff){'''
+assert old in x
+x=x.replace(old,new)
+p.write_text(x)
+print("SESC Hall DevV0.1 safe Hall re-seed applied")
+
 print("SESC Hall DevV0.1 guards applied")
