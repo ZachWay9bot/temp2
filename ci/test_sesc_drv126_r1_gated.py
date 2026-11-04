@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 MAX_U=1500
+MAX_PHASE_U=2500
 RAIL_LO=80
 RAIL_HI=3920
 
@@ -28,6 +29,9 @@ for raw in (80,81,2000,3919,3920):
     assert 40 <= c <= 1960
 assert not (RAIL_LO <= 79 <= RAIL_HI)
 assert not (RAIL_LO <= 3921 <= RAIL_HI)
+assert abs(stock_u(375)) < MAX_PHASE_U
+assert abs(stock_u(900)) > MAX_PHASE_U
+print("R1_MEASURED_PHASE_GUARD=PASS")
 print("R1_CCR_SCALE_AND_RAIL_GUARD=PASS")
 
 def order3(a,b,c):
