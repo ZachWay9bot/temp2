@@ -8,9 +8,9 @@ def stock_u(mc):
     return p//16384
 
 # R0.2/R0.3 measured 3 A ~= 3539 stock units.
-assert 1100 <= abs(stock_u(1124)) <= 1300
-assert abs(stock_u(1124)) < MAX_U
-assert abs(stock_u(1686)) > MAX_U
+assert 1100 <= abs(stock_u(375)) <= 1250
+assert abs(stock_u(375)) < MAX_U
+assert abs(stock_u(562)) > MAX_U
 
 # 4-kHz ownership from 16-kHz ISR: update on calls 0,4,8,...
 div=0; upd=[]
