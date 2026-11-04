@@ -14,7 +14,7 @@ on:
       - sesc-hybrid-devv0.1-stability-20261104
       - sesc-hybrid-devv0.2-startguard-20261104
       - sesc-hall-devv0.1-audit-20261104
-      - sesc-motorpath-audit-v0.1-20261104
+      - sesc-motorpath-audit-v0.1-20261104\n      - sesc-motorpath-audit-v0.2-20261104
   workflow_dispatch:
 
 jobs:
@@ -255,7 +255,7 @@ jobs:
           echo '963a9f791c8a048f1089ccd04053ca923dcb7c4ea61311f31ebbf66d7af9a1d7  SOURCE_KOXX3/common_files/inc/product.h' | sha256sum -c -
           echo 'bebc0e2f8e5bf29158fbad1318507d198966c38f4aa16466cfba09044851ba50  SOURCE_KOXX3/common_files/MotorControl/MCSDK/MCLib/Any/Src/pwm_curr_fdbk.c' | sha256sum -c -
           echo '8957423d038e882c7f635e848c1efed9cae69069033bc6716babd5722a5612f1  SOURCE_KOXX3/common_files/MotorControl/MCSDK/MCLib/F1xx/Src/r3_2_f1xx_pwm_curr_fdbk.c' | sha256sum -c -
-          python3 ci/apply_sesc_motorpath_audit_v01.py
+          python3 ci/apply_sesc_motorpath_audit_v01.py\n          python3 ci/apply_sesc_motorpath_audit_v02.py\n          grep -q 'SESC-MOTORPATH-AUDIT-V0.2' SOURCE_KOXX3/common_files/src/defines.h\n          python3 ci/test_sesc_motorpath_v02.py | tee OUTPUT/MOTORPATH_V02_HOST_TESTS.txt
           grep -q 'SESC-MOTORPATH-AUDIT-V0.1' SOURCE_KOXX3/common_files/src/defines.h
           grep -q 'strcmp(argv\[0\], "g30_motorpath")' SOURCE_KOXX3/common_files/src/terminal.c
           grep -q 'abs(pHandle->_Super.Ib) > pHandle->_Super.OverCurrent' SOURCE_KOXX3/common_files/MotorControl/MCSDK/MCLib/F1xx/Src/r3_2_f1xx_pwm_curr_fdbk.c
@@ -342,18 +342,18 @@ jobs:
           tar -xzf "$FILE"
           echo "/tmp/xpack-arm-none-eabi-gcc-13.2.1-1.1/bin" >> "$GITHUB_PATH"
 
-      - name: Compile and validate SESC Motorpath Audit V0.1
+      - name: Compile and validate SESC Motorpath Audit V0.2
         shell: bash
         run: |
           set -euo pipefail
           arm-none-eabi-gcc --version
-          sed -i 's/FO76_PUSHSTART_R3I9/SESC_MOTORPATH_AUDIT_V01/g' tools/build_native.py tools/validate_image.py
-          sed -i 's/G30D-FO76-PUSHSTART-R3I9/SESC-MOTORPATH-AUDIT-V0.1/g' tools/validate_image.py
+          sed -i 's/FO76_PUSHSTART_R3I9/SESC_MOTORPATH_AUDIT_V02/g' tools/build_native.py tools/validate_image.py
+          sed -i 's/G30D-FO76-PUSHSTART-R3I9/SESC-MOTORPATH-AUDIT-V0.2/g' tools/validate_image.py
           mkdir -p OUTPUT
           python3 tools/build_native.py | tee OUTPUT/build.log
           python3 tools/validate_image.py | tee OUTPUT/validation.log
-          BIN=OUTPUT/SmartESC_v2_G30D_SESC_MOTORPATH_AUDIT_V01_STLINK_APP_0x08001000.bin
-          ELF=OUTPUT/SmartESC_v2_G30D_SESC_MOTORPATH_AUDIT_V01.elf
+          BIN=OUTPUT/SmartESC_v2_G30D_SESC_MOTORPATH_AUDIT_V02_STLINK_APP_0x08001000.bin
+          ELF=OUTPUT/SmartESC_v2_G30D_SESC_MOTORPATH_AUDIT_V02.elf
           sha256sum "$BIN" > OUTPUT/SHA256_BIN.txt
           arm-none-eabi-size "$ELF" > OUTPUT/SIZE.txt
           python3 - <<'PY'
@@ -362,13 +362,13 @@ jobs:
           text,data,bss=map(int,parts[:3])
           ram=data+bss
           flash=text+data
-          print(f'SESC_MOTORPATH_AUDIT_V01_FLASH={flash} SESC_MOTORPATH_AUDIT_V01_RAM={ram}')
+          print(f'SESC_MOTORPATH_AUDIT_V02_FLASH={flash} SESC_MOTORPATH_AUDIT_V02_RAM={ram}')
           assert ram <= 20480, f'RAM overflow: {ram} > 20480'
           assert flash <= 118784, f'APP flash overflow: {flash} > 118784'
           Path('OUTPUT/MEMORY_GATE.txt').write_text(f'FLASH={flash}/118784\nRAM={ram}/20480\nPASS\n')
           PY
           arm-none-eabi-nm -S --size-sort "$ELF" | tail -40 > OUTPUT/LARGEST_SYMBOLS.txt
-          tar --exclude='SOURCE_KOXX3/.git' -czf OUTPUT/SOURCE_KOXX3_SESC_MOTORPATH_AUDIT_V01_EXACT.tgz SOURCE_KOXX3
+          tar --exclude='SOURCE_KOXX3/.git' -czf OUTPUT/SOURCE_KOXX3_SESC_MOTORPATH_AUDIT_V02_EXACT.tgz SOURCE_KOXX3
           cp ci/R3I15HF4_FROM_R3I15HF3.patch OUTPUT/
           python3 - <<'PY' | tee OUTPUT/R3I15HF4_STATIC_GATES.txt
           from pathlib import Path
@@ -378,12 +378,12 @@ jobs:
           te=Path('SOURCE_KOXX3/common_files/src/terminal.c').read_text()
           de=Path('SOURCE_KOXX3/common_files/src/defines.h').read_text()
           gates={
-            'build_id':'SESC-MOTORPATH-AUDIT-V0.1' in de,
-            'motorpath_diag':'strcmp(argv[0], "g30_motorpath")' in te and 'MP dtcomp enabled=' in te and 'MP cpu last=' in te,
+            'build_id':'SESC-MOTORPATH-AUDIT-V0.2' in de,
+            'motorpath_diag':'strcmp(argv[0], "g30_motorpath")' in te and 'MP dtcomp enabled=' in te and 'MP cpu last=' in te and 'MP sample ccr4=' in te and 'g30_motorpath_reset' in te,
             'dtcomp_stays_off':'DTTest = 0' in Path('SOURCE_KOXX3/common_files/src/mc_config.c').read_text() and 'DTTest = 0u' in Path('SOURCE_KOXX3/common_files/MotorControl/MCSDK/MCLib/F1xx/Src/r3_2_f1xx_pwm_curr_fdbk.c').read_text(),
             'physical_deadtime_unchanged':'#define SW_DEADTIME_NS                   1000' in Path('SOURCE_KOXX3/common_files/inc/drive_parameters.h').read_text(),
             'pwm_16k_unchanged':'#define PWM_FREQUENCY   16000' in Path('SOURCE_KOXX3/common_files/inc/drive_parameters.h').read_text(),
-            'phase_abc_ocp':'abs(pHandle->_Super.Ib) > pHandle->_Super.OverCurrent' in Path('SOURCE_KOXX3/common_files/MotorControl/MCSDK/MCLib/F1xx/Src/r3_2_f1xx_pwm_curr_fdbk.c').read_text(),
+            'phase_abc_ocp':'int32_t ic_oc = -ia_oc - ib_oc;' in Path('SOURCE_KOXX3/common_files/MotorControl/MCSDK/MCLib/F1xx/Src/r3_2_f1xx_pwm_curr_fdbk.c').read_text() and '(ic_oc > oc) || (ic_oc < -oc)' in Path('SOURCE_KOXX3/common_files/MotorControl/MCSDK/MCLib/F1xx/Src/r3_2_f1xx_pwm_curr_fdbk.c').read_text(),
             'temp_derate_endpoint':'utils_map_int(temp, fp.temp_cut_start, fp.temp_cut_end, 0, iq)' in vs,
             'dual_mode_helpers':'VescToSTM_g30_hall_selected' in vs and 'VescToSTM_g30_sensorless_selected' in vs,
             'hall_zero_speed_path':'if(VescToSTM_g30_hall_selected())' in vs and 'MCI_StartMotor(pMCI[M1])' in vs,
@@ -440,23 +440,23 @@ jobs:
           print('R3I15HF4_STATIC_GATES=PASS')
           PY
 
-      - name: Upload diagnostic SESC Motorpath Audit V0.1
+      - name: Upload diagnostic SESC Motorpath Audit V0.2
         uses: actions/upload-artifact@v4
         with:
-          name: G30D_SESC_MOTORPATH_AUDIT_V01_COMPILED
+          name: G30D_SESC_MOTORPATH_AUDIT_V02_COMPILED
           if-no-files-found: error
           retention-days: 7
           path: |
-            OUTPUT/SmartESC_v2_G30D_SESC_MOTORPATH_AUDIT_V01.elf
-            OUTPUT/SmartESC_v2_G30D_SESC_MOTORPATH_AUDIT_V01.map
-            OUTPUT/SmartESC_v2_G30D_SESC_MOTORPATH_AUDIT_V01_STLINK_APP_0x08001000.bin
-            OUTPUT/SmartESC_v2_G30D_SESC_MOTORPATH_AUDIT_V01_STLINK_APP_0x08001000.hex
+            OUTPUT/SmartESC_v2_G30D_SESC_MOTORPATH_AUDIT_V02.elf
+            OUTPUT/SmartESC_v2_G30D_SESC_MOTORPATH_AUDIT_V02.map
+            OUTPUT/SmartESC_v2_G30D_SESC_MOTORPATH_AUDIT_V02_STLINK_APP_0x08001000.bin
+            OUTPUT/SmartESC_v2_G30D_SESC_MOTORPATH_AUDIT_V02_STLINK_APP_0x08001000.hex
             OUTPUT/VERIFICATION.json
             OUTPUT/SHA256_BIN.txt
             OUTPUT/SIZE.txt
             OUTPUT/MEMORY_GATE.txt
             OUTPUT/LARGEST_SYMBOLS.txt
-            OUTPUT/SOURCE_KOXX3_SESC_MOTORPATH_AUDIT_V01_EXACT.tgz
+            OUTPUT/SOURCE_KOXX3_SESC_MOTORPATH_AUDIT_V02_EXACT.tgz
             OUTPUT/APPLY_R3I14_EXACT.py
             OUTPUT/R3I15HF4_BUILD_WORKFLOW.yml
             OUTPUT/R3I15HF4_STATIC_GATES.txt
@@ -480,7 +480,7 @@ jobs:
             ci/apply_sesc_hybrid_devv01.py
             ci/apply_sesc_hybrid_devv02.py
             ci/apply_sesc_hall_devv01.py
-            ci/apply_sesc_motorpath_audit_v01.py
+            ci/apply_sesc_motorpath_audit_v01.py\n            ci/apply_sesc_motorpath_audit_v02.py\n            ci/test_sesc_motorpath_v02.py\n            OUTPUT/MOTORPATH_V02_HOST_TESTS.txt
             ci/test_sesc_hall_devv01.py
             OUTPUT/HALL_DEVV01_HOST_TESTS.txt
             ci/test_r3i23_startup_ramp.c
