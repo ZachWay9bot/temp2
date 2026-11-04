@@ -87,3 +87,28 @@ print("HALL_FWD_FROM_ZERO=PASS")
 print("HALL_REV_FROM_ZERO=PASS")
 print("HALL_OPPOSITE_DIRECTION_COAST_INTERLOCK=PASS")
 
+def lut_plausible(lut):
+    ring=[1,3,2,6,4,5,1]
+    if lut[0] != 255 or lut[7] != 255:
+        return False
+    direction=0
+    for a,b in zip(ring,ring[1:]):
+        d=lut[b]-lut[a]
+        if d>100: d-=255
+        elif d<-100: d+=255
+        mag=abs(d)
+        if mag<25 or mag>65:
+            return False
+        sign=1 if d>0 else -1
+        if direction==0: direction=sign
+        elif sign!=direction: return False
+    return True
+
+assert lut_plausible(R2)
+assert lut_plausible(CURRENT_KNOWN)
+assert not lut_plausible([255,20,20,60,188,232,149,255])   # duplicate sector angle
+assert not lut_plausible([0,20,104,60,188,232,149,255])    # invalid code 0
+assert not lut_plausible([255,20,104,200,188,232,149,255])  # impossible jump/sign
+print("HALL_LUT_PLAUSIBILITY=PASS")
+
+
