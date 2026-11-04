@@ -110,3 +110,5 @@ s=s.replace(old,new,1)
 p.write_text(s)
 
 print("SESC Motorpath Audit V0.2 applied: wide-Ic OCP + real ADC-trigger diagnostics")
+
+# CI trigger after workflow branch registration
