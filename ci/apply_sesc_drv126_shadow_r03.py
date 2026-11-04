@@ -200,18 +200,18 @@ needle="""  for(unsigned n=0;n<4u;n++){
   }
   if(g30_drv126_sh_samples<65535u)g30_drv126_sh_samples++;
 """
-repl=needle.replace("  if(g30_drv126_sh_samples<65535u)g30_drv126_sh_samples++;",r'''  int16_t da,db,ba,bb;
+repl=needle.replace("  if(g30_drv126_sh_samples<65535u)g30_drv126_sh_samples++;",r'''  int16_t drv_a,drv_b,bridge_a,bridge_b;
   g30_drv126_stock_invpark(g30_drv126_sh_vq,g30_drv126_sh_vd,
-                           g30_drv126_sh_cos,g30_drv126_sh_sin,&da,&db);
-  g30_drv126_sh_drv_sec=g30_drv126_stock_svpwm(da,db,
+                           g30_drv126_sh_cos,g30_drv126_sh_sin,&drv_a,&drv_b);
+  g30_drv126_sh_drv_sec=g30_drv126_stock_svpwm(drv_a,drv_b,
       (uint16_t*)&g30_drv126_sh_drv_c1,(uint16_t*)&g30_drv126_sh_drv_c2,
       (uint16_t*)&g30_drv126_sh_drv_c3);
 
   /* Bridge-only comparator: feed the exact same SESC Vq/Vd snapshot through
    * the stock inverse Park/SVPWM. This removes PI dynamics from the PWM math
    * comparison. No result from either path is written to hardware. */
-  g30_drv126_stock_invpark(x.vq,x.vd,g30_drv126_sh_cos,g30_drv126_sh_sin,&ba,&bb);
-  g30_drv126_sh_bridge_sec=g30_drv126_stock_svpwm(ba,bb,
+  g30_drv126_stock_invpark(x.vq,x.vd,g30_drv126_sh_cos,g30_drv126_sh_sin,&bridge_a,&bridge_b);
+  g30_drv126_sh_bridge_sec=g30_drv126_stock_svpwm(bridge_a,bridge_b,
       (uint16_t*)&g30_drv126_sh_bridge_c1,(uint16_t*)&g30_drv126_sh_bridge_c2,
       (uint16_t*)&g30_drv126_sh_bridge_c3);
   g30_drv126_sh_hw_c1=x.c1;g30_drv126_sh_hw_c2=x.c2;g30_drv126_sh_hw_c3=x.c3;
