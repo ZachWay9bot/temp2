@@ -133,3 +133,11 @@ assert hall_fault_recovery(False, True, True) == "rearmed_on_release"
 assert hall_fault_recovery(True, True, False) == "normal"
 print("HALL_FAULT_REQUIRES_RELEASE=PASS")
 print("HALL_FAULT_INVALID_FEEDBACK_STAYS_BLOCKED=PASS")
+
+# MC_SPEED_FDBK has no separate automatic reset path in the MCSDK medium task.
+# The release-rearm must therefore clear exactly that recovered software fault.
+fault_now = 0x0020 | 0x0004
+fault_after_release = fault_now & (~0x0020)
+assert fault_after_release == 0x0004
+print("HALL_SPEED_FAULT_RESET_ON_VALID_RELEASE=PASS")
+print("HALL_OTHER_FAULT_BITS_PRESERVED=PASS")
