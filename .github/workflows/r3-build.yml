@@ -255,7 +255,7 @@ jobs:
           grep -q 'HALL_LUT_PLAUSIBILITY' ci/test_sesc_hall_devv01.py
           grep -q 'HALL_SINGLE_BIT_TRANSITION_GUARD' ci/test_sesc_hall_devv01.py
           python3 ci/test_sesc_hall_devv01.py | tee OUTPUT/HALL_DEVV01_HOST_TESTS.txt
-          echo 'f4decca68485a0a0e76973b0da582e03c6ce0727617fc8400a6d1803c124e005  SOURCE_KOXX3/common_files/src/g30_fo76_shadow.c' | sha256sum -c -
+          echo 'cec66fd9085dc363e02cb1b9220b44c7ed643e0f28563782c20f19d5af3ba09b  SOURCE_KOXX3/common_files/src/g30_fo76_shadow.c' | sha256sum -c -
           echo 'd4c7d026b42dc8165becb6a7665e33d3169d68fb254844cc6214b0975f91966e  SOURCE_KOXX3/common_files/src/g30_fo76_shadow.h' | sha256sum -c -
           echo '7e73fe8e08a28ce9c500e2fe31bc368d6ddbded3495349949cb85d54a4730c5e  SOURCE_KOXX3/common_files/src/g30_r3i_pushstart.c' | sha256sum -c -
           echo 'a660d0b1d4695492d8a356fccb65a0d0f28d751e589ad68a8ede06f8d72a6893  SOURCE_KOXX3/common_files/src/g30_r3i_pushstart.h' | sha256sum -c -
