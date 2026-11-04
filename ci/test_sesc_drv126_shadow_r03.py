@@ -51,14 +51,21 @@ assert inv(1000,200,0,32766)==(199,999)
 print("DRV126_INV_PARK_CARDINAL=PASS")
 
 # Sector and duty-order identities reconstructed from the TBB cases.
-vectors=[(0,12000,2),(12000,0,6),(12000,12000,1),(-12000,12000,3),(-12000,0,4),(-12000,-12000,5)]
+vectors=[(4000,12000,1),(-4000,12000,2),(-12000,4000,3),(-12000,-4000,4),(4000,-12000,5),(12000,-4000,6)]
 orders={1:(0,1,2),2:(1,0,2),3:(1,2,0),4:(2,1,0),5:(2,0,1),6:(0,2,1)}
 for a,b,exp in vectors:
     sec,ccr=svm(a,b)
     assert sec==exp,(a,b,sec,exp)
-    idx=tuple(sorted(range(3),key=lambda i:(-ccr[i],i)))
+    assert len(set(ccr))==3,(sec,ccr)
+    idx=tuple(sorted(range(3),key=lambda i:-ccr[i]))
     assert idx==orders[sec],(sec,ccr,idx)
 print("DRV126_SVPWM_SECTOR_ORDER=PASS")
+
+# Exact sector-boundary vectors are allowed to have equal CCRs.
+for a,b in [(0,12000),(12000,0),(-12000,0),(0,-12000)]:
+    sec,ccr=svm(a,b)
+    assert 1<=sec<=6 and max(ccr)-min(ccr)<=3920
+print("DRV126_SVPWM_BOUNDARY_TIES=PASS")
 
 # Dense range/overmod gate. The stock active span is never above 3920.
 for a in range(-32768,32768,1024):
