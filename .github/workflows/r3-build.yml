@@ -256,10 +256,13 @@ jobs:
           echo 'bebc0e2f8e5bf29158fbad1318507d198966c38f4aa16466cfba09044851ba50  SOURCE_KOXX3/common_files/MotorControl/MCSDK/MCLib/Any/Src/pwm_curr_fdbk.c' | sha256sum -c -
           echo '8957423d038e882c7f635e848c1efed9cae69069033bc6716babd5722a5612f1  SOURCE_KOXX3/common_files/MotorControl/MCSDK/MCLib/F1xx/Src/r3_2_f1xx_pwm_curr_fdbk.c' | sha256sum -c -
           python3 ci/apply_sesc_motorpath_audit_v01.py
-          python3 ci/apply_sesc_motorpath_audit_v02.py\n          python3 ci/apply_sesc_motorpath_audit_v03.py\n          grep -q 'SESC-MOTORPATH-AUDIT-V0.3' SOURCE_KOXX3/common_files/src/defines.h\n          python3 ci/test_sesc_motorpath_v03.py | tee OUTPUT/MOTORPATH_V03_HOST_TESTS.txt
+          python3 ci/apply_sesc_motorpath_audit_v02.py
           grep -q 'SESC-MOTORPATH-AUDIT-V0.2' SOURCE_KOXX3/common_files/src/defines.h
           python3 ci/test_sesc_motorpath_v02.py | tee OUTPUT/MOTORPATH_V02_HOST_TESTS.txt
-          grep -q 'SESC-MOTORPATH-AUDIT-V0.2' SOURCE_KOXX3/common_files/src/defines.h
+          python3 ci/apply_sesc_motorpath_audit_v03.py
+          grep -q 'SESC-MOTORPATH-AUDIT-V0.3' SOURCE_KOXX3/common_files/src/defines.h
+          python3 ci/test_sesc_motorpath_v03.py | tee OUTPUT/MOTORPATH_V03_HOST_TESTS.txt
+          grep -q 'SESC-MOTORPATH-AUDIT-V0.3' SOURCE_KOXX3/common_files/src/defines.h
           grep -q 'strcmp(argv\[0\], "g30_motorpath")' SOURCE_KOXX3/common_files/src/terminal.c
           grep -q 'int32_t ic_oc = -ia_oc - ib_oc;' SOURCE_KOXX3/common_files/MotorControl/MCSDK/MCLib/F1xx/Src/r3_2_f1xx_pwm_curr_fdbk.c
           grep -q '(ic_oc > oc) || (ic_oc < -oc)' SOURCE_KOXX3/common_files/MotorControl/MCSDK/MCLib/F1xx/Src/r3_2_f1xx_pwm_curr_fdbk.c
@@ -389,7 +392,10 @@ jobs:
             'dtcomp_stays_off':'DTTest = 0' in Path('SOURCE_KOXX3/common_files/src/mc_config.c').read_text() and 'DTTest = 0u' in Path('SOURCE_KOXX3/common_files/MotorControl/MCSDK/MCLib/F1xx/Src/r3_2_f1xx_pwm_curr_fdbk.c').read_text(),
             'physical_deadtime_unchanged':'#define SW_DEADTIME_NS                   1000' in Path('SOURCE_KOXX3/common_files/inc/drive_parameters.h').read_text(),
             'pwm_16k_unchanged':'#define PWM_FREQUENCY   16000' in Path('SOURCE_KOXX3/common_files/inc/drive_parameters.h').read_text(),
-            'phase_abc_ocp':'int32_t ic_oc = -ia_oc - ib_oc;' in Path('SOURCE_KOXX3/common_files/MotorControl/MCSDK/MCLib/F1xx/Src/r3_2_f1xx_pwm_curr_fdbk.c').read_text() and '(ic_oc > oc) || (ic_oc < -oc)' in Path('SOURCE_KOXX3/common_files/MotorControl/MCSDK/MCLib/F1xx/Src/r3_2_f1xx_pwm_curr_fdbk.c').read_text(),\n            'ocp_threshold_saturates':'utils_truncate_number(&oc_counts_f, 0.0f, (float)INT16_MAX);' in Path('SOURCE_KOXX3/common_files/src/conf_general.c').read_text(),\n            'torque_output_scaling':'hLowerOutputLimit = allow_braking ? -q : 0;' in vs and 'hUpperOutputLimit = allow_braking ? -q : 0;' in vs,\n            'g30_torque_no_regen':'const bool allow_braking = false;' in vs and 'G30 brake policy is Coast' in vs,
+            'phase_abc_ocp':'int32_t ic_oc = -ia_oc - ib_oc;' in Path('SOURCE_KOXX3/common_files/MotorControl/MCSDK/MCLib/F1xx/Src/r3_2_f1xx_pwm_curr_fdbk.c').read_text() and '(ic_oc > oc) || (ic_oc < -oc)' in Path('SOURCE_KOXX3/common_files/MotorControl/MCSDK/MCLib/F1xx/Src/r3_2_f1xx_pwm_curr_fdbk.c').read_text(),
+            'ocp_threshold_saturates':'utils_truncate_number(&oc_counts_f, 0.0f, (float)INT16_MAX);' in Path('SOURCE_KOXX3/common_files/src/conf_general.c').read_text(),
+            'torque_output_scaling':'hLowerOutputLimit = allow_braking ? -q : 0;' in vs and 'hUpperOutputLimit = allow_braking ? -q : 0;' in vs,
+            'g30_torque_no_regen':'const bool allow_braking = false;' in vs and 'G30 brake policy is Coast' in vs,
             'temp_derate_endpoint':'utils_map_int(temp, fp.temp_cut_start, fp.temp_cut_end, 0, iq)' in vs,
             'dual_mode_helpers':'VescToSTM_g30_hall_selected' in vs and 'VescToSTM_g30_sensorless_selected' in vs,
             'hall_zero_speed_path':'if(VescToSTM_g30_hall_selected())' in vs and 'MCI_StartMotor(pMCI[M1])' in vs,
@@ -487,7 +493,10 @@ jobs:
             ci/apply_sesc_hybrid_devv02.py
             ci/apply_sesc_hall_devv01.py
             ci/apply_sesc_motorpath_audit_v01.py
-            ci/apply_sesc_motorpath_audit_v02.py\n            ci/apply_sesc_motorpath_audit_v03.py\n            ci/test_sesc_motorpath_v03.py\n            OUTPUT/MOTORPATH_V03_HOST_TESTS.txt
+            ci/apply_sesc_motorpath_audit_v02.py
+            ci/apply_sesc_motorpath_audit_v03.py
+            ci/test_sesc_motorpath_v03.py
+            OUTPUT/MOTORPATH_V03_HOST_TESTS.txt
             ci/test_sesc_motorpath_v02.py
             OUTPUT/MOTORPATH_V02_HOST_TESTS.txt
             ci/test_sesc_hall_devv01.py
