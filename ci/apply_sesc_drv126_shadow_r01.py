@@ -60,7 +60,7 @@ static int16_t g30_drv126_sh_ma_from_mc(int16_t counts){{
   return (int16_t)g30_drv126_sh_clamp32(v,-32767,32767);
 }}
 static int16_t g30_drv126_sh_pi(int32_t ref,int32_t act,int32_t *acc,
-                                int32_t acc_lim,int32_t out_lim,uint16_t *sat){{
+                                int32_t acc_lim,int32_t out_lim,volatile uint16_t *sat){{
   int32_t e=ref-act;
   int32_t pterm=(e*200)/2048;
   *acc=g30_drv126_sh_clamp32(*acc+e,-acc_lim,acc_lim);
