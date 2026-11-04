@@ -537,6 +537,12 @@ new='''    VescToSTM_pwm_stop();
         uint8_t raw=HALL_read(&HALL_M1);
         if(g30_hall_lut_valid() && raw!=0u && raw!=7u && HALL_M1.lut[raw]!=255u){
             HALL_Clear(&HALL_M1);
+            if(VescToSTM_g30_hall_feedback_valid()){
+                /* HallDevV0.1: MC_SPEED_FDBK is a software-set fault and has
+                 * no independent safety-task reset path. Release clears only
+                 * this recovered Hall fault; every other fault bit is kept. */
+                (void)STM_FaultProcessing(&STM[M1],0u,MC_SPEED_FDBK);
+            }
         }
     }
 
