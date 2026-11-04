@@ -376,4 +376,47 @@ p.write_text(x)
 
 print("SESC Hall DevV0.1 second-pass hardening applied")
 
+
+# Hall LUT plausibility: reject corrupt or geometrically impossible six-sector maps.
+p=root/"common_files/src/VescToSTM.c"
+x=p.read_text()
+old='''bool VescToSTM_g30_hall_feedback_valid(void){
+    /* HallDevV0.1: use the live GPIO state, not only the last captured state.
+     * This also catches a Hall connector/power loss while the wheel is stopped. */
+    uint8_t raw=HALL_read(&HALL_M1);
+    if(raw==0u || raw==7u) return false;
+    if(HALL_M1.lut[raw]==255u) return false;
+    return HALL_M1.SensorIsReliable;
+}'''
+new='''static bool g30_hall_lut_valid(void){
+    static const uint8_t ring[7]={1u,3u,2u,6u,4u,5u,1u};
+    if(HALL_M1.lut[0]!=255u || HALL_M1.lut[7]!=255u) return false;
+    int8_t direction=0;
+    for(unsigned i=0;i<6u;i++){
+        int16_t d=(int16_t)HALL_M1.lut[ring[i+1u]]-(int16_t)HALL_M1.lut[ring[i]];
+        if(d>100) d-=255;
+        else if(d< -100) d+=255;
+        int16_t mag=d<0?-d:d;
+        /* Ideal is 255/6 = 42.5 counts. Keep tolerance deliberately broad. */
+        if(mag<25 || mag>65) return false;
+        int8_t sign=d>0?1:-1;
+        if(direction==0) direction=sign;
+        else if(sign!=direction) return false;
+    }
+    return true;
+}
+
+bool VescToSTM_g30_hall_feedback_valid(void){
+    /* HallDevV0.1: use the live GPIO state, not only the last captured state.
+     * This also catches a Hall connector/power loss while the wheel is stopped. */
+    if(!g30_hall_lut_valid()) return false;
+    uint8_t raw=HALL_read(&HALL_M1);
+    if(raw==0u || raw==7u) return false;
+    if(HALL_M1.lut[raw]==255u) return false;
+    return HALL_M1.SensorIsReliable;
+}'''
+assert old in x
+p.write_text(x.replace(old,new))
+print("SESC Hall DevV0.1 LUT plausibility guard applied")
+
 print("SESC Hall DevV0.1 guards applied")
