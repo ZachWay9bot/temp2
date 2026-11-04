@@ -520,3 +520,68 @@ p.write_text(x.replace(old,new))
 print("SESC Hall DevV0.1 diagnostics applied")
 
 print("SESC Hall DevV0.1 guards applied")
+
+
+# Hall speed-feedback fault recovery: require a real zero/release before restart.
+p=root/"common_files/src/VescToSTM.c"
+x=p.read_text()
+old='''    VescToSTM_pwm_stop();
+
+    g30_r3i_diag_t ps=g30_r3i_get_diag();'''
+new='''    VescToSTM_pwm_stop();
+
+    /* HallDevV0.1: an MC_SPEED_FDBK Hall fault is deliberately release-latched.
+     * A zero/coast command is the only place allowed to reinitialize Hall
+     * reliability. Live electrical state and LUT must already be sane. */
+    if(VescToSTM_g30_hall_selected() && !HALL_M1.SensorIsReliable){
+        uint8_t raw=HALL_read(&HALL_M1);
+        if(g30_hall_lut_valid() && raw!=0u && raw!=7u && HALL_M1.lut[raw]!=255u){
+            HALL_Clear(&HALL_M1);
+        }
+    }
+
+    g30_r3i_diag_t ps=g30_r3i_get_diag();'''
+assert old in x
+p.write_text(x.replace(old,new))
+
+# AUTO_RESET_FAULT must never self-restart a Hall speed-feedback fault.
+p=root/"common_files/src/task_LED.c"
+x=p.read_text()
+old='''#if AUTO_RESET_FAULT
+				MCI_FaultAcknowledged(pMCI[M1]);
+				VescToSTM_set_current(0, 0);
+				STM[M1].bState = RUN;
+				VescToSTM_pwm_start();
+
+				last_fault = 0;
+#endif'''
+new='''#if AUTO_RESET_FAULT
+#ifdef G30P
+                bool hall_speed_fault=VescToSTM_g30_hall_selected() &&
+                    ((pMCI[M1]->pSTM->hFaultOccurred & MC_SPEED_FDBK)!=0u);
+                if(hall_speed_fault){
+                    /* HallDevV0.1: never restart from a Hall feedback fault
+                     * while a drive command may still be held. Zero/release
+                     * reinitializes Hall; then acknowledge to STOP_IDLE only.
+                     * The next fresh drive command performs the normal start. */
+                    if(VescToSTM_g30_hall_feedback_valid()){
+                        if(MCI_FaultAcknowledged(pMCI[M1])){
+                            VescToSTM_set_current(0, 0);
+                            last_fault = 0;
+                        }
+                    }
+                }else
+#endif
+                {
+				    MCI_FaultAcknowledged(pMCI[M1]);
+				    VescToSTM_set_current(0, 0);
+				    STM[M1].bState = RUN;
+				    VescToSTM_pwm_start();
+
+				    last_fault = 0;
+                }
+#endif'''
+assert old in x
+p.write_text(x.replace(old,new))
+
+print("SESC Hall DevV0.1 release-latched fault recovery applied")
