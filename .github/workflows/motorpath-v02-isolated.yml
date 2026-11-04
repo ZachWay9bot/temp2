@@ -241,10 +241,16 @@ jobs:
           echo '963a9f791c8a048f1089ccd04053ca923dcb7c4ea61311f31ebbf66d7af9a1d7  SOURCE_KOXX3/common_files/inc/product.h' | sha256sum -c -
           echo 'bebc0e2f8e5bf29158fbad1318507d198966c38f4aa16466cfba09044851ba50  SOURCE_KOXX3/common_files/MotorControl/MCSDK/MCLib/Any/Src/pwm_curr_fdbk.c' | sha256sum -c -
           echo '8957423d038e882c7f635e848c1efed9cae69069033bc6716babd5722a5612f1  SOURCE_KOXX3/common_files/MotorControl/MCSDK/MCLib/F1xx/Src/r3_2_f1xx_pwm_curr_fdbk.c' | sha256sum -c -
-          python3 ci/apply_sesc_motorpath_audit_v01.py\n          python3 ci/apply_sesc_motorpath_audit_v02.py\n          grep -q 'SESC-MOTORPATH-AUDIT-V0.2' SOURCE_KOXX3/common_files/src/defines.h\n          python3 ci/test_sesc_motorpath_v02.py | tee OUTPUT/MOTORPATH_V02_HOST_TESTS.txt
+          python3 ci/apply_sesc_motorpath_audit_v01.py
+          python3 ci/apply_sesc_motorpath_audit_v02.py
+          grep -q 'SESC-MOTORPATH-AUDIT-V0.2' SOURCE_KOXX3/common_files/src/defines.h
+          python3 ci/test_sesc_motorpath_v02.py | tee OUTPUT/MOTORPATH_V02_HOST_TESTS.txt
           grep -q 'SESC-MOTORPATH-AUDIT-V0.2' SOURCE_KOXX3/common_files/src/defines.h
           grep -q 'strcmp(argv\[0\], "g30_motorpath")' SOURCE_KOXX3/common_files/src/terminal.c
-          grep -q 'int32_t ic_oc = -ia_oc - ib_oc;' SOURCE_KOXX3/common_files/MotorControl/MCSDK/MCLib/F1xx/Src/r3_2_f1xx_pwm_curr_fdbk.c\n          grep -q '(ic_oc > oc) || (ic_oc < -oc)' SOURCE_KOXX3/common_files/MotorControl/MCSDK/MCLib/F1xx/Src/r3_2_f1xx_pwm_curr_fdbk.c\n          grep -q 'MP sample ccr4=' SOURCE_KOXX3/common_files/src/terminal.c\n          grep -q 'g30_motorpath_reset' SOURCE_KOXX3/common_files/src/terminal.c
+          grep -q 'int32_t ic_oc = -ia_oc - ib_oc;' SOURCE_KOXX3/common_files/MotorControl/MCSDK/MCLib/F1xx/Src/r3_2_f1xx_pwm_curr_fdbk.c
+          grep -q '(ic_oc > oc) || (ic_oc < -oc)' SOURCE_KOXX3/common_files/MotorControl/MCSDK/MCLib/F1xx/Src/r3_2_f1xx_pwm_curr_fdbk.c
+          grep -q 'MP sample ccr4=' SOURCE_KOXX3/common_files/src/terminal.c
+          grep -q 'g30_motorpath_reset' SOURCE_KOXX3/common_files/src/terminal.c
           ! grep -q 'abs(pHandle->_Super.Ia).*abs(pHandle->_Super.Ia).*abs(pHandle->_Super.Ic)' SOURCE_KOXX3/common_files/MotorControl/MCSDK/MCLib/F1xx/Src/r3_2_f1xx_pwm_curr_fdbk.c
           grep -q 'utils_map_int(temp, fp.temp_cut_start, fp.temp_cut_end, 0, iq)' SOURCE_KOXX3/common_files/src/VescToSTM.c
           grep -q 'HallDevV0.1: use the live GPIO state' SOURCE_KOXX3/common_files/src/VescToSTM.c
@@ -466,7 +472,10 @@ jobs:
             ci/apply_sesc_hybrid_devv01.py
             ci/apply_sesc_hybrid_devv02.py
             ci/apply_sesc_hall_devv01.py
-            ci/apply_sesc_motorpath_audit_v01.py\n            ci/apply_sesc_motorpath_audit_v02.py\n            ci/test_sesc_motorpath_v02.py\n            OUTPUT/MOTORPATH_V02_HOST_TESTS.txt
+            ci/apply_sesc_motorpath_audit_v01.py
+            ci/apply_sesc_motorpath_audit_v02.py
+            ci/test_sesc_motorpath_v02.py
+            OUTPUT/MOTORPATH_V02_HOST_TESTS.txt
             ci/test_sesc_hall_devv01.py
             OUTPUT/HALL_DEVV01_HOST_TESTS.txt
             ci/test_r3i23_startup_ramp.c
