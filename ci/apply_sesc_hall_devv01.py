@@ -474,4 +474,27 @@ x=x.replace(old,new)
 p.write_text(x)
 print("SESC Hall DevV0.1 safe Hall re-seed applied")
 
+
+# Recompute Hall rolling-start BEMF preload from live Hall speed; never reuse
+# stale motor_voltage left by another mode or an earlier run.
+p=root/"common_files/src/VescToSTM.c"
+x=p.read_text()
+old='''        {
+            /* Preserve the established Hall startup path. */
+            float fVd = 32768.0 / VescToSTM_get_bus_voltage() * motor_voltage;'''
+new='''        {
+            /* HallDevV0.1: preserve the established preload formula, but feed
+             * it from the live Hall speed every time PWM is re-enabled. */
+#ifdef G30P
+            if(VescToSTM_g30_hall_selected()){
+                int32_t hall_erpm=VescToSTM_get_erpm_fast()*2;
+                float hall_rad_s=(float)hall_erpm*((2.0f*(float)M_PI)/60.0f);
+                motor_voltage=hall_rad_s*mc_conf.foc_motor_flux_linkage;
+            }
+#endif
+            float fVd = 32768.0 / VescToSTM_get_bus_voltage() * motor_voltage;'''
+assert old in x
+p.write_text(x.replace(old,new))
+print("SESC Hall DevV0.1 live BEMF preload applied")
+
 print("SESC Hall DevV0.1 guards applied")
