@@ -257,6 +257,9 @@ jobs:
           python3 ci/apply_sesc_motorpath_audit_v01.py
           grep -q 'SESC-MOTORPATH-AUDIT-V0.1' SOURCE_KOXX3/common_files/src/defines.h
           grep -q 'strcmp(argv\[0\], "g30_motorpath")' SOURCE_KOXX3/common_files/src/terminal.c
+          grep -q 'abs(pHandle->_Super.Ib) > pHandle->_Super.OverCurrent' SOURCE_KOXX3/common_files/MotorControl/MCSDK/MCLib/F1xx/Src/r3_2_f1xx_pwm_curr_fdbk.c
+          ! grep -q 'abs(pHandle->_Super.Ia).*abs(pHandle->_Super.Ia).*abs(pHandle->_Super.Ic)' SOURCE_KOXX3/common_files/MotorControl/MCSDK/MCLib/F1xx/Src/r3_2_f1xx_pwm_curr_fdbk.c
+          grep -q 'utils_map_int(temp, fp.temp_cut_start, fp.temp_cut_end, 0, iq)' SOURCE_KOXX3/common_files/src/VescToSTM.c
           grep -q 'HallDevV0.1: use the live GPIO state' SOURCE_KOXX3/common_files/src/VescToSTM.c
           grep -q 'HallDevV0.1: a disconnected/illegal Hall state at standstill' SOURCE_KOXX3/common_files/src/mc_tasks.c
           grep -q 'HallDevV0.1: reliability faults are cleared only by HALL_Clear' SOURCE_KOXX3/common_files/MotorControl/MCSDK/MCLib/Any/Src/hall_speed_pos_fdbk.c
@@ -379,6 +382,8 @@ jobs:
             'dtcomp_stays_off':'DTTest = 0' in Path('SOURCE_KOXX3/common_files/src/mc_config.c').read_text() and 'DTTest = 0u' in Path('SOURCE_KOXX3/common_files/MotorControl/MCSDK/MCLib/F1xx/Src/r3_2_f1xx_pwm_curr_fdbk.c').read_text(),
             'physical_deadtime_unchanged':'#define SW_DEADTIME_NS                   1000' in Path('SOURCE_KOXX3/common_files/inc/drive_parameters.h').read_text(),
             'pwm_16k_unchanged':'#define PWM_FREQUENCY   16000' in Path('SOURCE_KOXX3/common_files/inc/drive_parameters.h').read_text(),
+            'phase_abc_ocp':'abs(pHandle->_Super.Ib) > pHandle->_Super.OverCurrent' in Path('SOURCE_KOXX3/common_files/MotorControl/MCSDK/MCLib/F1xx/Src/r3_2_f1xx_pwm_curr_fdbk.c').read_text(),
+            'temp_derate_endpoint':'utils_map_int(temp, fp.temp_cut_start, fp.temp_cut_end, 0, iq)' in vs,
             'dual_mode_helpers':'VescToSTM_g30_hall_selected' in vs and 'VescToSTM_g30_sensorless_selected' in vs,
             'hall_zero_speed_path':'if(VescToSTM_g30_hall_selected())' in vs and 'MCI_StartMotor(pMCI[M1])' in vs,
             'sensorless_start_dpp_64':'#define R3I_MIN_DPP 64' in Path('SOURCE_KOXX3/common_files/src/g30_r3i_pushstart.c').read_text(),
