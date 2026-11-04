@@ -238,7 +238,7 @@ jobs:
           echo '7e73fe8e08a28ce9c500e2fe31bc368d6ddbded3495349949cb85d54a4730c5e  SOURCE_KOXX3/common_files/src/g30_r3i_pushstart.c' | sha256sum -c -
           echo 'a660d0b1d4695492d8a356fccb65a0d0f28d751e589ad68a8ede06f8d72a6893  SOURCE_KOXX3/common_files/src/g30_r3i_pushstart.h' | sha256sum -c -
           python3 ci/apply_sesc_hybrid_devv01.py
-          grep -q 'SESC-HYBRID-DEVV0.2' SOURCE_KOXX3/common_files/src/defines.h
+          grep -q 'SESC-HYBRID-DEVV0.1' SOURCE_KOXX3/common_files/src/defines.h
           python3 ci/apply_sesc_hybrid_devv02.py
           grep -q 'SESC-HYBRID-DEVV0.2' SOURCE_KOXX3/common_files/src/defines.h
           grep -q 'DevV0.2: sensorless rolling start owns the first PWM enable' SOURCE_KOXX3/common_files/src/mc_tasks.c
