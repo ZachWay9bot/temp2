@@ -46,6 +46,7 @@ s=s.replace(old_globals,new_globals,1)
 start=s.index("void g30_drv126_shadow_reset(void){")
 end=s.index("\n#endif\n#if MUSIC_ENABLE",start)
 r1_core=r'''#define G30_DRV126_R1_MAX_QREF_U 1500
+#define G30_DRV126_R1_MAX_PHASE_U 2500
 #define G30_DRV126_R1_RAIL_MIN_RAW 80u
 #define G30_DRV126_R1_RAIL_MAX_RAW 3920u
 
@@ -95,7 +96,16 @@ static uint16_t g30_drv126_r1_trip_now(uint8_t reason){
 static uint16_t g30_drv126_r1_step(PWMC_Handle_t *pHdl,ab_t Iab,int16_t angle,
                                    int16_t qref_mc,int16_t dref_mc){
   if(!g30_drv126_r1_arm || g30_drv126_r1_trip) return MC_NO_ERROR;
-  if(!VescToSTM_g30_hall_selected()) return g30_drv126_r1_trip_now(2u);
+  if(!VescToSTM_g30_hall_selected() || !VescToSTM_g30_hall_feedback_valid())
+    return g30_drv126_r1_trip_now(2u);
+
+  int32_t ia=g30_drv126_sh_stock_u_from_mc(Iab.a);
+  int32_t ib=g30_drv126_sh_stock_u_from_mc(Iab.b);
+  int32_t ic=-(ia+ib);
+  if(g30_drv126_sh_abs32(ia)>G30_DRV126_R1_MAX_PHASE_U ||
+     g30_drv126_sh_abs32(ib)>G30_DRV126_R1_MAX_PHASE_U ||
+     g30_drv126_sh_abs32(ic)>G30_DRV126_R1_MAX_PHASE_U)
+    return g30_drv126_r1_trip_now(4u);
 
   int32_t qref=g30_drv126_sh_stock_u_from_mc(qref_mc);
   int32_t dref=g30_drv126_sh_stock_u_from_mc(dref_mc);
@@ -116,8 +126,6 @@ static uint16_t g30_drv126_r1_step(PWMC_Handle_t *pHdl,ab_t Iab,int16_t angle,
   }
   g30_drv126_r1_div=1u;
 
-  int32_t ia=g30_drv126_sh_stock_u_from_mc(Iab.a);
-  int32_t ib=g30_drv126_sh_stock_u_from_mc(Iab.b);
   int32_t alpha=ia;
   int32_t beta=((ia+2*ib)*2365)>>12;
   int32_t iq,id;
@@ -320,7 +328,7 @@ block=r'''    }else if (strcmp(argv[0], "g30_drv126_shadow_reset") == 0){
             (unsigned)g30_drv126_r1_arm,(unsigned)g30_drv126_r1_active,
             (unsigned)g30_drv126_r1_trip,(unsigned)g30_drv126_r1_reason,
             (unsigned)g30_drv126_r1_updates,(unsigned)g30_drv126_sh_samples);
-        commands_printf(phandle,"DRV126R1 guard maxQrefU=1500 railRaw=80..3920 div=%u trips=%u hall=%u pwmOff=%u",
+        commands_printf(phandle,"DRV126R1 guard maxQrefU=1500 maxPhaseU=2500 railRaw=80..3920 div=%u trips=%u hall=%u pwmOff=%u",
             (unsigned)g30_drv126_r1_div,(unsigned)g30_drv126_r1_trips,
             (unsigned)VescToSTM_g30_hall_selected(),(unsigned)PWM_Handle_M1._Super.PWM_off);
         commands_printf(phandle,"DRV126R1 core qrefU=%d iqU=%d idU=%d qB=%d satQ=%u dC=%d satD=%u trig=%d,%d",
