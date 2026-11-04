@@ -73,13 +73,13 @@ int g30_drv126_r1_command(uint8_t cmd){
     return 1;
   }
   if(cmd==0u){
-    if(g30_drv126_r1_active || !PWM_Handle_M1._Super.PWM_off) return 0;
-    g30_drv126_r1_arm=0u;g30_drv126_r1_reset_core();
+    if(!PWM_Handle_M1._Super.PWM_off) return 0;
+    g30_drv126_r1_active=0u;g30_drv126_r1_arm=0u;g30_drv126_r1_reset_core();
     return 1;
   }
   if(cmd==2u){
-    if(g30_drv126_r1_active || !PWM_Handle_M1._Super.PWM_off) return 0;
-    g30_drv126_r1_arm=0u;g30_drv126_r1_trip=0u;g30_drv126_r1_reason=0u;
+    if(!PWM_Handle_M1._Super.PWM_off) return 0;
+    g30_drv126_r1_active=0u;g30_drv126_r1_arm=0u;g30_drv126_r1_trip=0u;g30_drv126_r1_reason=0u;
     g30_drv126_r1_reset_core();
     return 1;
   }
