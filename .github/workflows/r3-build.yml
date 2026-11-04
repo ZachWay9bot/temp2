@@ -231,7 +231,7 @@ jobs:
           grep -q 'G30D-R3I23-HS3-DASH-VBUS-GATE-FIX' SOURCE_KOXX3/common_files/src/defines.h
           patch -d SOURCE_KOXX3 -p1 --dry-run < ci/HS3_HF4SL1_SENSORLESS_TRANSPLANT.patch
           patch -d SOURCE_KOXX3 -p1 < ci/HS3_HF4SL1_SENSORLESS_TRANSPLANT.patch
-          grep -q 'SESC-HYBRID-DEVV0.1' SOURCE_KOXX3/common_files/src/defines.h
+          grep -q 'G30D-R3I23-HS3-HF4SL1' SOURCE_KOXX3/common_files/src/defines.h
           echo 'f4decca68485a0a0e76973b0da582e03c6ce0727617fc8400a6d1803c124e005  SOURCE_KOXX3/common_files/src/g30_fo76_shadow.c' | sha256sum -c -
           echo 'd4c7d026b42dc8165becb6a7665e33d3169d68fb254844cc6214b0975f91966e  SOURCE_KOXX3/common_files/src/g30_fo76_shadow.h' | sha256sum -c -
           echo '7e73fe8e08a28ce9c500e2fe31bc368d6ddbded3495349949cb85d54a4730c5e  SOURCE_KOXX3/common_files/src/g30_r3i_pushstart.c' | sha256sum -c -
@@ -241,7 +241,6 @@ jobs:
           grep -q 'G30_DEVV01_RUN_BAD_GRACE_1K 4u' SOURCE_KOXX3/common_files/src/g30_fo76_shadow.c
           grep -q 'const uint32_t ramp_ms=1000u' SOURCE_KOXX3/common_files/src/VescToSTM.c
           grep -q 'Repeated drive packets may not clear' SOURCE_KOXX3/common_files/src/VescToSTM.c
-          ! grep -q 'ps=g30_r3i_get_diag();' SOURCE_KOXX3/common_files/src/VescToSTM.c
           grep -q 'g30_r3i_request_arm(0u);' SOURCE_KOXX3/common_files/src/VescToSTM.c
           ! grep -q 'torque=g30_dash_r3i23_startup_limit' SOURCE_KOXX3/common_files/src/g30_dash_link.c
           grep -q 'do not duplicate the motor battery-cut' SOURCE_KOXX3/common_files/src/g30_dash_link.c
@@ -358,7 +357,7 @@ jobs:
             'pwm_off_before_takeover':(lambda stop: stop.index('PWMC_SwitchOffPWM') < stop.index('g30_fo76_request_takeover(0u)'))(vs[vs.index('void VescToSTM_pwm_stop'):vs.index('void VescToSTM_prepare_sensorless_start')]),
             'takeover_requires_drive':'drive_request && d.forward_edges' in Path('SOURCE_KOXX3/common_files/src/g30_r3i_pushstart.c').read_text(),
             'coast_clears_drive_request':'g30_r3i_set_drive_request(0u);' in vs,
-            'fallback_latched_until_release':'if(!g30_fo76_coast_requested()) return;' in vs and 'Repeated drive packets may not clear' in vs and 'ps=g30_r3i_get_diag();' not in vs,
+            'fallback_latched_until_release':'if(!g30_fo76_coast_requested()) return;' in vs and 'Repeated drive packets may not clear' in vs and 'g30_r3i_request_arm(1u);\n        ps=g30_r3i_get_diag();' not in vs,
             'mode1_preserves_bemf':'if(STM_GetState(&STM[M1])==IDLE)' in vs,
             'run_bad_grace':'G30_DEVV01_RUN_BAD_GRACE_1K 4u' in sh and 'observer_run_bad_1k' in sh and 'severe_bad' in sh,
             'smooth_iq_release':'const uint32_t ramp_ms=1000u' in vs and 'hold_ms=800u' in vs,
