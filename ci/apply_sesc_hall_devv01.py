@@ -497,4 +497,26 @@ assert old in x
 p.write_text(x.replace(old,new))
 print("SESC Hall DevV0.1 live BEMF preload applied")
 
+
+# Read-only Hall diagnostics for guided hardware validation.
+p=root/"common_files/src/terminal.c"
+x=p.read_text()
+old='''    }else if (strcmp(argv[0], "g30_observer") == 0){'''
+new='''    }else if (strcmp(argv[0], "g30_hall") == 0){
+        uint8_t raw=HALL_read(&HALL_M1);
+        commands_printf(phandle,"HALL raw=%u reliable=%u dir=%d angle=%u measured=%u dpp=%d speed=%d err=%u/%u pwmOff=%u",
+            (unsigned)raw,(unsigned)HALL_M1.SensorIsReliable,(int)HALL_M1.Direction,
+            (unsigned)(uint16_t)HALL_M1._Super.hElAngle,(unsigned)(uint16_t)HALL_M1.MeasuredElAngle,
+            (int)HALL_M1._Super.hElSpeedDpp,(int)HALL_M1._Super.hAvrMecSpeedUnit,
+            (unsigned)HALL_M1._Super.bSpeedErrorNumber,(unsigned)HALL_M1._Super.bMaximumSpeedErrorsNumber,
+            (unsigned)PWM_Handle_M1._Super.PWM_off);
+        commands_printf(phandle,"HALL lut=%u,%u,%u,%u,%u,%u,%u,%u valid=%u",
+            (unsigned)HALL_M1.lut[0],(unsigned)HALL_M1.lut[1],(unsigned)HALL_M1.lut[2],(unsigned)HALL_M1.lut[3],
+            (unsigned)HALL_M1.lut[4],(unsigned)HALL_M1.lut[5],(unsigned)HALL_M1.lut[6],(unsigned)HALL_M1.lut[7],
+            (unsigned)VescToSTM_g30_hall_feedback_valid());
+    }else if (strcmp(argv[0], "g30_observer") == 0){'''
+assert old in x
+p.write_text(x.replace(old,new))
+print("SESC Hall DevV0.1 diagnostics applied")
+
 print("SESC Hall DevV0.1 guards applied")
