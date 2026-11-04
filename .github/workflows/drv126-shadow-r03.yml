@@ -257,14 +257,14 @@ jobs:
           grep -q 'SESC-DRV126-SHADOW-R0.1' SOURCE_KOXX3/common_files/src/defines.h
           python3 ci/test_sesc_drv126_shadow_r01.py | tee OUTPUT/DRV126_SHADOW_R01_HOST_TESTS.txt
           python3 ci/apply_sesc_drv126_shadow_r02.py
-          grep -q 'SESC-DRV126-SHADOW-R0.3' SOURCE_KOXX3/common_files/src/defines.h
+          grep -q 'SESC-DRV126-SHADOW-R0.2' SOURCE_KOXX3/common_files/src/defines.h
           python3 ci/test_sesc_drv126_shadow_r02.py | tee OUTPUT/DRV126_SHADOW_R02_HOST_TESTS.txt
           grep -q 'DRV126 Shadow R0.2' SOURCE_KOXX3/common_files/src/mc_tasks.c
           grep -q 'mode=STOCK_DOMAIN_ATOMIC owner=SESC_HALL writes=0' SOURCE_KOXX3/common_files/src/terminal.c
           grep -q 'scale=51575/16384 snapshot=atomic' SOURCE_KOXX3/common_files/src/terminal.c
           grep -q '__get_PRIMASK' SOURCE_KOXX3/common_files/src/mc_tasks.c
           grep -q '__set_PRIMASK(pm)' SOURCE_KOXX3/common_files/src/mc_tasks.c
-          grep -q 'SESC-DRV126-SHADOW-R0.3' SOURCE_KOXX3/common_files/src/defines.h
+          grep -q 'SESC-DRV126-SHADOW-R0.2' SOURCE_KOXX3/common_files/src/defines.h
           python3 ci/apply_sesc_drv126_shadow_r03.py
           grep -q 'SESC-DRV126-SHADOW-R0.3' SOURCE_KOXX3/common_files/src/defines.h
           python3 ci/test_sesc_drv126_shadow_r03.py | tee OUTPUT/DRV126_SHADOW_R03_HOST_TESTS.txt
