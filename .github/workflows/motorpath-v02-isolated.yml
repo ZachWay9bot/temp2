@@ -1,4 +1,4 @@
-name: SESC Motorpath Safety V0.1 isolated reproducible build
+name: SESC Motorpath Safety V0.1A no-IWDG reproducible build
 on:
   push:
   workflow_dispatch:
@@ -249,6 +249,9 @@ jobs:
           python3 ci/apply_sesc_motorpath_safety_v01.py
           grep -q 'SESC-MOTORPATH-SAFETY-V0.1' SOURCE_KOXX3/common_files/src/defines.h
           python3 ci/test_sesc_motorpath_safety_v01.py | tee OUTPUT/MOTORPATH_SAFETY_V01_HOST_TESTS.txt
+          python3 ci/apply_sesc_motorpath_safety_v01a.py
+          grep -q 'SESC-MOTORPATH-SAFETY-V0.1A' SOURCE_KOXX3/common_files/src/defines.h
+          python3 ci/test_sesc_motorpath_safety_v01a.py | tee OUTPUT/MOTORPATH_SAFETY_V01A_HOST_TESTS.txt
           grep -q 'strcmp(argv\[0\], "g30_motorpath")' SOURCE_KOXX3/common_files/src/terminal.c
           grep -q 'int32_t ic_oc = -ia_oc - ib_oc;' SOURCE_KOXX3/common_files/MotorControl/MCSDK/MCLib/F1xx/Src/r3_2_f1xx_pwm_curr_fdbk.c
           grep -q '(ic_oc > oc) || (ic_oc < -oc)' SOURCE_KOXX3/common_files/MotorControl/MCSDK/MCLib/F1xx/Src/r3_2_f1xx_pwm_curr_fdbk.c
@@ -338,13 +341,13 @@ jobs:
           tar -xzf "$FILE"
           echo "/tmp/xpack-arm-none-eabi-gcc-13.2.1-1.1/bin" >> "$GITHUB_PATH"
 
-      - name: Compile and validate SESC Motorpath Safety V0.1
+      - name: Compile and validate SESC Motorpath Safety V0.1A
         shell: bash
         run: |
           set -euo pipefail
           arm-none-eabi-gcc --version
-          sed -i 's/FO76_PUSHSTART_R3I9/SESC_MOTORPATH_SAFETY_V01/g' tools/build_native.py tools/validate_image.py
-          sed -i 's/G30D-FO76-PUSHSTART-R3I9/SESC-MOTORPATH-SAFETY-V0.1/g' tools/validate_image.py
+          sed -i 's/FO76_PUSHSTART_R3I9/SESC_MOTORPATH_SAFETY_V01A/g' tools/build_native.py tools/validate_image.py
+          sed -i 's/G30D-FO76-PUSHSTART-R3I9/SESC-MOTORPATH-SAFETY-V0.1A/g' tools/validate_image.py
           mkdir -p OUTPUT
           python3 tools/build_native.py | tee OUTPUT/build.log
           python3 tools/validate_image.py | tee OUTPUT/validation.log
@@ -374,7 +377,7 @@ jobs:
           te=Path('SOURCE_KOXX3/common_files/src/terminal.c').read_text()
           de=Path('SOURCE_KOXX3/common_files/src/defines.h').read_text()
           gates={
-            'build_id':'SESC-MOTORPATH-SAFETY-V0.1' in de,
+            'build_id':'SESC-MOTORPATH-SAFETY-V0.1A' in de,
             'motorpath_diag':'strcmp(argv[0], "g30_motorpath")' in te and 'MP dtcomp enabled=' in te and 'MP cpu last=' in te and 'MP sample ccr4=' in te and 'g30_motorpath_reset' in te,
             'dtcomp_stays_off':'DTTest = 0' in Path('SOURCE_KOXX3/common_files/src/mc_config.c').read_text() and 'DTTest = 0u' in Path('SOURCE_KOXX3/common_files/MotorControl/MCSDK/MCLib/F1xx/Src/r3_2_f1xx_pwm_curr_fdbk.c').read_text(),
             'physical_deadtime_unchanged':'#define SW_DEADTIME_NS                   1000' in Path('SOURCE_KOXX3/common_files/inc/drive_parameters.h').read_text(),
@@ -382,8 +385,8 @@ jobs:
             'phase_abc_ocp':'int32_t ic_oc = -ia_oc - ib_oc;' in Path('SOURCE_KOXX3/common_files/MotorControl/MCSDK/MCLib/F1xx/Src/r3_2_f1xx_pwm_curr_fdbk.c').read_text() and '(ic_oc > oc) || (ic_oc < -oc)' in Path('SOURCE_KOXX3/common_files/MotorControl/MCSDK/MCLib/F1xx/Src/r3_2_f1xx_pwm_curr_fdbk.c').read_text(),
             'g30_ocp_instant':'PWM_Handle_M1._Super.OverCurrentCycles = 0;' in Path('SOURCE_KOXX3/common_files/src/conf_general.c').read_text(),
             'g30_duty_guard':'HW_LIM_DUTY_MAX' in Path('SOURCE_KOXX3/common_files/inc/product.h').read_text() and '0.0, 0.95' in Path('SOURCE_KOXX3/common_files/inc/product.h').read_text(),
-            'g30_iwdg':'IWDG->RLR = 1250u;' in Path('SOURCE_KOXX3/common_files/src/task_LED.c').read_text() and 'g30_safety_iwdg_feed();' in Path('SOURCE_KOXX3/common_files/src/task_LED.c').read_text(),
-            'safety_diag':'MP thermal raw=' in te and 'cli_stack_hw=' in te and 'MP safety iwdg_pr=' in te,
+            'g30_iwdg_off':'g30_safety_iwdg_start' not in Path('SOURCE_KOXX3/common_files/src/task_LED.c').read_text() and 'IWDG->KR' not in Path('SOURCE_KOXX3/common_files/src/task_LED.c').read_text(),
+            'safety_diag':'MP thermal raw=' in te and 'cli_stack_hw=' in te and 'MP safety iwdg=OFF' in te,
             'temp_derate_fixed':'utils_map_int(temp, fp.temp_cut_start, fp.temp_cut_end, iq, 0)' in vs and 'temp <= fp.temp_cut_end' in vs,
             'dual_mode_helpers':'VescToSTM_g30_hall_selected' in vs and 'VescToSTM_g30_sensorless_selected' in vs,
             'hall_zero_speed_path':'if(VescToSTM_g30_hall_selected())' in vs and 'MCI_StartMotor(pMCI[M1])' in vs,
@@ -440,10 +443,10 @@ jobs:
           print('R3I15HF4_STATIC_GATES=PASS')
           PY
 
-      - name: Upload SESC Motorpath Safety V0.1
+      - name: Upload SESC Motorpath Safety V0.1A
         uses: actions/upload-artifact@v4
         with:
-          name: G30D_SESC_MOTORPATH_SAFETY_V01_COMPILED
+          name: G30D_SESC_MOTORPATH_SAFETY_V01A_COMPILED
           if-no-files-found: error
           retention-days: 7
           path: |
@@ -487,6 +490,9 @@ jobs:
             ci/apply_sesc_motorpath_safety_v01.py
             ci/test_sesc_motorpath_safety_v01.py
             OUTPUT/MOTORPATH_SAFETY_V01_HOST_TESTS.txt
+            ci/apply_sesc_motorpath_safety_v01a.py
+            ci/test_sesc_motorpath_safety_v01a.py
+            OUTPUT/MOTORPATH_SAFETY_V01A_HOST_TESTS.txt
             ci/test_sesc_hall_devv01.py
             OUTPUT/HALL_DEVV01_HOST_TESTS.txt
             ci/test_r3i23_startup_ramp.c
