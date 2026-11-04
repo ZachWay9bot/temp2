@@ -433,7 +433,7 @@ jobs:
             'drv126_clarke_constant':'*2365)>>12' in mc,
             'drv126_stock_trig':'g30_drv126_stock_trig' in mc and 'g30_drv126_qtr[256]' in mc,
             'drv126_stock_park':'g30_drv126_stock_park' in mc and '*axis0=(c12*alpha+s12*beta)>>12;' in mc,
-            'drv126_stock_domain':'g30_drv126_sh_stock_u_from_mc' in mc and '51575LL' in mc and '16384LL' in mc,
+            'drv126_stock_domain':'g30_drv126_sh_stock_u_from_mc' in mc and 'counts*51575' in mc and 'p>>14' in mc,
             'drv126_atomic_snapshot':'__get_PRIMASK()' in mc and '__disable_irq();' in mc and '__set_PRIMASK(pm);' in mc,
             'drv126_invpark':'g30_drv126_stock_invpark' in mc and 'co*(int32_t)q' in mc and 'si*(int32_t)q' in mc,
             'drv126_svpwm':'g30_drv126_stock_svpwm' in mc and 'const int32_t per=4000,lim=3920' in mc,
