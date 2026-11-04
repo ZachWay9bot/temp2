@@ -97,3 +97,23 @@ s=s.replace(anchor,block+anchor)
 p.write_text(s)
 
 print("SESC motorpath audit V0.1 diagnostics applied; control path unchanged")
+
+
+# Motorpath safety audit: exact built Hall source had Ia checked twice, Ib omitted.
+p=root/"common_files/MotorControl/MCSDK/MCLib/F1xx/Src/r3_2_f1xx_pwm_curr_fdbk.c"
+x=p.read_text()
+old='''((abs(pHandle->_Super.Ia) > pHandle->_Super.OverCurrent) || (abs(pHandle->_Super.Ia) > pHandle->_Super.OverCurrent) || (abs(pHandle->_Super.Ic) > pHandle->_Super.OverCurrent))'''
+new='''((abs(pHandle->_Super.Ia) > pHandle->_Super.OverCurrent) || (abs(pHandle->_Super.Ib) > pHandle->_Super.OverCurrent) || (abs(pHandle->_Super.Ic) > pHandle->_Super.OverCurrent))'''
+assert old in x
+p.write_text(x.replace(old,new))
+
+# Dormant today (G30 temp is virtual), but correct the derating endpoint before
+# any future real temperature channel is enabled.
+p=root/"common_files/src/VescToSTM.c"
+x=p.read_text()
+old='''iq = utils_map_int(temp, fp.temp_cut_start, fp.battery_cut_end, 0, iq);'''
+new='''iq = utils_map_int(temp, fp.temp_cut_start, fp.temp_cut_end, 0, iq);'''
+assert old in x
+p.write_text(x.replace(old,new))
+
+print("Motorpath safety audit: Ia/Ib/Ic overcurrent + temp endpoint fixed")
