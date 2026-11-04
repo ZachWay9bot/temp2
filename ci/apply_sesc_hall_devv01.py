@@ -170,4 +170,210 @@ assert old in s
 s=s.replace(old,new)
 p.write_text(s)
 
+
+# HallDevV0.1 second audit pass: latch faults and prohibit counter-torque reversal.
+
+p=root/"common_files/src/VescToSTM.h"
+x=p.read_text()
+old='''bool VescToSTM_g30_hall_feedback_valid(void);
+void VescToSTM_g30_sensor_mode_sync(void);'''
+new='''bool VescToSTM_g30_hall_feedback_valid(void);
+bool VescToSTM_g30_hall_direction_allowed(int32_t requested);
+void VescToSTM_g30_sensor_mode_sync(void);'''
+assert old in x
+p.write_text(x.replace(old,new))
+
+p=root/"common_files/src/VescToSTM.c"
+x=p.read_text()
+old='''    if(HALL_M1.lut[raw]==255u) return false;
+    return HALL_M1.SensorIsReliable;
+}
+
+void VescToSTM_g30_sensor_mode_sync(void){'''
+new='''    if(HALL_M1.lut[raw]==255u) return false;
+    return HALL_M1.SensorIsReliable;
+}
+
+bool VescToSTM_g30_hall_direction_allowed(int32_t requested){
+    /* HallDevV0.1: FWD and REV remain supported, but a request opposite to a
+     * clearly rotating wheel coasts first instead of applying counter-torque. */
+    if(!VescToSTM_g30_hall_selected() || requested==0) return true;
+    int32_t measured=(int32_t)HALL_M1._Super.hAvrMecSpeedUnit*(int32_t)DIR_MUL;
+    const int32_t coast_deadband_speed_unit=20; /* about 120 ERPM */
+    if(measured>coast_deadband_speed_unit && requested<0) return false;
+    if(measured< -coast_deadband_speed_unit && requested>0) return false;
+    return true;
+}
+
+void VescToSTM_g30_sensor_mode_sync(void){'''
+assert old in x
+x=x.replace(old,new)
+
+old='''void VescToSTM_update_torque(int32_t q, int32_t min_erpm, int32_t max_erpm){
+	q *= DIR_MUL;'''
+new='''void VescToSTM_update_torque(int32_t q, int32_t min_erpm, int32_t max_erpm){
+#ifdef G30P
+    if(!VescToSTM_g30_hall_direction_allowed(q)){
+        VescToSTM_set_brake(0);
+        return;
+    }
+#endif
+	q *= DIR_MUL;'''
+assert old in x
+x=x.replace(old,new)
+
+old='''void VescToSTM_set_speed(int32_t erpm){
+#ifdef G30P
+	/* R3I14: VESC +ERPM stays positive.'''
+new='''void VescToSTM_set_speed(int32_t erpm){
+#ifdef G30P
+    if(!VescToSTM_g30_hall_direction_allowed(erpm)){
+        VescToSTM_set_brake(0);
+        return;
+    }
+	/* R3I14: VESC +ERPM stays positive.'''
+assert old in x
+x=x.replace(old,new)
+p.write_text(x)
+
+# Latch an illegal physical Hall transition until HALL_Clear().
+p=root/"common_files/MotorControl/MCSDK/MCLib/Any/Src/hall_speed_pos_fdbk.c"
+x=p.read_text()
+old='''        if(pHandle->_Super.bSpeedErrorNumber < 255u) pHandle->_Super.bSpeedErrorNumber++;
+        pHandle->SensorIsReliable=false;'''
+new='''        pHandle->_Super.bSpeedErrorNumber=pHandle->_Super.bMaximumSpeedErrorsNumber;
+        pHandle->SensorIsReliable=false;'''
+assert old in x
+x=x.replace(old,new)
+
+old='''    if(--pHandle->speed_fault_reset_cnt < 0){
+    	pHandle->speed_fault_reset_cnt = HALL_FAULT_RESET_CNT;
+    	pHandle->SensorIsReliable = true;
+    }'''
+new='''#ifndef G30P
+    if(--pHandle->speed_fault_reset_cnt < 0){
+    	pHandle->speed_fault_reset_cnt = HALL_FAULT_RESET_CNT;
+    	pHandle->SensorIsReliable = true;
+    }
+#else
+    /* HallDevV0.1: reliability faults are cleared only by HALL_Clear(). */
+    pHandle->speed_fault_reset_cnt = HALL_FAULT_RESET_CNT;
+#endif'''
+assert old in x
+x=x.replace(old,new)
+
+old='''  }else{
+	  HALL_Init_Electrical_Angle( pHandle );
+  }
+  return MC_NULL;'''
+new='''  }else{
+#ifndef G30P
+	  HALL_Init_Electrical_Angle( pHandle );
+#else
+      /* HallDevV0.1: no timer-IRQ auto-heal after an illegal Hall edge. */
+#endif
+  }
+  return MC_NULL;'''
+assert old in x
+x=x.replace(old,new)
+
+# The last invalid-state block belongs to HALL_Init_Electrical_Angle.
+old='''    if(pHandle->HallState == 0 || pHandle->HallState == 7){
+    	pHandle->_Super.bSpeedErrorNumber++;
+    	pHandle->SensorIsReliable = false;
+    }else{'''
+new='''    if(pHandle->HallState == 0 || pHandle->HallState == 7){
+#ifdef G30P
+        pHandle->_Super.bSpeedErrorNumber=pHandle->_Super.bMaximumSpeedErrorsNumber;
+#else
+    	pHandle->_Super.bSpeedErrorNumber++;
+#endif
+    	pHandle->SensorIsReliable = false;
+    }else{'''
+pos=x.rfind(old)
+assert pos>=0
+x=x[:pos]+x[pos:].replace(old,new,1)
+p.write_text(x)
+
+# Kill TIM1 MOE immediately in the physical Hall IRQ on an illegal transition.
+p=root/"common_files/src/stm32f10x_mc_it.c"
+x=p.read_text()
+old='''#ifdef G30P
+#include "g30_fo76_shadow.h"
+#include "g30_hall_trace.h"
+#endif'''
+new='''#ifdef G30P
+#include "g30_fo76_shadow.h"
+#include "g30_hall_trace.h"
+#include "VescToSTM.h"
+#endif'''
+assert old in x
+x=x.replace(old,new)
+old='''    HALL_TIMx_CC_IRQHandler(&HALL_M1);
+#ifdef G30P
+    /* Diagnostic data only. This branch is reached by a physical CC1 event,''';
+new='''    HALL_TIMx_CC_IRQHandler(&HALL_M1);
+#ifdef G30P
+    /* HallDevV0.1: remove gate drive immediately; the medium task records the
+     * MC_SPEED_FDBK fault and performs the full stop sequence. */
+    if(VescToSTM_g30_hall_selected() && !HALL_M1.SensorIsReliable){
+        PWM_Handle_M1._Super.PWM_off=true;
+        LL_TIM_DisableAllOutputs(TIM1);
+    }
+    /* Diagnostic data only. This branch is reached by a physical CC1 event,''';
+assert old in x
+x=x.replace(old,new)
+p.write_text(x)
+
+# VESC command layer checks direction before Hall pushstart can turn PWM on.
+p=root/"common_files/src/VescCommand.c"
+x=p.read_text()
+old='''				VescToSTM_g30_pushstart_command(raw != 0);
+				if(raw == 0){ VescToSTM_timeout_reset(); break; }'''
+new='''                if(raw != 0 && !VescToSTM_g30_hall_direction_allowed(raw)){
+                    VescToSTM_g30_pushstart_command(false);
+                    VescToSTM_timeout_reset();
+                    break;
+                }
+				VescToSTM_g30_pushstart_command(raw != 0);
+				if(raw == 0){ VescToSTM_timeout_reset(); break; }'''
+count=x.count(old)
+assert count>=3, count
+x=x.replace(old,new)
+
+old='''				VescToSTM_g30_pushstart_command(val != 0.0f);
+					if(val == 0.0f){ VescToSTM_timeout_reset(); break; }'''
+new='''                int32_t hall_dir=(val>0.0f)?1:((val<0.0f)?-1:0);
+                if(hall_dir && !VescToSTM_g30_hall_direction_allowed(hall_dir)){
+                    VescToSTM_g30_pushstart_command(false);
+                    VescToSTM_timeout_reset();
+                    break;
+                }
+				VescToSTM_g30_pushstart_command(val != 0.0f);
+					if(val == 0.0f){ VescToSTM_timeout_reset(); break; }'''
+assert old in x
+x=x.replace(old,new)
+p.write_text(x)
+
+# The stock dashboard is forward-only. If the wheel is rolling backwards in
+# Hall mode, coast until near zero before allowing forward torque.
+p=root/"common_files/src/g30_dash_link.c"
+x=p.read_text()
+old='''        uint16_t torque=g30_dash_r2_scale(d->gas);
+        if(!torque) return;
+        VescToSTM_g30_pushstart_command(true);'''
+new='''        uint16_t torque=g30_dash_r2_scale(d->gas);
+        if(!torque) return;
+        if(!VescToSTM_g30_hall_direction_allowed(1)){
+            VescToSTM_g30_pushstart_command(false);
+            d->coast_commands++;
+            return;
+        }
+        VescToSTM_g30_pushstart_command(true);'''
+assert old in x
+x=x.replace(old,new)
+p.write_text(x)
+
+print("SESC Hall DevV0.1 second-pass hardening applied")
+
 print("SESC Hall DevV0.1 guards applied")
