@@ -1,4 +1,4 @@
-name: SESC Hybrid DevV0.1 stability candidate - flashable build
+name: SESC Hybrid DevV0.2 sensorless start-guard - flashable build
 on:
   push:
     branches:
@@ -11,6 +11,7 @@ on:
       - r3i23hs3-dash-vbus-gate-fix-20261103
       - r3i23-hs3-hf4sl1-transplant-20261104
       - sesc-hybrid-devv0.1-stability-20261104
+      - sesc-hybrid-devv0.2-startguard-20261104
   workflow_dispatch:
 
 jobs:
@@ -237,7 +238,13 @@ jobs:
           echo '7e73fe8e08a28ce9c500e2fe31bc368d6ddbded3495349949cb85d54a4730c5e  SOURCE_KOXX3/common_files/src/g30_r3i_pushstart.c' | sha256sum -c -
           echo 'a660d0b1d4695492d8a356fccb65a0d0f28d751e589ad68a8ede06f8d72a6893  SOURCE_KOXX3/common_files/src/g30_r3i_pushstart.h' | sha256sum -c -
           python3 ci/apply_sesc_hybrid_devv01.py
-          grep -q 'SESC-HYBRID-DEVV0.1' SOURCE_KOXX3/common_files/src/defines.h
+          grep -q 'SESC-HYBRID-DEVV0.2' SOURCE_KOXX3/common_files/src/defines.h
+          python3 ci/apply_sesc_hybrid_devv02.py
+          grep -q 'SESC-HYBRID-DEVV0.2' SOURCE_KOXX3/common_files/src/defines.h
+          grep -q 'DevV0.2: sensorless rolling start owns the first PWM enable' SOURCE_KOXX3/common_files/src/mc_tasks.c
+          grep -q 'if(!VescToSTM_g30_sensorless_selected())' SOURCE_KOXX3/common_files/src/mc_tasks.c
+          grep -q 'DevV0.2: clamp the already-prepared current reference BEFORE' SOURCE_KOXX3/common_files/src/VescToSTM.c
+          grep -q 'int16_t one_a_q=(int16_t)current_to_torque(1000);' SOURCE_KOXX3/common_files/src/VescToSTM.c
           grep -q 'G30_DEVV01_RUN_BAD_GRACE_1K 4u' SOURCE_KOXX3/common_files/src/g30_fo76_shadow.c
           grep -q 'const uint32_t ramp_ms=1000u' SOURCE_KOXX3/common_files/src/VescToSTM.c
           grep -q 'Repeated drive packets may not clear' SOURCE_KOXX3/common_files/src/VescToSTM.c
@@ -294,18 +301,18 @@ jobs:
           tar -xzf "$FILE"
           echo "/tmp/xpack-arm-none-eabi-gcc-13.2.1-1.1/bin" >> "$GITHUB_PATH"
 
-      - name: Compile and validate SESC Hybrid DevV0.1
+      - name: Compile and validate SESC Hybrid DevV0.2
         shell: bash
         run: |
           set -euo pipefail
           arm-none-eabi-gcc --version
-          sed -i 's/FO76_PUSHSTART_R3I9/SESC_HYBRID_DEVV01/g' tools/build_native.py tools/validate_image.py
-          sed -i 's/G30D-FO76-PUSHSTART-R3I9/SESC-HYBRID-DEVV0.1/g' tools/validate_image.py
+          sed -i 's/FO76_PUSHSTART_R3I9/SESC_HYBRID_DEVV02/g' tools/build_native.py tools/validate_image.py
+          sed -i 's/G30D-FO76-PUSHSTART-R3I9/SESC-HYBRID-DEVV0.2/g' tools/validate_image.py
           mkdir -p OUTPUT
           python3 tools/build_native.py | tee OUTPUT/build.log
           python3 tools/validate_image.py | tee OUTPUT/validation.log
-          BIN=OUTPUT/SmartESC_v2_G30D_SESC_HYBRID_DEVV01_STLINK_APP_0x08001000.bin
-          ELF=OUTPUT/SmartESC_v2_G30D_SESC_HYBRID_DEVV01.elf
+          BIN=OUTPUT/SmartESC_v2_G30D_SESC_HYBRID_DEVV02_STLINK_APP_0x08001000.bin
+          ELF=OUTPUT/SmartESC_v2_G30D_SESC_HYBRID_DEVV02.elf
           sha256sum "$BIN" > OUTPUT/SHA256_BIN.txt
           arm-none-eabi-size "$ELF" > OUTPUT/SIZE.txt
           python3 - <<'PY'
@@ -314,13 +321,13 @@ jobs:
           text,data,bss=map(int,parts[:3])
           ram=data+bss
           flash=text+data
-          print(f'SESC_HYBRID_DEVV01_FLASH={flash} SESC_HYBRID_DEVV01_RAM={ram}')
+          print(f'SESC_HYBRID_DEVV02_FLASH={flash} SESC_HYBRID_DEVV02_RAM={ram}')
           assert ram <= 20480, f'RAM overflow: {ram} > 20480'
           assert flash <= 118784, f'APP flash overflow: {flash} > 118784'
           Path('OUTPUT/MEMORY_GATE.txt').write_text(f'FLASH={flash}/118784\nRAM={ram}/20480\nPASS\n')
           PY
           arm-none-eabi-nm -S --size-sort "$ELF" | tail -40 > OUTPUT/LARGEST_SYMBOLS.txt
-          tar --exclude='SOURCE_KOXX3/.git' -czf OUTPUT/SOURCE_KOXX3_SESC_HYBRID_DEVV01_EXACT.tgz SOURCE_KOXX3
+          tar --exclude='SOURCE_KOXX3/.git' -czf OUTPUT/SOURCE_KOXX3_SESC_HYBRID_DEVV02_EXACT.tgz SOURCE_KOXX3
           cp ci/R3I15HF4_FROM_R3I15HF3.patch OUTPUT/
           python3 - <<'PY' | tee OUTPUT/R3I15HF4_STATIC_GATES.txt
           from pathlib import Path
@@ -330,7 +337,7 @@ jobs:
           te=Path('SOURCE_KOXX3/common_files/src/terminal.c').read_text()
           de=Path('SOURCE_KOXX3/common_files/src/defines.h').read_text()
           gates={
-            'build_id':'SESC-HYBRID-DEVV0.1' in de,
+            'build_id':'SESC-HYBRID-DEVV0.2' in de,
             'dual_mode_helpers':'VescToSTM_g30_hall_selected' in vs and 'VescToSTM_g30_sensorless_selected' in vs,
             'hall_zero_speed_path':'if(VescToSTM_g30_hall_selected())' in vs and 'MCI_StartMotor(pMCI[M1])' in vs,
             'sensorless_start_dpp_64':'#define R3I_MIN_DPP 64' in Path('SOURCE_KOXX3/common_files/src/g30_r3i_pushstart.c').read_text(),
@@ -361,29 +368,31 @@ jobs:
             'mode1_preserves_bemf':'if(STM_GetState(&STM[M1])==IDLE)' in vs,
             'run_bad_grace':'G30_DEVV01_RUN_BAD_GRACE_1K 4u' in sh and 'observer_run_bad_1k' in sh and 'severe_bad' in sh,
             'smooth_iq_release':'const uint32_t ramp_ms=1000u' in vs and 'hold_ms=800u' in vs,
+            'sensorless_clear_stays_pwm_off':"if(!VescToSTM_g30_sensorless_selected())" in mc and "sensorless rolling start owns the first PWM enable" in mc,
+            'sensorless_first_pwm_iq_capped':"int16_t one_a_q=(int16_t)current_to_torque(1000);" in vs and "FOCVars[M1].hTeref=FOCVars[M1].Iqdref.q;" in vs and vs.index("int16_t one_a_q=(int16_t)current_to_torque(1000);") < vs.index("PWMC_SwitchOnPWM(&PWM_Handle_M1._Super);"),
           }
           for k,v in gates.items(): print(f'{k}={int(v)}')
           assert all(gates.values()), gates
           print('R3I15HF4_STATIC_GATES=PASS')
           PY
 
-      - name: Upload flashable SESC Hybrid DevV0.1 candidate
+      - name: Upload flashable SESC Hybrid DevV0.2 candidate
         uses: actions/upload-artifact@v4
         with:
-          name: G30D_SESC_HYBRID_DEVV01_COMPILED
+          name: G30D_SESC_HYBRID_DEVV02_COMPILED
           if-no-files-found: error
           retention-days: 7
           path: |
-            OUTPUT/SmartESC_v2_G30D_SESC_HYBRID_DEVV01.elf
-            OUTPUT/SmartESC_v2_G30D_SESC_HYBRID_DEVV01.map
-            OUTPUT/SmartESC_v2_G30D_SESC_HYBRID_DEVV01_STLINK_APP_0x08001000.bin
-            OUTPUT/SmartESC_v2_G30D_SESC_HYBRID_DEVV01_STLINK_APP_0x08001000.hex
+            OUTPUT/SmartESC_v2_G30D_SESC_HYBRID_DEVV02.elf
+            OUTPUT/SmartESC_v2_G30D_SESC_HYBRID_DEVV02.map
+            OUTPUT/SmartESC_v2_G30D_SESC_HYBRID_DEVV02_STLINK_APP_0x08001000.bin
+            OUTPUT/SmartESC_v2_G30D_SESC_HYBRID_DEVV02_STLINK_APP_0x08001000.hex
             OUTPUT/VERIFICATION.json
             OUTPUT/SHA256_BIN.txt
             OUTPUT/SIZE.txt
             OUTPUT/MEMORY_GATE.txt
             OUTPUT/LARGEST_SYMBOLS.txt
-            OUTPUT/SOURCE_KOXX3_SESC_HYBRID_DEVV01_EXACT.tgz
+            OUTPUT/SOURCE_KOXX3_SESC_HYBRID_DEVV02_EXACT.tgz
             OUTPUT/APPLY_R3I14_EXACT.py
             OUTPUT/R3I15HF4_BUILD_WORKFLOW.yml
             OUTPUT/R3I15HF4_STATIC_GATES.txt
@@ -405,6 +414,7 @@ jobs:
             ci/R3I23_HS3_DASH_VBUS_GATE_FROM_HS1.patch
             ci/HS3_HF4SL1_SENSORLESS_TRANSPLANT.patch
             ci/apply_sesc_hybrid_devv01.py
+            ci/apply_sesc_hybrid_devv02.py
             ci/test_r3i23_startup_ramp.c
             ci/test_r3i22_gas_brake.c
             ci/test_r3i21_button.c
