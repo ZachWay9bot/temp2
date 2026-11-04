@@ -112,3 +112,24 @@ assert not lut_plausible([255,20,104,200,188,232,149,255])  # impossible jump/si
 print("HALL_LUT_PLAUSIBILITY=PASS")
 
 
+
+
+# Hall speed-feedback fault recovery model: held drive must not restart; a zero
+# command may rearm only with physically valid Hall feedback. The subsequent
+# drive command is the restart boundary.
+def hall_fault_recovery(command_nonzero, hall_physical_valid, hall_fault_latched):
+    if not hall_fault_latched:
+        return "normal"
+    if command_nonzero:
+        return "blocked"
+    if hall_physical_valid:
+        return "rearmed_on_release"
+    return "blocked"
+
+assert hall_fault_recovery(True, True, True) == "blocked"
+assert hall_fault_recovery(True, False, True) == "blocked"
+assert hall_fault_recovery(False, False, True) == "blocked"
+assert hall_fault_recovery(False, True, True) == "rearmed_on_release"
+assert hall_fault_recovery(True, True, False) == "normal"
+print("HALL_FAULT_REQUIRES_RELEASE=PASS")
+print("HALL_FAULT_INVALID_FEEDBACK_STAYS_BLOCKED=PASS")
