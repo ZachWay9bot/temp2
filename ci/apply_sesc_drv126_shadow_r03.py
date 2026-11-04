@@ -162,11 +162,14 @@ static uint8_t g30_drv126_stock_svpwm(int16_t alpha,int16_t beta,
   return sec;
 }
 static uint8_t g30_drv126_order3(uint16_t a,uint16_t b,uint16_t c){
-  if(a>=b && b>=c) return 1u;
-  if(b>=a && a>=c) return 2u;
-  if(b>=c && c>=a) return 3u;
-  if(c>=b && b>=a) return 4u;
-  if(c>=a && a>=b) return 5u;
+  /* Sector boundaries intentionally produce equal compare values. Those
+   * samples have no unique phase ordering and must not count as mismatch. */
+  if(a==b || b==c || a==c) return 0u;
+  if(a>b && b>c) return 1u;
+  if(b>a && a>c) return 2u;
+  if(b>c && c>a) return 3u;
+  if(c>b && b>a) return 4u;
+  if(c>a && a>b) return 5u;
   return 6u;
 }
 '''
@@ -217,7 +220,7 @@ repl=needle.replace("  if(g30_drv126_sh_samples<65535u)g30_drv126_sh_samples++;"
   uint8_t bo=g30_drv126_order3(g30_drv126_sh_bridge_c1,g30_drv126_sh_bridge_c2,
                                g30_drv126_sh_bridge_c3);
   uint8_t ho=g30_drv126_order3(x.c1,x.c2,x.c3);
-  if(bo!=ho && g30_drv126_sh_order_mismatch<65535u)g30_drv126_sh_order_mismatch++;
+  if(bo!=0u && ho!=0u && bo!=ho && g30_drv126_sh_order_mismatch<65535u)g30_drv126_sh_order_mismatch++;
 
   uint16_t b1=(uint16_t)((g30_drv126_sh_bridge_c1+1u)>>1);
   uint16_t b2=(uint16_t)((g30_drv126_sh_bridge_c2+1u)>>1);
