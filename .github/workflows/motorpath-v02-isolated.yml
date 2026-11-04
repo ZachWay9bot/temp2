@@ -255,7 +255,8 @@ jobs:
           grep -q 'MP sample ccr4=' SOURCE_KOXX3/common_files/src/terminal.c
           grep -q 'g30_motorpath_reset' SOURCE_KOXX3/common_files/src/terminal.c
           ! grep -q 'abs(pHandle->_Super.Ia).*abs(pHandle->_Super.Ia).*abs(pHandle->_Super.Ic)' SOURCE_KOXX3/common_files/MotorControl/MCSDK/MCLib/F1xx/Src/r3_2_f1xx_pwm_curr_fdbk.c
-          grep -q 'utils_map_int(temp, fp.temp_cut_start, fp.temp_cut_end, 0, iq)' SOURCE_KOXX3/common_files/src/VescToSTM.c
+          grep -q 'utils_map_int(temp, fp.temp_cut_start, fp.temp_cut_end, iq, 0)' SOURCE_KOXX3/common_files/src/VescToSTM.c
+          grep -q 'temp <= fp.temp_cut_end' SOURCE_KOXX3/common_files/src/VescToSTM.c
           grep -q 'HallDevV0.1: use the live GPIO state' SOURCE_KOXX3/common_files/src/VescToSTM.c
           grep -q 'HallDevV0.1: a disconnected/illegal Hall state at standstill' SOURCE_KOXX3/common_files/src/mc_tasks.c
           grep -q 'HallDevV0.1: reliability faults are cleared only by HALL_Clear' SOURCE_KOXX3/common_files/MotorControl/MCSDK/MCLib/Any/Src/hall_speed_pos_fdbk.c
