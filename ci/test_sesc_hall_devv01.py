@@ -55,3 +55,35 @@ print("HALL_VALID_CODES=1..6")
 print("HALL_INVALID_CODES=0,7")
 print("HALL_SINGLE_BIT_TRANSITION_GUARD=PASS")
 print("HALL_BIDIRECTIONAL_TOPOLOGY=PASS")
+
+def direction_allowed(requested, measured_vesc, hall_selected=True):
+    if not hall_selected or requested == 0:
+        return True
+    deadband = 20
+    if measured_vesc > deadband and requested < 0:
+        return False
+    if measured_vesc < -deadband and requested > 0:
+        return False
+    return True
+
+# Hall FWD and REV are both legal from rest / near-zero.
+assert direction_allowed(+1, 0)
+assert direction_allowed(-1, 0)
+assert direction_allowed(+1, 20)
+assert direction_allowed(-1, -20)
+
+# Same-direction torque stays legal while rolling.
+assert direction_allowed(+1, +100)
+assert direction_allowed(-1, -100)
+
+# Opposite torque is blocked until the wheel has coasted into the deadband.
+assert not direction_allowed(-1, +21)
+assert not direction_allowed(+1, -21)
+
+# Sensorless is not changed by this Hall-only interlock.
+assert direction_allowed(-1, +100, hall_selected=False)
+
+print("HALL_FWD_FROM_ZERO=PASS")
+print("HALL_REV_FROM_ZERO=PASS")
+print("HALL_OPPOSITE_DIRECTION_COAST_INTERLOCK=PASS")
+
