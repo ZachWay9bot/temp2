@@ -317,7 +317,8 @@ new='''    HALL_TIMx_CC_IRQHandler(&HALL_M1);
     /* HallDevV0.1: remove gate drive immediately; the medium task records the
      * MC_SPEED_FDBK fault and performs the full stop sequence. */
     if(VescToSTM_g30_hall_selected() && !HALL_M1.SensorIsReliable){
-        PWM_Handle_M1._Super.PWM_off=true;
+        /* Kill torque immediately, but leave PWM_off=false here so the normal
+         * medium-task stop still executes R3_2_SwitchOffPWM and cleanup. */
         LL_TIM_DisableAllOutputs(TIM1);
     }
     /* Diagnostic data only. This branch is reached by a physical CC1 event,''';
