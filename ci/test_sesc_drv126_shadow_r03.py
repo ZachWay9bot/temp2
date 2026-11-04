@@ -51,7 +51,7 @@ assert inv(1000,200,0,32766)==(199,999)
 print("DRV126_INV_PARK_CARDINAL=PASS")
 
 # Sector and duty-order identities reconstructed from the TBB cases.
-vectors=[(4000,12000,1),(-4000,12000,2),(-12000,4000,3),(-12000,-4000,4),(4000,-12000,5),(12000,-4000,6)]
+vectors=[(2000,2000,1),(-8000,14000,2),(-16000,2000,3),(-16000,-16000,4),(-8000,-16000,5),(2000,-2000,6)]
 orders={1:(0,1,2),2:(1,0,2),3:(1,2,0),4:(2,1,0),5:(2,0,1),6:(0,2,1)}
 for a,b,exp in vectors:
     sec,ccr=svm(a,b)
