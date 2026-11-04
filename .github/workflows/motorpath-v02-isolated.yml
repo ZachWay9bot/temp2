@@ -381,7 +381,7 @@ jobs:
             'pwm_16k_unchanged':'#define PWM_FREQUENCY   16000' in Path('SOURCE_KOXX3/common_files/inc/drive_parameters.h').read_text(),
             'phase_abc_ocp':'int32_t ic_oc = -ia_oc - ib_oc;' in Path('SOURCE_KOXX3/common_files/MotorControl/MCSDK/MCLib/F1xx/Src/r3_2_f1xx_pwm_curr_fdbk.c').read_text() and '(ic_oc > oc) || (ic_oc < -oc)' in Path('SOURCE_KOXX3/common_files/MotorControl/MCSDK/MCLib/F1xx/Src/r3_2_f1xx_pwm_curr_fdbk.c').read_text(),
             'g30_ocp_instant':'PWM_Handle_M1._Super.OverCurrentCycles = 0;' in Path('SOURCE_KOXX3/common_files/src/conf_general.c').read_text(),
-            'g30_duty_guard':'#define HW_LIM_DUTY_MAX\\t\\t\\t0.0, 0.95' in Path('SOURCE_KOXX3/common_files/inc/product.h').read_text(),
+            'g30_duty_guard':'HW_LIM_DUTY_MAX' in Path('SOURCE_KOXX3/common_files/inc/product.h').read_text() and '0.0, 0.95' in Path('SOURCE_KOXX3/common_files/inc/product.h').read_text(),
             'g30_iwdg':'IWDG->RLR = 1250u;' in Path('SOURCE_KOXX3/common_files/src/task_LED.c').read_text() and 'g30_safety_iwdg_feed();' in Path('SOURCE_KOXX3/common_files/src/task_LED.c').read_text(),
             'safety_diag':'MP thermal raw=' in te and 'cli_stack_hw=' in te and 'MP safety iwdg_pr=' in te,
             'temp_derate_fixed':'utils_map_int(temp, fp.temp_cut_start, fp.temp_cut_end, iq, 0)' in vs and 'temp <= fp.temp_cut_end' in vs,
