@@ -255,7 +255,9 @@ jobs:
           grep -q 'strcmp(argv\[0\], "g30_hall")' SOURCE_KOXX3/common_files/src/terminal.c
           grep -q 'HallDevV0.1: an MC_SPEED_FDBK Hall fault is deliberately release-latched' SOURCE_KOXX3/common_files/src/VescToSTM.c
           grep -q 'HallDevV0.1: never restart from a Hall feedback fault' SOURCE_KOXX3/common_files/src/task_LED.c
+          grep -q 'STM_FaultProcessing(&STM\[M1\],0u,MC_SPEED_FDBK)' SOURCE_KOXX3/common_files/src/VescToSTM.c
           grep -q 'HALL_FAULT_REQUIRES_RELEASE' ci/test_sesc_hall_devv01.py
+          grep -q 'HALL_SPEED_FAULT_RESET_ON_VALID_RELEASE' ci/test_sesc_hall_devv01.py
           grep -q 'HALL_LUT_PLAUSIBILITY' ci/test_sesc_hall_devv01.py
           grep -q 'HALL_SINGLE_BIT_TRANSITION_GUARD' ci/test_sesc_hall_devv01.py
           python3 ci/test_sesc_hall_devv01.py | tee OUTPUT/HALL_DEVV01_HOST_TESTS.txt
@@ -407,6 +409,7 @@ jobs:
             'hall_diag':'strcmp(argv[0], "g30_hall")' in te and 'HALL lut=' in te,
             'hall_fault_release_rearm':'MC_SPEED_FDBK Hall fault is deliberately release-latched' in vs and 'HALL_Clear(&HALL_M1);' in vs,
             'hall_fault_no_auto_restart':'never restart from a Hall feedback fault' in Path('SOURCE_KOXX3/common_files/src/task_LED.c').read_text() and 'hall_speed_fault' in Path('SOURCE_KOXX3/common_files/src/task_LED.c').read_text(),
+            'hall_speed_fault_selective_reset':'STM_FaultProcessing(&STM[M1],0u,MC_SPEED_FDBK)' in vs,
             'sensorless_observer_untouched':'G30_DEVV01_RUN_BAD_GRACE_1K 4u' in sh and '#define R3I_MIN_DPP 64' in Path('SOURCE_KOXX3/common_files/src/g30_r3i_pushstart.c').read_text(),
           }
           for k,v in gates.items(): print(f'{k}={int(v)}')
