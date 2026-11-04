@@ -254,7 +254,7 @@ jobs:
           grep -q 'SESC-DRV126-SHADOW-R0' SOURCE_KOXX3/common_files/src/defines.h
           python3 ci/test_sesc_drv126_shadow_r0.py | tee OUTPUT/DRV126_SHADOW_R0_HOST_TESTS.txt
           python3 ci/apply_sesc_drv126_shadow_r01.py
-          grep -q 'SESC-DRV126-SHADOW-R0.2' SOURCE_KOXX3/common_files/src/defines.h
+          grep -q 'SESC-DRV126-SHADOW-R0.1' SOURCE_KOXX3/common_files/src/defines.h
           python3 ci/test_sesc_drv126_shadow_r01.py | tee OUTPUT/DRV126_SHADOW_R01_HOST_TESTS.txt
           python3 ci/apply_sesc_drv126_shadow_r02.py
           grep -q 'SESC-DRV126-SHADOW-R0.2' SOURCE_KOXX3/common_files/src/defines.h
