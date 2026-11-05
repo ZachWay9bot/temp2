@@ -309,7 +309,7 @@ jobs:
           grep -q '#define G30_DRV126_CURRENT_RAISING_STEP_MC 2435' SOURCE_KOXX3/common_files/src/mc_tasks.c
           grep -q 'g30_drv126_final_power_step' SOURCE_KOXX3/common_files/src/mc_tasks.c
           grep -q 'g30_drv126_final_preload(initial.vq_counts,initial.vd_counts);' SOURCE_KOXX3/common_files/src/VescToSTM.c
-          grep -q 'g30_drv126_final_hall_step' SOURCE_KOXX3/common_files/src/mc_tasks.c
+          grep -q 'g30_drv126_final_power_step' SOURCE_KOXX3/common_files/src/mc_tasks.c
           grep -q 'FW_DataProcess(pFW\[M1\],Vqd,Iqd);' SOURCE_KOXX3/common_files/src/mc_tasks.c
           ! grep -q 'g30_drv126_r1_command' SOURCE_KOXX3/common_files/src/mc_tasks.c
           ! grep -q 'g30_drv126_r1' SOURCE_KOXX3/common_files/src/terminal.c
@@ -439,7 +439,7 @@ jobs:
           hf=mc[mc.index('__weak uint8_t TSK_HighFrequencyTask'):mc.index('inline uint16_t FOC_CurrControllerM1')]
           gates={
             'build_id':'SESC-DRV126-POWERCORE6500-FINAL-V1' in de,
-            'drv126_final_auto_hall':'if(VescToSTM_g30_hall_selected()){' in mc and 'g30_drv126_final_hall_step' in mc,
+            'drv126_final_auto_hall':'VescToSTM_g30_hall_selected() ||' in mc and 'g30_drv126_final_power_step' in mc,
             'drv126_final_no_arm':'g30_drv126_r1_command' not in mc and 'g30_drv126_r1' not in te,
             'drv126_final_4k_divider':'g30_drv126_final_div' in mc and '&3u' in mc,
             'drv126_final_16k_commit':'return pHdl->pFctSetADCSampPointSectX(pHdl);' in mc,
