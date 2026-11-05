@@ -38,7 +38,13 @@ float sesc_vso_math_atan2(float y, float x) {
     const int32_t xi = (int32_t)(x * scale);
     const int32_t yi = (int32_t)(y * scale);
     const int16_t a = MCM_PhaseComputation(xi, yi);
-    return (float)a * (VSO_PI_F / 32768.0f);
+
+    /*
+     * MCSDK's routine is defined for its BEMF convention and returns
+     * approximately -atan2(beta, alpha). VESC observer math expects the
+     * conventional +atan2(y, x), therefore invert the MCSDK result here.
+     */
+    return -(float)a * (VSO_PI_F / 32768.0f);
 }
 
 float sesc_vso_math_hypot(float x, float y) {
