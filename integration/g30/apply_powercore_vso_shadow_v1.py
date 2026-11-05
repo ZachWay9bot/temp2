@@ -67,18 +67,15 @@ if inc not in text:
         raise SystemExit("Could not find task_init include block")
     text = text[:pos+1] + inc + text[pos+1:]
 
-anchor = """void task_runtime_init(void){
-	app_adc_init_timer();
-"""
-repl = """void task_runtime_init(void){
-	app_adc_init_timer();
-	(void)g30_vso_shadow_init();
-"""
+anchor = "void task_init(){"
+repl = """void task_init(){
+    (void)g30_vso_shadow_init();"""
 if "g30_vso_shadow_init();" not in text:
     if anchor not in text:
-        raise SystemExit("task_runtime_init anchor not found")
+        raise SystemExit("task_init anchor not found")
     text = text.replace(anchor, repl, 1)
 ti.write_text(text)
+
 
 # Terminal diagnostics, integer-only to avoid dragging float formatting into CLI.
 te = ROOT / "common_files/src/terminal.c"
