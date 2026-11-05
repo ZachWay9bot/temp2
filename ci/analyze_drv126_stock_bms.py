@@ -33,6 +33,8 @@ def func_start(addr):
 # Resolve Thumb LDR literals.
 literals=[]
 for i in ins:
+    if i.mnemonic == ".byte":
+        continue
     if i.mnemonic.startswith("ldr") and i.operands and len(i.operands)>=2:
         op=i.operands[1]
         if op.type==ARM_OP_MEM and op.mem.base==ARM_REG_PC:
@@ -53,6 +55,8 @@ periph=[x for x in literals if x[3] in interesting_periph or (x[3]&0xfffff000)==
 const_hits=[]
 want={0x5a,0xa5,0x20,0x21,0x22,0x23,0x30,0x10,0x34,0x01,0x04,0x39,0x57,0x59}
 for i in ins:
+    if i.mnemonic == ".byte":
+        continue
     vals=[]
     for op in i.operands:
         if op.type==ARM_OP_IMM:
@@ -64,6 +68,8 @@ for i in ins:
 # BL call graph.
 calls=[]
 for i in ins:
+    if i.mnemonic == ".byte":
+        continue
     if i.mnemonic in ("bl","blx") and i.operands and i.operands[0].type==ARM_OP_IMM:
         calls.append((i.address,func_start(i.address),i.operands[0].imm & ~1))
 
