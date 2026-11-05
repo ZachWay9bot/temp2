@@ -29,6 +29,30 @@ copy_map = [
 for src_rel, dst_name in copy_map:
     shutil.copy2(HERE / src_rel, dst / dst_name)
 
+# The original native builder gets project sources from the CubeIDE XML and
+# only recursively discovers files below the STM32CubeIDE project directory.
+# Our isolated g30p/vso directory is a sibling, so add the four shadow sources
+# explicitly. This keeps the accepted build recipe intact otherwise.
+bp = Path("tools/build_native.py")
+if bp.exists():
+    b = bp.read_text()
+    marker = "sources.extend(sorted(p for p in PRJ.rglob('*') if p.suffix.lower() in ('.c', '.s')))"
+    addition = """sources.extend(sorted(p for p in PRJ.rglob('*') if p.suffix.lower() in ('.c', '.s')))
+vso_sources = [
+    SRC / 'g30p/vso/vesc_observer.c',
+    SRC / 'g30p/vso/vesc_resistance_observer.c',
+    SRC / 'g30p/vso/sesc_vso_math_g30.c',
+    SRC / 'g30p/vso/sesc_vso_shadow_g30.c',
+]
+for vso_source in vso_sources:
+    assert vso_source.exists(), f'Missing VSO source: {vso_source}'
+sources.extend(vso_sources)"""
+    if "g30p/vso/sesc_vso_shadow_g30.c" not in b:
+        if marker not in b:
+            raise SystemExit("build_native source-list anchor not found")
+        b = b.replace(marker, addition, 1)
+        bp.write_text(b)
+
 # Read-only hook in the FOC loop.
 mc = ROOT / "common_files/src/mc_tasks.c"
 text = mc.read_text()
