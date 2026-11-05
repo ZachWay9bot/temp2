@@ -16,7 +16,7 @@ p=root/"common_files/src/task_LED.h"
 s=p.read_text()
 start=s.index("/* G30 BMSTEL V2:")
 end=s.index("\n\n\n\n#endif", start)
-rep='''/* G30 BMSPROBE V1: read-only USART3 auto-probe. */
+rep='''/* G30 BMSPHY V1: read-only USART3 auto-probe. */
 uint16_t g30_bms_probe_round(void);
 uint8_t g30_bms_probe_slot(void);
 uint32_t g30_bms_probe_baud(uint8_t slot);
@@ -44,7 +44,7 @@ s=p.read_text()
 start=s.index("/* -------------------------------------------------------------------------\n * G30 BMSTEL V2")
 end=s.index("void prv_LED_blink(uint32_t speed){", start)
 block=r'''/* -------------------------------------------------------------------------
- * G30 BMSPROBE V1
+ * G30 BMSPHY V1
  *
  * Read-only automatic probe of the stock G30 BMS UART. No BMS writes, no
  * motor commands, no C/CHRG_MOD manipulation.
