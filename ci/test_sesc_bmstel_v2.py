@@ -22,7 +22,7 @@ assert 'HAL_UART_Transmit(&huart3' in led
 assert 'HAL_UART_Receive_DMA(&huart3' in led
 assert '__HAL_DMA_DISABLE_IT(huart3.hdmarx,DMA_IT_HT|DMA_IT_TC|DMA_IT_TE);' in led
 assert 'g30_bms_service_10ms();' in led
-assert 'xTaskCreate' not in led[led.index('G30 BMSTEL V1'):led.index('void prv_LED_blink')]
+assert 'xTaskCreate' not in led[led.index('G30 BMSTEL V2'):led.index('void prv_LED_blink')]
 assert 'strcmp(argv[0], "g30_bms")' in te
 assert 'observer_source=ADC protection_source=ADC' in te
 
