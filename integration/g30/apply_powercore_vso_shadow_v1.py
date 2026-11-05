@@ -42,16 +42,21 @@ if inc not in text:
         raise SystemExit("Could not find mc_tasks include block")
     text = text[:pos+1] + inc + text[pos+1:]
 
-anchor = "G30SL_ObserverStep(&G30Sensorless_M1, Ialphabeta, Valphabeta, vbus_mv);"
-hook = """G30SL_ObserverStep(&G30Sensorless_M1, Ialphabeta, Valphabeta, vbus_mv);
+anchor = "FW_DataProcess(pFW[M1],Vqd,Iqd);"
+hook = """FW_DataProcess(pFW[M1],Vqd,Iqd);
+  {
+    const uint32_t vso_vbus_mv =
+        (uint32_t)(((uint32_t)VBS_GetAvBusVoltage_d(pMCT[M1]->pBusVoltageSensor) * 1000u) /
+                   (uint32_t)BATTERY_VOLTAGE_GAIN);
     g30_vso_shadow_step(Ialphabeta.alpha, Ialphabeta.beta,
                         Valphabeta.alpha, Valphabeta.beta,
-                        Iqd.d, Iqd.q, vbus_mv, hElAngle);"""
+                        Iqd.d, Iqd.q, vso_vbus_mv, hElAngle);
+  }"""
 if "g30_vso_shadow_step(" not in text:
     if anchor not in text:
-        raise SystemExit("FOC shadow anchor not found")
+        raise SystemExit("FOC telemetry anchor not found")
     text = text.replace(anchor, hook, 1)
-mc.write_text(text)
+
 
 # Allocate context only from normal task/init context.
 ti = ROOT / "common_files/src/task_init.c"
