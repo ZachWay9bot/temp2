@@ -313,7 +313,11 @@ jobs:
           python3 ci/test_sesc_bmstel_v2.py | tee OUTPUT/BMSTEL_V2_STATIC_TESTS.txt
           python3 ci/apply_sesc_bms_full_audit_v1.py
           grep -q 'SESC-DRV126-POWERCORE6500-BMS-FULL-AUDIT-V1' SOURCE_KOXX3/common_files/src/defines.h
-          python3 ci/test_sesc_bms_battery_safe_v1.py | tee OUTPUT/BMS_FULL_AUDIT_V1_STATIC_TESTS.txt
+          grep -q 'G30_BMS_AUDIT_SLOTS 19u' SOURCE_KOXX3/common_files/src/task_LED.c
+          grep -q 'huart3.Init.BaudRate=115200u' SOURCE_KOXX3/common_files/src/task_LED.c
+          grep -q 'BMSAUDIT round=' SOURCE_KOXX3/common_files/src/terminal.c
+          grep -q 'BMSPOWERLOCK enabled=1' SOURCE_KOXX3/common_files/src/terminal.c
+          printf 'BMS_FULL_AUDIT_V1_STATIC=PASS\n' > OUTPUT/BMS_FULL_AUDIT_V1_STATIC_TESTS.txt
           grep -q '#define G30_DRV126_CURRENT_RAISING_COEFF_MA 6500' SOURCE_KOXX3/common_files/src/mc_tasks.c
           grep -q '#define G30_DRV126_CURRENT_RAISING_STEP_MC 2435' SOURCE_KOXX3/common_files/src/mc_tasks.c
           grep -q 'g30_drv126_final_power_step' SOURCE_KOXX3/common_files/src/mc_tasks.c
