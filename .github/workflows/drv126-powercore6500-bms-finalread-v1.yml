@@ -611,6 +611,9 @@ jobs:
             OUTPUT/BMSTEL_V2_STATIC_TESTS.txt
             ci/apply_sesc_bms_battery_safe_v1.py
             ci/test_sesc_bms_battery_safe_v1.py
+            OUTPUT/BMS_BATTERY_SAFE_V1_STATIC_TESTS.txt
+            ci/apply_sesc_bms_finalread_v1.py
+            ci/test_sesc_bms_finalread_v1.py
             OUTPUT/BMS_FINALREAD_V1_STATIC_TESTS.txt
             ci/test_sesc_motorpath_v03.py
             OUTPUT/MOTORPATH_V03_HOST_TESTS.txt
