@@ -38,7 +38,11 @@ typedef struct {
 
     uint8_t observer_div;
     uint8_t resistance_div;
+    uint8_t seeded;
 } g30_vso_shadow_ctx_t;
+
+_Static_assert(sizeof(g30_vso_shadow_ctx_t) <= 192u,
+               "VSO shadow heap context grew unexpectedly");
 
 /*
  * Only this pointer consumes .bss. The context itself lives in the already
@@ -131,6 +135,15 @@ void g30_vso_shadow_step(int16_t i_alpha_counts,
     const uint32_t cyc0 = DWT->CYCCNT;
     ctx->diag.fast_calls++;
     ctx->diag.control_angle_s16 = control_angle_s16;
+
+    if (!ctx->seeded) {
+        const sesc_vso_observer_cfg_t seed_cfg = current_cfg();
+        sesc_vso_observer_reset(&ctx->state, &seed_cfg,
+                                s16_to_rad(control_angle_s16));
+        sesc_vso_resistance_reset(&ctx->r_state, seed_cfg.resistance_ohm);
+        ctx->state.resistance_est = seed_cfg.resistance_ohm;
+        ctx->seeded = 1u;
+    }
 
     /*
      * Preserve the exact unit conventions already used by the existing G30
