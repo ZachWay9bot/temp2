@@ -132,7 +132,7 @@ void g30_vso_shadow_step(int16_t i_alpha_counts,
         return;
     }
 
-    const uint32_t cyc0 = DWT->CYCCNT;
+    const uint32_t cyc0 = CPU_CYCLES;
     ctx->diag.fast_calls++;
     ctx->diag.control_angle_s16 = control_angle_s16;
 
@@ -238,7 +238,7 @@ void g30_vso_shadow_step(int16_t i_alpha_counts,
         ctx->diag.resistance_updates++;
     }
 
-    const uint32_t cycles = (uint32_t)(DWT->CYCCNT - cyc0);
+    const uint32_t cycles = (uint32_t)(CPU_CYCLES - cyc0);
     ctx->diag.cycles_last = cycles;
     if (cycles > ctx->diag.cycles_max) {
         ctx->diag.cycles_max = cycles;
