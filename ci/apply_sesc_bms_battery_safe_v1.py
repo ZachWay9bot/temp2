@@ -645,7 +645,7 @@ rep='''        commands_printf(phandle,
           "BMSPOWERLOCK enabled=1 bdtr=%08lX ccer=%08lX moe=%u ch123=%u pwm_off=%u",
           (unsigned long)TIM1->BDTR,(unsigned long)TIM1->CCER,
           (unsigned)((TIM1->BDTR & TIM_BDTR_MOE)?1u:0u),
-          (unsigned)((TIM1->CCER & TIMxCCER_MASK_CH123)?1u:0u),
+          (unsigned)((TIM1->CCER & 0x0555u)?1u:0u),
           (unsigned)PWM_Handle_M1._Super.PWM_off);
         commands_printf(phandle,"BMSPHY note=passive_gpio_sample_16k no_pin_reconfig no_exti no_bms_write powerstage_locked");
         return;
