@@ -303,7 +303,7 @@ jobs:
           grep -q 'SESC-DRV126-MOTORCORE-R1.3-PITRACE' SOURCE_KOXX3/common_files/src/defines.h
           python3 ci/test_sesc_drv126_r13_pitrace.py | tee OUTPUT/DRV126_R13_PITRACE_HOST_TESTS.txt
           grep -q 'DRV126R13 mode=PITRACE_4K' SOURCE_KOXX3/common_files/src/terminal.c
-          grep -q 'DRV126R13 pi qAcc=%ld dAcc=%ld qErr=%d dErr=%d' SOURCE_KOXX3/common_files/src/terminal.c
+          grep -q 'DRV126R13 pi qAcc=%ld dAcc=%ld qref=%d iq=%d id=%d qB=%d dC=%d' SOURCE_KOXX3/common_files/src/terminal.c
           grep -q 'void g30_drv126_r13_get_pi_state' SOURCE_KOXX3/common_files/src/mc_tasks.c
           grep -q 'strcmp(argv\[0\], "g30_motorpath")' SOURCE_KOXX3/common_files/src/terminal.c
           grep -q 'int32_t ic_oc = -ia_oc - ib_oc;' SOURCE_KOXX3/common_files/MotorControl/MCSDK/MCLib/F1xx/Src/r3_2_f1xx_pwm_curr_fdbk.c
@@ -435,7 +435,7 @@ jobs:
             'drv126_r12_qref_guard':'G30_DRV126_R1_MAX_QREF_U 3800' in mc,
             'drv126_r12_phase_guard':'G30_DRV126_R1_MAX_PHASE_U 5000' in mc,
             'drv126_r13_sync_diag':'DRV126R13 sync hallRaw=%u elAngle=%d' in te,
-            'drv126_r13_pi_diag':'DRV126R13 pi qAcc=%ld dAcc=%ld qErr=%d dErr=%d' in te and 'g30_drv126_r13_get_pi_state' in mc,
+            'drv126_r13_pi_diag':'DRV126R13 pi qAcc=%ld dAcc=%ld qref=%d iq=%d id=%d qB=%d dC=%d' in te and 'g30_drv126_r13_get_pi_state' in mc and '__disable_irq();' in mc and '__set_PRIMASK(pm);' in mc,
             'drv126_r11_16k_commit':'return pHdl->pFctSetADCSampPointSectX(pHdl);' in mc,
             'drv126_r11_cycle_telemetry':'g30_drv126_r11_cycles_max' in mc and 'budget=4000' in te,
             'drv126_r1_in_hf':'g30_drv126_r1_step(pwmcHandle[M1]' in mc,
