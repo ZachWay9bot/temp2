@@ -14,62 +14,51 @@ p = root / "common_files/src/VescToSTM.c"
 s = p.read_text()
 
 old = '''int32_t VescToSTM_get_erpm(){
-	int32_t erpm = VescToSTM_speed_to_erpm(MCI_GetAvrgMecSpeedUnit( pMCI[M1] ));
-	return erpm;
+\tint32_t erpm = VescToSTM_speed_to_erpm(MCI_GetAvrgMecSpeedUnit( pMCI[M1] ));
+\treturn erpm;
 }'''
 new = '''int32_t VescToSTM_get_erpm(){
 #ifdef G30P
-	/* SPEEDTEL V1: reporting only. The G30 control path already has a validated
-	 * electrical-speed source in hElSpeedDpp (used by get_erpm_fast and the
-	 * motorpath audit). The generic MCI average-speed getter can remain zero on
-	 * this dual-mode tree. Keep get_erpm_fast itself untouched because it is also
-	 * used by control/preload code; only normalize its value for VESC telemetry. */
-	int32_t erpm = VescToSTM_get_erpm_fast() * 2;
-	return erpm * DIR_MUL;
+\t/* SPEEDTEL V1: reporting only. Reuse the validated electrical-speed source
+\t * already used by the accepted motorpath diagnostics. Keep get_erpm_fast()
+\t * itself untouched because Hall preload/control code also consumes it. */
+\tint32_t erpm = VescToSTM_get_erpm_fast() * 2;
+\treturn erpm * DIR_MUL;
 #else
-	int32_t erpm = VescToSTM_speed_to_erpm(MCI_GetAvrgMecSpeedUnit( pMCI[M1] ));
-	return erpm;
+\tint32_t erpm = VescToSTM_speed_to_erpm(MCI_GetAvrgMecSpeedUnit( pMCI[M1] ));
+\treturn erpm;
 #endif
 }'''
 assert old in s, "VescToSTM_get_erpm baseline changed"
 s = s.replace(old, new, 1)
 
 old = '''int32_t VescToSTM_get_rpm(){
-	int32_t rpm = VescToSTM_speed_to_rpm(MCI_GetAvrgMecSpeedUnit( pMCI[M1] ));
-	return rpm;
+\tint32_t rpm = VescToSTM_speed_to_rpm(MCI_GetAvrgMecSpeedUnit( pMCI[M1] ));
+\treturn rpm;
 }'''
 new = '''int32_t VescToSTM_get_rpm(){
 #ifdef G30P
-	return VescToSTM_get_erpm() / (int32_t)VescToSTM_motor_pole_pairs();
+\treturn VescToSTM_get_erpm() / VescToSTM_pole_pairs();
 #else
-	int32_t rpm = VescToSTM_speed_to_rpm(MCI_GetAvrgMecSpeedUnit( pMCI[M1] ));
-	return rpm;
+\tint32_t rpm = VescToSTM_speed_to_rpm(MCI_GetAvrgMecSpeedUnit( pMCI[M1] ));
+\treturn rpm;
 #endif
 }'''
 assert old in s, "VescToSTM_get_rpm baseline changed"
 s = s.replace(old, new, 1)
 
 old = '''float VescToSTM_get_speed(void) {
-	float pole_pairs = (float)VescToSTM_motor_pole_pairs();
-	float temp = (((float)MCI_GetAvrgMecSpeedUnit(pMCI[M1]) / 10.0f) *
-				  mc_conf.si_wheel_diameter * 3.14159265359f) /
-				 mc_conf.si_gear_ratio / pole_pairs;
-	return temp * DIR_MUL;
+\tfloat temp = (((float)MCI_GetAvrgMecSpeedUnit(pMCI[M1]) / 10.0) * mc_conf.si_wheel_diameter * M_PI) / mc_conf.si_gear_ratio / (float)VescToSTM_pole_pairs();
+\treturn temp * DIR_MUL;
 }'''
 new = '''float VescToSTM_get_speed(void) {
 #ifdef G30P
-	/* SPEEDTEL V1: VescToSTM_get_erpm() is already normalized to the VESC
-	 * configured forward direction. Convert electrical RPM to wheel m/s. */
-	float pole_pairs = (float)VescToSTM_motor_pole_pairs();
-	float mech_rps = ((float)VescToSTM_get_erpm() / 60.0f) / pole_pairs;
-	return (mech_rps * mc_conf.si_wheel_diameter * 3.14159265359f) /
-		   mc_conf.si_gear_ratio;
+\t/* SPEEDTEL V1: reported ERPM is already normalized to configured VESC FWD. */
+\tfloat mech_rps = ((float)VescToSTM_get_erpm() / 60.0f) / (float)VescToSTM_pole_pairs();
+\treturn (mech_rps * mc_conf.si_wheel_diameter * M_PI) / mc_conf.si_gear_ratio;
 #else
-	float pole_pairs = (float)VescToSTM_motor_pole_pairs();
-	float temp = (((float)MCI_GetAvrgMecSpeedUnit(pMCI[M1]) / 10.0f) *
-				  mc_conf.si_wheel_diameter * 3.14159265359f) /
-				 mc_conf.si_gear_ratio / pole_pairs;
-	return temp * DIR_MUL;
+\tfloat temp = (((float)MCI_GetAvrgMecSpeedUnit(pMCI[M1]) / 10.0) * mc_conf.si_wheel_diameter * M_PI) / mc_conf.si_gear_ratio / (float)VescToSTM_pole_pairs();
+\treturn temp * DIR_MUL;
 #endif
 }'''
 assert old in s, "VescToSTM_get_speed baseline changed"
