@@ -12,7 +12,7 @@ assert sha=="3da93fb2eabfb6c46bf5d652f9317e186326bf1390967f90949eaab6a4b29c9f"
 BASE=0x08001000
 
 md=Cs(CS_ARCH_ARM, CS_MODE_THUMB|CS_MODE_LITTLE_ENDIAN)
-md.detail=True
+md.detail=True\nmd.skipdata=True
 ins=list(md.disasm(data,BASE))
 
 # Heuristic function starts: push containing lr, plus reset/vector-known entry points.
