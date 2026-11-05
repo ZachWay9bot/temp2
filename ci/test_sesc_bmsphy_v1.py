@@ -16,7 +16,7 @@ assert '{16u,2u,12u,2u,20u}' in led
 assert '115200u:76800u' in led
 assert 'out[5]=0x01u' in led
 assert 'out[3]=0x20u; out[4]=0x22u' in led
-assert 'HAL_UART_Transmit(&huart3' in led
+assert 'g30_bmsphy_tx_frame(fr,sizeof(fr))' in led
 assert 'HAL_UART_Receive_DMA(&huart3' in led
 assert 'HAL_UART_DMAStop(&huart3)' in led
 assert 'huart3.Init.BaudRate=baud;' in led
@@ -83,3 +83,9 @@ assert 'BMSPHY RXDMA_CCR=' in te
 assert 'no_pin_reconfig no_exti no_bms_write' in te
 print('BMSPHY_V1_PASSIVE_PAD_SAMPLER=PASS')
 print('BMSPHY_V1_USART_DMA_REG_DIAG=PASS')
+
+assert 'g30_bmsphy_sample_rx_window(15u);' in led
+assert 'USART_SR_TXE' in led and 'USART_SR_TC' in led
+assert 'BMSPHY TXWIN_low=' in te
+print('BMSPHY_V1_DIRECT_TX_PAD_WINDOW=PASS')
+print('BMSPHY_V1_DIRECT_RX_PAD_WINDOW=PASS')
