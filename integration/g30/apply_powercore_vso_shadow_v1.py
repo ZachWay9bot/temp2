@@ -56,6 +56,7 @@ if "g30_vso_shadow_step(" not in text:
     if anchor not in text:
         raise SystemExit("FOC telemetry anchor not found")
     text = text.replace(anchor, hook, 1)
+mc.write_text(text)
 
 
 # Allocate context only from normal task/init context.
