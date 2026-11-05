@@ -393,14 +393,30 @@ jobs:
         run: |
           set -euo pipefail
           python3 integration/g30/apply_powercore_vso_shadow_v1.py SOURCE_KOXX3
-          grep -Fq 'SESC-DRV126-POWERCORE6500-VSO-SHADOW-V1' SOURCE_KOXX3/common_files/src/defines.h
-          grep -Fq 'g30_vso_shadow_step' SOURCE_KOXX3/common_files/src/mc_tasks.c
-          grep -Fq 'g30_vso_shadow_init' SOURCE_KOXX3/common_files/src/task_init.c
-          grep -Fq 'strcmp(argv[0], "vso_shadow")' SOURCE_KOXX3/common_files/src/terminal.c
-          test -f SOURCE_KOXX3/g30p/vso/sesc_vso_shadow_g30.c
-          ! grep -q 'PWMC_SetPhaseVoltage\|MCI_SetCurrentReferences\|PWMC_SwitchOnPWM\|PWMC_SwitchOffPWM' SOURCE_KOXX3/g30p/vso/sesc_vso_shadow_g30.c
-          ! test -f SOURCE_KOXX3/g30p/vso/vesc_hfi_v5.c
-          echo VSO_SHADOW_READ_ONLY_GATE=PASS
+          python3 - <<'PY'
+          from pathlib import Path
+          root=Path('SOURCE_KOXX3')
+          de=(root/'common_files/src/defines.h').read_text()
+          mc=(root/'common_files/src/mc_tasks.c').read_text()
+          ti=(root/'common_files/src/task_init.c').read_text()
+          te=(root/'common_files/src/terminal.c').read_text()
+          shadow=root/'g30p/vso/sesc_vso_shadow_g30.c'
+          sh=shadow.read_text() if shadow.exists() else ''
+          forbidden=['PWMC_SetPhaseVoltage','MCI_SetCurrentReferences','PWMC_SwitchOnPWM','PWMC_SwitchOffPWM']
+          checks={
+              'build_id':'SESC-DRV126-POWERCORE6500-VSO-SHADOW-V1' in de,
+              'foc_hook':'g30_vso_shadow_step' in mc,
+              'heap_init':'g30_vso_shadow_init' in ti,
+              'diag_command':'strcmp(argv[0], "vso_shadow")' in te,
+              'shadow_file':shadow.exists(),
+              'read_only':all(x not in sh for x in forbidden),
+              'no_hfi_injection_file':not (root/'g30p/vso/vesc_hfi_v5.c').exists(),
+          }
+          for k,v in checks.items():
+              print(f'VSO_GATE {k}={int(v)}')
+          assert all(checks.values()), checks
+          print('VSO_SHADOW_READ_ONLY_GATE=PASS')
+          PY
 
       - name: Install ARM GNU GCC 13.2.1
         shell: bash
