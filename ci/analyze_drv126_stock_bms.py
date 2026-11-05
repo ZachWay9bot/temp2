@@ -94,7 +94,7 @@ for f,hs in sorted(by.items()):
         for h in hs[:80]: out.append(f"  0x{h[0]:08x}: imm=0x{h[2]:x} {h[3]} {h[4]}")
 
 # Known windows from prior RE report plus parser offsets noted by independent analysis.
-known=[0x08003fec,0x08004070,0x08008238,0x08006936,0x08006c56,0x08006f7c]
+known=[0x080019bc,0x08001b80,0x080041ac,0x080041c0,0x08004c24,0x08004ef0,0x08003fec,0x08004070,0x08008238,0x08006936,0x08006c56,0x08006f7c]
 out.append("\n== Known windows ==")
 for a in known:
     out.append(f"\n-- window 0x{a:08x} --\n"+window(a,64,160))
