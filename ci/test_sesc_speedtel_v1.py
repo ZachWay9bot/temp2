@@ -5,7 +5,7 @@ root = Path("SOURCE_KOXX3")
 vs = (root / "common_files/src/VescToSTM.c").read_text()
 de = (root / "common_files/src/defines.h").read_text()
 vc = (root / "common_files/src/VescCommand.c").read_text()
-au = (root / "common_files/src/app_uartcomm.c").read_text()
+dash = (root / "common_files/src/g30_dash_link.c").read_text()
 mc = (root / "common_files/src/mc_tasks.c").read_text()
 
 assert 'SESC-DRV126-POWERCORE6500-SPEEDTEL-V1' in de
@@ -31,7 +31,7 @@ assert 'g30_fo76_shadow_step' in mc
 # VESC and stock-dashboard reporting both consume the corrected reporting getters.
 assert 'buffer_append_float32(buffer, VescToSTM_get_erpm(), 1e0' in vc
 assert 'buffer_append_float32(buffer, VescToSTM_get_speed(), 1e3' in vc
-assert 'float speed_kmh = fabsf(VescToSTM_get_speed()) * 3.6f;' in au
+assert 'float speed=fabsf(VescToSTM_get_speed()*3.6f);' in dash
 
 # Accepted bench trace regression: raw fast -3642 with invert enabled -> VESC +7284 ERPM.
 raw_fast = -3642
