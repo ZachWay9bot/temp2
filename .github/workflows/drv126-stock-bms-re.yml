@@ -1,0 +1,35 @@
+name: DRV126 stock BMS reverse analysis
+on:
+  push:
+    branches:
+      - sesc-stock126-bms-re-20261105
+  workflow_dispatch:
+
+jobs:
+  analyze:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Fetch and verify exact Stock DRV126
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p OUTPUT
+          curl -fL 'https://raw.githubusercontent.com/itskenny0/ninebot-max-g30-firmware-patcher/f6f2c39941e6d10004727074bba016740c828cb5/patcher/bins/DRV126.bin' -o OUTPUT/DRV126_STOCK.bin
+          echo '3da93fb2eabfb6c46bf5d652f9317e186326bf1390967f90949eaab6a4b29c9f  OUTPUT/DRV126_STOCK.bin' | sha256sum -c -
+      - name: Analyze Thumb / USART3 / BMS path
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m pip install --disable-pip-version-check capstone==5.0.6
+          python3 ci/analyze_drv126_stock_bms.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: DRV126_STOCK_BMS_RE
+          retention-days: 7
+          if-no-files-found: error
+          path: |
+            OUTPUT/DRV126_STOCK.bin
+            OUTPUT/DRV126_BMS_RE.txt
+            OUTPUT/DRV126_BMS_CALLS.tsv
+            ci/analyze_drv126_stock_bms.py
