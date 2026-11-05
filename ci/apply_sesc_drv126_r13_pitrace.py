@@ -18,9 +18,19 @@ static int32_t g30_drv126_sh_d_acc=0;
 """
 assert needle in s
 repl=needle+"""
-void g30_drv126_r13_get_pi_state(int32_t *qacc,int32_t *dacc){
+void g30_drv126_r13_get_pi_state(int32_t *qacc,int32_t *dacc,
+                                    int16_t *qref,int16_t *iq,int16_t *id,
+                                    int16_t *vq,int16_t *vd){
+  uint32_t pm=__get_PRIMASK();
+  __disable_irq();
   if(qacc)*qacc=g30_drv126_sh_q_acc;
   if(dacc)*dacc=g30_drv126_sh_d_acc;
+  if(qref)*qref=g30_drv126_sh_qref_u;
+  if(iq)*iq=g30_drv126_sh_iq_u;
+  if(id)*id=g30_drv126_sh_id_u;
+  if(vq)*vq=g30_drv126_sh_vq;
+  if(vd)*vd=g30_drv126_sh_vd;
+  __set_PRIMASK(pm);
 }
 """
 s=s.replace(needle,repl,1)
@@ -43,13 +53,15 @@ needle='''        commands_printf(phandle,"DRV126R13 timing cycles=%u max=%u bud
             (unsigned)g30_drv126_r11_cycles_last,(unsigned)g30_drv126_r11_cycles_max);'''
 assert needle in s
 repl=needle+'''
-        extern void g30_drv126_r13_get_pi_state(int32_t *qacc,int32_t *dacc);
+        extern void g30_drv126_r13_get_pi_state(int32_t *qacc,int32_t *dacc,
+                    int16_t *qref,int16_t *iq,int16_t *id,int16_t *vq,int16_t *vd);
         int32_t r13_qacc=0,r13_dacc=0;
-        g30_drv126_r13_get_pi_state(&r13_qacc,&r13_dacc);
-        commands_printf(phandle,"DRV126R13 pi qAcc=%ld dAcc=%ld qErr=%d dErr=%d",
-            (long)r13_qacc,(long)r13_dacc,
-            (int)g30_drv126_sh_qref_u-(int)g30_drv126_sh_iq_u,
-            -(int)g30_drv126_sh_id_u);'''
+        int16_t r13_qref=0,r13_iq=0,r13_id=0,r13_vq=0,r13_vd=0;
+        g30_drv126_r13_get_pi_state(&r13_qacc,&r13_dacc,
+                                    &r13_qref,&r13_iq,&r13_id,&r13_vq,&r13_vd);
+        commands_printf(phandle,"DRV126R13 pi qAcc=%ld dAcc=%ld qref=%d iq=%d id=%d qB=%d dC=%d",
+            (long)r13_qacc,(long)r13_dacc,(int)r13_qref,(int)r13_iq,
+            (int)r13_id,(int)r13_vq,(int)r13_vd);'''
 s=s.replace(needle,repl,1)
 p.write_text(s)
 
