@@ -63,44 +63,72 @@ block=r'''extern stm_state VescToSTM_mode;
 
 #define G30_BMS_RX_N 24u
 
-static uint8_t g30_bms_rx_dma[G30_BMS_RX_N];
-static uint16_t g30_bms_pack_cv_v;
-static int16_t g30_bms_current_ca_v;
-static uint8_t g30_bms_soc_pct_v;
-static uint32_t g30_bms_last_ok_ms;
-static uint16_t g30_bms_tx_v;
-static uint16_t g30_bms_rx_ok_v;
-static uint16_t g30_bms_crc_bad_v;
-static uint8_t g30_bms_rd;
-static uint8_t g30_bms_dma_started;
-static uint8_t g30_bms_poll_div;
+typedef struct {
+    uint32_t last_ok_ms;
+    uint16_t pack_cv_v;
+    int16_t current_ca_v;
+    uint16_t tx_v;
+    uint16_t rx_ok_v;
+    uint16_t crc_bad_v;
+    uint16_t sum;
+    uint16_t tmp_soc;
+    uint16_t tmp_cur;
+    uint16_t tmp_v;
+    uint8_t rx_dma[G30_BMS_RX_N];
+    uint8_t soc_pct_v;
+    uint8_t rd;
+    uint8_t dma_started;
+    uint8_t poll_div;
+    uint8_t ps;
+    uint8_t len;
+    uint8_t pi;
+    uint8_t src;
+    uint8_t dst;
+    uint8_t cmd;
+    uint8_t arg;
+    uint8_t crc_lo;
+} g30_bms_state_t;
 
-/* Streaming parser state. No second frame buffer. */
-static uint8_t g30_bms_ps;
-static uint8_t g30_bms_len;
-static uint8_t g30_bms_pi;
-static uint8_t g30_bms_src;
-static uint8_t g30_bms_dst;
-static uint8_t g30_bms_cmd;
-static uint8_t g30_bms_arg;
-static uint8_t g30_bms_crc_lo;
-static uint16_t g30_bms_sum;
-static uint16_t g30_bms_tmp_soc;
-static uint16_t g30_bms_tmp_cur;
-static uint16_t g30_bms_tmp_v;
+/* One fixed lifetime allocation from the already-reserved FreeRTOS heap.
+ * This avoids consuming the last bytes of linker-visible static RAM. */
+static g30_bms_state_t *g30_bms_state;
 
-uint16_t g30_bms_pack_cv(void){ return g30_bms_pack_cv_v; }
-int16_t g30_bms_current_ca(void){ return g30_bms_current_ca_v; }
-uint8_t g30_bms_soc_pct(void){ return g30_bms_soc_pct_v; }
+#define g30_bms_rx_dma       (g30_bms_state->rx_dma)
+#define g30_bms_pack_cv_v     (g30_bms_state->pack_cv_v)
+#define g30_bms_current_ca_v  (g30_bms_state->current_ca_v)
+#define g30_bms_soc_pct_v     (g30_bms_state->soc_pct_v)
+#define g30_bms_last_ok_ms    (g30_bms_state->last_ok_ms)
+#define g30_bms_tx_v          (g30_bms_state->tx_v)
+#define g30_bms_rx_ok_v       (g30_bms_state->rx_ok_v)
+#define g30_bms_crc_bad_v     (g30_bms_state->crc_bad_v)
+#define g30_bms_rd            (g30_bms_state->rd)
+#define g30_bms_dma_started   (g30_bms_state->dma_started)
+#define g30_bms_poll_div      (g30_bms_state->poll_div)
+#define g30_bms_ps            (g30_bms_state->ps)
+#define g30_bms_len           (g30_bms_state->len)
+#define g30_bms_pi            (g30_bms_state->pi)
+#define g30_bms_src           (g30_bms_state->src)
+#define g30_bms_dst           (g30_bms_state->dst)
+#define g30_bms_cmd           (g30_bms_state->cmd)
+#define g30_bms_arg           (g30_bms_state->arg)
+#define g30_bms_crc_lo        (g30_bms_state->crc_lo)
+#define g30_bms_sum           (g30_bms_state->sum)
+#define g30_bms_tmp_soc       (g30_bms_state->tmp_soc)
+#define g30_bms_tmp_cur       (g30_bms_state->tmp_cur)
+#define g30_bms_tmp_v         (g30_bms_state->tmp_v)
+
+uint16_t g30_bms_pack_cv(void){ return g30_bms_state?g30_bms_pack_cv_v:0u; }
+int16_t g30_bms_current_ca(void){ return g30_bms_state?g30_bms_current_ca_v:0; }
+uint8_t g30_bms_soc_pct(void){ return g30_bms_state?g30_bms_soc_pct_v:0u; }
 uint32_t g30_bms_age_ms(void){
-    if(!g30_bms_last_ok_ms) return 0xffffffffu;
+    if(!g30_bms_state || !g30_bms_last_ok_ms) return 0xffffffffu;
     return HAL_GetTick()-g30_bms_last_ok_ms;
 }
-uint16_t g30_bms_tx_count(void){ return g30_bms_tx_v; }
-uint16_t g30_bms_rx_ok_count(void){ return g30_bms_rx_ok_v; }
-uint16_t g30_bms_crc_bad_count(void){ return g30_bms_crc_bad_v; }
+uint16_t g30_bms_tx_count(void){ return g30_bms_state?g30_bms_tx_v:0u; }
+uint16_t g30_bms_rx_ok_count(void){ return g30_bms_state?g30_bms_rx_ok_v:0u; }
+uint16_t g30_bms_crc_bad_count(void){ return g30_bms_state?g30_bms_crc_bad_v:0u; }
 uint8_t g30_bms_fresh(void){
-    return g30_bms_last_ok_ms && (HAL_GetTick()-g30_bms_last_ok_ms)<1000u;
+    return g30_bms_state && g30_bms_last_ok_ms && (HAL_GetTick()-g30_bms_last_ok_ms)<1000u;
 }
 
 static void g30_bms_parse_byte(uint8_t b){
@@ -173,6 +201,11 @@ static void g30_bms_parse_byte(uint8_t b){
 }
 
 static void g30_bms_service_10ms(void){
+    if(!g30_bms_state){
+        g30_bms_state=(g30_bms_state_t*)pvPortMalloc(sizeof(*g30_bms_state));
+        if(!g30_bms_state) return;
+        memset(g30_bms_state,0,sizeof(*g30_bms_state));
+    }
     if(!g30_bms_dma_started){
         if(HAL_UART_Receive_DMA(&huart3,g30_bms_rx_dma,G30_BMS_RX_N)==HAL_OK){
             /* Circular RX continues without callbacks. Remove all BMS-DMA IRQ load
