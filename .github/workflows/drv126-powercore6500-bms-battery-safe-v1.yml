@@ -1,8 +1,8 @@
-name: SESC DRV126 PowerCore6500 BMS BATTERY SAFE V1 child build
+name: SESC DRV126 PowerCore6500 BMS FULL AUDIT V1 child build
 on:
   push:
     branches:
-      - sesc-powercore6500-bms-battery-safe-v1-20261105
+      - sesc-powercore6500-bms-full-audit-v1-20261105
   workflow_dispatch:
 
 jobs:
@@ -311,9 +311,9 @@ jobs:
           python3 ci/apply_sesc_bmstel_v2.py
           grep -q 'SESC-DRV126-POWERCORE6500-BMSTEL-V2' SOURCE_KOXX3/common_files/src/defines.h
           python3 ci/test_sesc_bmstel_v2.py | tee OUTPUT/BMSTEL_V2_STATIC_TESTS.txt
-          python3 ci/apply_sesc_bms_battery_safe_v1.py
-          grep -q 'SESC-DRV126-POWERCORE6500-BMS-BATTERY-SAFE-V1' SOURCE_KOXX3/common_files/src/defines.h
-          python3 ci/test_sesc_bms_battery_safe_v1.py | tee OUTPUT/BMS_BATTERY_SAFE_V1_STATIC_TESTS.txt
+          python3 ci/apply_sesc_bms_full_audit_v1.py
+          grep -q 'SESC-DRV126-POWERCORE6500-BMS-FULL-AUDIT-V1' SOURCE_KOXX3/common_files/src/defines.h
+          python3 ci/test_sesc_bms_battery_safe_v1.py | tee OUTPUT/BMS_FULL_AUDIT_V1_STATIC_TESTS.txt
           grep -q '#define G30_DRV126_CURRENT_RAISING_COEFF_MA 6500' SOURCE_KOXX3/common_files/src/mc_tasks.c
           grep -q '#define G30_DRV126_CURRENT_RAISING_STEP_MC 2435' SOURCE_KOXX3/common_files/src/mc_tasks.c
           grep -q 'g30_drv126_final_power_step' SOURCE_KOXX3/common_files/src/mc_tasks.c
@@ -410,18 +410,18 @@ jobs:
           tar -xzf "$FILE"
           echo "/tmp/xpack-arm-none-eabi-gcc-13.2.1-1.1/bin" >> "$GITHUB_PATH"
 
-      - name: Compile and validate SESC DRV126 PowerCore6500 BMS BATTERY SAFE V1
+      - name: Compile and validate SESC DRV126 PowerCore6500 BMS FULL AUDIT V1
         shell: bash
         run: |
           set -euo pipefail
           arm-none-eabi-gcc --version
-          sed -i 's/FO76_PUSHSTART_R3I9/SESC_DRV126_POWERCORE6500_BMS_BATTERY_SAFE_V1/g' tools/build_native.py tools/validate_image.py
-          sed -i 's/G30D-FO76-PUSHSTART-R3I9/SESC-DRV126-POWERCORE6500-BMS-BATTERY-SAFE-V1/g' tools/validate_image.py
+          sed -i 's/FO76_PUSHSTART_R3I9/SESC_DRV126_POWERCORE6500_BMS_FULL_AUDIT_V1/g' tools/build_native.py tools/validate_image.py
+          sed -i 's/G30D-FO76-PUSHSTART-R3I9/SESC-DRV126-POWERCORE6500-BMS-FULL-AUDIT-V1/g' tools/validate_image.py
           mkdir -p OUTPUT
           python3 tools/build_native.py | tee OUTPUT/build.log
           python3 tools/validate_image.py | tee OUTPUT/validation.log
-          BIN=OUTPUT/SmartESC_v2_G30D_SESC_DRV126_POWERCORE6500_BMS_BATTERY_SAFE_V1_STLINK_APP_0x08001000.bin
-          ELF=OUTPUT/SmartESC_v2_G30D_SESC_DRV126_POWERCORE6500_BMS_BATTERY_SAFE_V1.elf
+          BIN=OUTPUT/SmartESC_v2_G30D_SESC_DRV126_POWERCORE6500_BMS_FULL_AUDIT_V1_STLINK_APP_0x08001000.bin
+          ELF=OUTPUT/SmartESC_v2_G30D_SESC_DRV126_POWERCORE6500_BMS_FULL_AUDIT_V1.elf
           sha256sum "$BIN" > OUTPUT/SHA256_BIN.txt
           arm-none-eabi-size "$ELF" > OUTPUT/SIZE.txt
           python3 - <<'PY'
@@ -430,13 +430,13 @@ jobs:
           text,data,bss=map(int,parts[:3])
           ram=data+bss
           flash=text+data
-          print(f'SESC_DRV126_POWERCORE6500_BMS_BATTERY_SAFE_V1_FLASH={flash} SESC_DRV126_POWERCORE6500_BMS_BATTERY_SAFE_V1_RAM={ram}')
+          print(f'SESC_DRV126_POWERCORE6500_BMS_FULL_AUDIT_V1_FLASH={flash} SESC_DRV126_POWERCORE6500_BMS_FULL_AUDIT_V1_RAM={ram}')
           assert ram <= 20480, f'RAM overflow: {ram} > 20480'
           assert flash <= 118784, f'APP flash overflow: {flash} > 118784'
           Path('OUTPUT/MEMORY_GATE.txt').write_text(f'FLASH={flash}/118784\nRAM={ram}/20480\nPASS\n')
           PY
           arm-none-eabi-nm -S --size-sort "$ELF" | tail -40 > OUTPUT/LARGEST_SYMBOLS.txt
-          tar --exclude='SOURCE_KOXX3/.git' -czf OUTPUT/SOURCE_KOXX3_SESC_DRV126_POWERCORE6500_BMS_BATTERY_SAFE_V1_EXACT.tgz SOURCE_KOXX3
+          tar --exclude='SOURCE_KOXX3/.git' -czf OUTPUT/SOURCE_KOXX3_SESC_DRV126_POWERCORE6500_BMS_FULL_AUDIT_V1_EXACT.tgz SOURCE_KOXX3
           cp ci/R3I15HF4_FROM_R3I15HF3.patch OUTPUT/
           python3 - <<'PY' | tee OUTPUT/R3I15HF4_STATIC_GATES.txt
           from pathlib import Path
@@ -447,7 +447,7 @@ jobs:
           de=Path('SOURCE_KOXX3/common_files/src/defines.h').read_text()
           hf=mc[mc.index('__weak uint8_t TSK_HighFrequencyTask'):mc.index('inline uint16_t FOC_CurrControllerM1')]
           gates={
-            'build_id':'SESC-DRV126-POWERCORE6500-BMS-BATTERY-SAFE-V1' in de,
+            'build_id':'SESC-DRV126-POWERCORE6500-BMS-FULL-AUDIT-V1' in de,
             'drv126_final_auto_hall':'VescToSTM_g30_hall_selected() ||' in mc and 'g30_drv126_final_power_step' in mc,
             'drv126_final_no_arm':'g30_drv126_r1_command' not in mc and 'g30_drv126_r1' not in te,
             'drv126_final_4k_divider':'g30_drv126_final_div' in mc and '&3u' in mc,
@@ -536,20 +536,20 @@ jobs:
       - name: Upload diagnostic SESC Motorpath Audit V0.3
         uses: actions/upload-artifact@v4
         with:
-          name: G30D_SESC_DRV126_POWERCORE6500_BMS_BATTERY_SAFE_V1_COMPILED
+          name: G30D_SESC_DRV126_POWERCORE6500_BMS_FULL_AUDIT_V1_COMPILED
           if-no-files-found: error
           retention-days: 7
           path: |
-            OUTPUT/SmartESC_v2_G30D_SESC_DRV126_POWERCORE6500_BMS_BATTERY_SAFE_V1.elf
-            OUTPUT/SmartESC_v2_G30D_SESC_DRV126_POWERCORE6500_BMS_BATTERY_SAFE_V1.map
-            OUTPUT/SmartESC_v2_G30D_SESC_DRV126_POWERCORE6500_BMS_BATTERY_SAFE_V1_STLINK_APP_0x08001000.bin
-            OUTPUT/SmartESC_v2_G30D_SESC_DRV126_POWERCORE6500_BMS_BATTERY_SAFE_V1_STLINK_APP_0x08001000.hex
+            OUTPUT/SmartESC_v2_G30D_SESC_DRV126_POWERCORE6500_BMS_FULL_AUDIT_V1.elf
+            OUTPUT/SmartESC_v2_G30D_SESC_DRV126_POWERCORE6500_BMS_FULL_AUDIT_V1.map
+            OUTPUT/SmartESC_v2_G30D_SESC_DRV126_POWERCORE6500_BMS_FULL_AUDIT_V1_STLINK_APP_0x08001000.bin
+            OUTPUT/SmartESC_v2_G30D_SESC_DRV126_POWERCORE6500_BMS_FULL_AUDIT_V1_STLINK_APP_0x08001000.hex
             OUTPUT/VERIFICATION.json
             OUTPUT/SHA256_BIN.txt
             OUTPUT/SIZE.txt
             OUTPUT/MEMORY_GATE.txt
             OUTPUT/LARGEST_SYMBOLS.txt
-            OUTPUT/SOURCE_KOXX3_SESC_DRV126_POWERCORE6500_BMS_BATTERY_SAFE_V1_EXACT.tgz
+            OUTPUT/SOURCE_KOXX3_SESC_DRV126_POWERCORE6500_BMS_FULL_AUDIT_V1_EXACT.tgz
             OUTPUT/APPLY_R3I14_EXACT.py
             OUTPUT/R3I15HF4_BUILD_WORKFLOW.yml
             OUTPUT/R3I15HF4_STATIC_GATES.txt
@@ -609,9 +609,9 @@ jobs:
             ci/apply_sesc_bmstel_v2.py
             ci/test_sesc_bmstel_v2.py
             OUTPUT/BMSTEL_V2_STATIC_TESTS.txt
-            ci/apply_sesc_bms_battery_safe_v1.py
+            ci/apply_sesc_bms_full_audit_v1.py
             ci/test_sesc_bms_battery_safe_v1.py
-            OUTPUT/BMS_BATTERY_SAFE_V1_STATIC_TESTS.txt
+            OUTPUT/BMS_FULL_AUDIT_V1_STATIC_TESTS.txt
             ci/test_sesc_motorpath_v03.py
             OUTPUT/MOTORPATH_V03_HOST_TESTS.txt
             ci/test_sesc_motorpath_v02.py
