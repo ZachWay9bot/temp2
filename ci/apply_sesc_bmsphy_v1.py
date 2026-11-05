@@ -412,3 +412,104 @@ phy=r'''    }else if (strcmp(argv[0], "g30_bmsphy") == 0){
 '''
 s=s.replace(marker,phy+marker,1)
 p.write_text(s)
+
+
+# Strengthen PHY probe: sample PB10 during the final UART shift and PB11 in a
+# 15 ms post-request window. This does not depend on the motor HF task running.
+p=root/"common_files/src/task_LED.c"
+q=p.read_text()
+needle='''    uint16_t crc_bad;
+    uint16_t sum;'''
+rep='''    uint16_t crc_bad;
+    uint16_t sum;
+    uint32_t phy_tx_low;
+    uint32_t phy_tx_edges;
+    uint32_t phy_rx_low;
+    uint32_t phy_rx_edges;
+    uint8_t phy_tx_prev;
+    uint8_t phy_rx_prev;'''
+assert needle in q
+q=q.replace(needle,rep,1)
+
+needle='''static void g30_bms_service_10ms(void){'''
+helper=r'''
+uint32_t g30_bmsphy_txwin_low(void){ return g30_bms_probe_state?BP(phy_tx_low):0u; }
+uint32_t g30_bmsphy_txwin_edges(void){ return g30_bms_probe_state?BP(phy_tx_edges):0u; }
+uint32_t g30_bmsphy_rxwin_low(void){ return g30_bms_probe_state?BP(phy_rx_low):0u; }
+uint32_t g30_bmsphy_rxwin_edges(void){ return g30_bms_probe_state?BP(phy_rx_edges):0u; }
+
+static HAL_StatusTypeDef g30_bmsphy_tx_frame(const uint8_t *fr,uint16_t n){
+    uint16_t i;
+    uint32_t t0;
+    if(!fr || !n) return HAL_ERROR;
+    for(i=0u;i<n;i++){
+        t0=HAL_GetTick();
+        while((huart3.Instance->SR & USART_SR_TXE)==0u){
+            if((HAL_GetTick()-t0)>5u) return HAL_TIMEOUT;
+        }
+        huart3.Instance->DR=fr[i];
+    }
+    /* Writing the last DR clears TC. While the final queued byte(s) leave the
+     * peripheral, sample the actual PB10 pad through GPIO IDR. */
+    t0=HAL_GetTick();
+    BP(phy_tx_prev)=(uint8_t)((GPIOB->IDR>>10)&1u);
+    while((huart3.Instance->SR & USART_SR_TC)==0u){
+        uint8_t v=(uint8_t)((GPIOB->IDR>>10)&1u);
+        if(v==0u) BP(phy_tx_low)++;
+        if(v!=BP(phy_tx_prev)) BP(phy_tx_edges)++;
+        BP(phy_tx_prev)=v;
+        if((HAL_GetTick()-t0)>5u) return HAL_TIMEOUT;
+    }
+    return HAL_OK;
+}
+
+static void g30_bmsphy_sample_rx_window(uint32_t ms){
+    uint32_t t0=HAL_GetTick();
+    BP(phy_rx_prev)=(uint8_t)((GPIOB->IDR>>11)&1u);
+    while((HAL_GetTick()-t0)<ms){
+        uint8_t v=(uint8_t)((GPIOB->IDR>>11)&1u);
+        if(v==0u) BP(phy_rx_low)++;
+        if(v!=BP(phy_rx_prev)) BP(phy_rx_edges)++;
+        BP(phy_rx_prev)=v;
+    }
+}
+
+static void g30_bms_service_10ms(void){'''
+assert needle in q
+q=q.replace(needle,helper,1)
+
+old='''        if(HAL_UART_Transmit(&huart3,fr,sizeof(fr),5u)==HAL_OK){
+            if(BP(tx_by)[BP(slot)]!=0xffffu) BP(tx_by)[BP(slot)]++;
+        }'''
+new='''        if(g30_bmsphy_tx_frame(fr,sizeof(fr))==HAL_OK){
+            if(BP(tx_by)[BP(slot)]!=0xffffu) BP(tx_by)[BP(slot)]++;
+        }
+        g30_bmsphy_sample_rx_window(15u);'''
+assert old in q
+q=q.replace(old,new,1)
+p.write_text(q)
+
+# Add the independent TX/RX sampling-window counters to terminal diagnostics.
+p=root/"common_files/src/terminal.c"
+q=p.read_text()
+needle='''        extern uint32_t g30_bmsphy_pb11_edges(void);
+        uint32_t idr=GPIOB->IDR;'''
+rep='''        extern uint32_t g30_bmsphy_pb11_edges(void);
+        extern uint32_t g30_bmsphy_txwin_low(void);
+        extern uint32_t g30_bmsphy_txwin_edges(void);
+        extern uint32_t g30_bmsphy_rxwin_low(void);
+        extern uint32_t g30_bmsphy_rxwin_edges(void);
+        uint32_t idr=GPIOB->IDR;'''
+assert needle in q
+q=q.replace(needle,rep,1)
+needle='''        commands_printf(phandle,
+          "BMSPHY GPIOB_CRH=%08lX IDR=%08lX ODR=%08lX AFIO_MAPR=%08lX RCC_APB1ENR=%08lX RCC_APB2ENR=%08lX RCC_AHBENR=%08lX",'''
+rep='''        commands_printf(phandle,
+          "BMSPHY TXWIN_low=%lu TXWIN_edges=%lu RXWIN_low=%lu RXWIN_edges=%lu",
+          (unsigned long)g30_bmsphy_txwin_low(),(unsigned long)g30_bmsphy_txwin_edges(),
+          (unsigned long)g30_bmsphy_rxwin_low(),(unsigned long)g30_bmsphy_rxwin_edges());
+        commands_printf(phandle,
+          "BMSPHY GPIOB_CRH=%08lX IDR=%08lX ODR=%08lX AFIO_MAPR=%08lX RCC_APB1ENR=%08lX RCC_APB2ENR=%08lX RCC_AHBENR=%08lX",'''
+assert needle in q
+q=q.replace(needle,rep,1)
+p.write_text(q)
