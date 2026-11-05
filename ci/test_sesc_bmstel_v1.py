@@ -9,7 +9,9 @@ vs=(root/"common_files/src/VescToSTM.c").read_text()
 mc=(root/"common_files/src/mc_tasks.c").read_text()
 
 assert 'SESC-DRV126-POWERCORE6500-BMSTEL-V1' in de
-assert 'static uint8_t g30_bms_rx_dma[G30_BMS_RX_N];' in led
+assert 'static g30_bms_state_t *g30_bms_state;' in led
+assert 'pvPortMalloc(sizeof(*g30_bms_state))' in led
+assert 'memset(g30_bms_state,0,sizeof(*g30_bms_state));' in led
 assert '#define G30_BMS_RX_N 24u' in led
 assert '0x5a,0xa5,0x01,0x20,0x22,0x01,0x30,0x0c,0x7f,0xff' in led
 assert 'HAL_UART_Transmit(&huart3' in led
