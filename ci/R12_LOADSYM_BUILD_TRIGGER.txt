@@ -1,0 +1,1 @@
+Trigger R1.2 load/symmetry CI after safety-gate update.
