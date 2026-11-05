@@ -1,0 +1,630 @@
+name: SESC DRV126 PowerCore6500 BMSPROBE V1 child build
+on:
+  push:
+    branches:
+      - sesc-powercore6500-bmsprobe-v1-20261105
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Restore reproducible R3 build payload
+        shell: bash
+        run: |
+          set -euo pipefail
+          base64 -d ci/r3_payload.tgz.b64 > /tmp/r3_payload.tgz
+          mkdir -p /tmp/r3payload
+          tar -xzf /tmp/r3_payload.tgz -C /tmp/r3payload
+          cp /tmp/r3payload/G30D_R2_changes.patch .
+          cp /tmp/r3payload/R3_FROM_R2.patch .
+          mkdir -p tools
+          cp /tmp/r3payload/build_native.py tools/
+          cp /tmp/r3payload/validate_image.py tools/
+
+      - name: Reconstruct exact R3C base
+        shell: bash
+        run: |
+          set -euo pipefail
+          git clone --no-tags https://github.com/Koxx3/SmartESC_STM32_v2.git SOURCE_KOXX3
+          git -C SOURCE_KOXX3 checkout --detach 272bdb99d75484dcc377e1cf3e6a20e53a6fd8de
+          git -C SOURCE_KOXX3 apply ../G30D_R2_changes.patch
+          patch -d SOURCE_KOXX3 -p2 < R3_FROM_R2.patch
+          patch -d SOURCE_KOXX3 -p2 < ci/R3A_FIX_FROM_R3.patch
+          patch -d SOURCE_KOXX3 -p1 < ci/R3B_TIMING_FIX_FROM_R3A.patch
+          patch -d SOURCE_KOXX3 -p1 < ci/R3C_FROM_R3B.patch
+          grep -q 'G30D-FO76-SHADOW-R3C' SOURCE_KOXX3/common_files/src/defines.h
+          sed -i 's/FO76_SHADOW_R3/FO76_SHADOW_R3C/g' tools/build_native.py tools/validate_image.py
+          sed -i 's/G30D-FO76-SHADOW-R3/G30D-FO76-SHADOW-R3C/g' tools/validate_image.py
+
+      - name: Overlay exact R3G source files
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat ci/r3g_override.part00 ci/r3g_override.part01 ci/r3g_override.part02 ci/r3g_override.part03 > /tmp/r3g_override.b64
+          base64 -d /tmp/r3g_override.b64 > /tmp/R3G_OVERRIDE_FILES.tgz
+          echo '42d3cfd176a95a6ad475d614fbeeb278815b43133a27682b6cf38d9e1dbfcb21  /tmp/R3G_OVERRIDE_FILES.tgz' | sha256sum -c -
+          tar -xzf /tmp/R3G_OVERRIDE_FILES.tgz -C SOURCE_KOXX3
+          grep -q 'G30D-FO76-TAKEOVER-R3G' SOURCE_KOXX3/common_files/src/defines.h
+          grep -q 'G30_FO76_LAMBDA_PROVEN_UWB 24200u' SOURCE_KOXX3/common_files/src/g30_fo76_shadow.c
+          grep -q 'G30_R3G_TAKEOVER_MIN_DPP 64' SOURCE_KOXX3/common_files/src/g30_fo76_shadow.c
+          grep -q 'G30_R3G_FALLBACK_MIN_DPP 48' SOURCE_KOXX3/common_files/src/g30_fo76_shadow.c
+          grep -q 'G30_R3G_ENTRY_ERR_COUNTS 3641u' SOURCE_KOXX3/common_files/src/g30_fo76_shadow.c
+          grep -q 'G30_R3G_FALLBACK_ERR_COUNTS 5461u' SOURCE_KOXX3/common_files/src/g30_fo76_shadow.c
+          grep -q 'g30_fo76_control_angle(hElAngle' SOURCE_KOXX3/common_files/src/mc_tasks.c
+          grep -q 'g30_fo76_request_takeover(0u)' SOURCE_KOXX3/common_files/src/VescToSTM.c
+          grep -q 'g30_takeover' SOURCE_KOXX3/common_files/src/terminal.c
+          sed -i 's/FO76_SHADOW_R3C/FO76_TAKEOVER_R3G/g' tools/build_native.py tools/validate_image.py
+          sed -i 's/G30D-FO76-SHADOW-R3C/G30D-FO76-TAKEOVER-R3G/g' tools/validate_image.py
+          sed -i 's/compact FO76 shadow observer; no angle takeover/compact FO76 observer with explicit guarded Hall-to-observer takeover/g' tools/validate_image.py
+          sed -i "s/'observer_mode':'shadow_only'/'observer_mode':'guarded_hall_to_observer_takeover'/g" tools/validate_image.py
+          patch -d SOURCE_KOXX3 -p1 --dry-run < ci/R3G2_SPEED_SOURCE_FIX.patch
+          patch -d SOURCE_KOXX3 -p1 < ci/R3G2_SPEED_SOURCE_FIX.patch
+          grep -q 'G30D-FO76-TAKEOVER-R3G2' SOURCE_KOXX3/common_files/src/defines.h
+          grep -q 'hElSpeedDpp = SPD_GetElSpeedDpp(speedHandle);' SOURCE_KOXX3/common_files/src/mc_tasks.c
+          sed -i 's/FO76_TAKEOVER_R3G/FO76_TAKEOVER_R3G2/g' tools/build_native.py tools/validate_image.py
+          sed -i 's/G30D-FO76-TAKEOVER-R3G/G30D-FO76-TAKEOVER-R3G2/g' tools/validate_image.py
+          python3 ci/apply_r3h.py
+          grep -q 'G30D-FO76-OBSERVER-ONLY-R3H' SOURCE_KOXX3/common_files/src/defines.h
+          grep -q 'G30_R3H_OBSERVER_COAST_MIN_DPP 64' SOURCE_KOXX3/common_files/src/g30_fo76_shadow.c
+          grep -q 'hall_speed_dpp<=-(int16_t)G30_R3G_TAKEOVER_MIN_DPP' SOURCE_KOXX3/common_files/src/g30_fo76_shadow.c
+          grep -q 'g30_fo76_coast_requested()' SOURCE_KOXX3/common_files/src/mc_tasks.c
+          sed -i 's/FO76_TAKEOVER_R3G2/FO76_OBSERVER_ONLY_R3H/g' tools/build_native.py tools/validate_image.py
+          sed -i 's/G30D-FO76-TAKEOVER-R3G2/G30D-FO76-OBSERVER-ONLY-R3H/g' tools/validate_image.py
+          python3 ci/apply_r3i.py
+          grep -q 'G30D-FO76-PUSHSTART-R3I' SOURCE_KOXX3/common_files/src/defines.h
+          grep -q 'PB1 = BEMF_C / ADC9' SOURCE_KOXX3/g30p/Src/stm32f1xx_hal_msp.c
+          grep -q 'g30_r3i_block_pwm_start()' SOURCE_KOXX3/common_files/src/VescToSTM.c
+          grep -q 'g30_fo76_sensorless_seed' SOURCE_KOXX3/common_files/src/g30_fo76_shadow.c
+          grep -q 'g30_pushstart' SOURCE_KOXX3/common_files/src/terminal.c
+          sed -i 's/FO76_OBSERVER_ONLY_R3H/FO76_PUSHSTART_R3I/g' tools/build_native.py tools/validate_image.py
+          sed -i 's/G30D-FO76-OBSERVER-ONLY-R3H/G30D-FO76-PUSHSTART-R3I/g' tools/validate_image.py
+          python3 ci/apply_r3i2.py
+          grep -q 'G30D-FO76-PUSHSTART-R3I2' SOURCE_KOXX3/common_files/src/defines.h
+          grep -q 'R3I2 ARM: forced MCSDK STOP + PWM OFF' SOURCE_KOXX3/common_files/src/terminal.c
+          grep -q 'g30_r3i_start_pending() && StateM1==IDLE' SOURCE_KOXX3/common_files/src/mc_tasks.c
+          grep -q 'VescToSTM_prepare_sensorless_start' SOURCE_KOXX3/common_files/src/mc_tasks.c
+          sed -i 's/FO76_PUSHSTART_R3I/FO76_PUSHSTART_R3I2/g' tools/build_native.py tools/validate_image.py
+          sed -i 's/G30D-FO76-PUSHSTART-R3I/G30D-FO76-PUSHSTART-R3I2/g' tools/validate_image.py
+          python3 -m py_compile ci/g30_r3i2_pushstart_test.py
+          python3 ci/apply_r3i3.py
+          grep -q 'G30D-FO76-PUSHSTART-R3I3' SOURCE_KOXX3/common_files/src/defines.h
+          grep -q '#define RCM_MAX_CONV  5' SOURCE_KOXX3/common_files/src/regular_conversion_manager.c
+          grep -q 'adc_ready=%u handles=%u,%u,%u' SOURCE_KOXX3/common_files/src/terminal.c
+          sed -i 's/FO76_PUSHSTART_R3I2/FO76_PUSHSTART_R3I3/g' tools/build_native.py tools/validate_image.py
+          sed -i 's/G30D-FO76-PUSHSTART-R3I2/G30D-FO76-PUSHSTART-R3I3/g' tools/validate_image.py
+          python3 -m py_compile ci/g30_r3i3_pushstart_test.py
+          python3 ci/apply_r3i5.py
+          grep -q 'G30D-FO76-PUSHSTART-R3I5' SOURCE_KOXX3/common_files/src/defines.h
+          grep -q 'R3I5 ARM: keep MCSDK RUN, force PWM OFF for coast' SOURCE_KOXX3/common_files/src/terminal.c
+          grep -q 'g30_r3i_start_pending() && StateM1==RUN' SOURCE_KOXX3/common_files/src/mc_tasks.c
+          sed -i 's/FO76_PUSHSTART_R3I3/FO76_PUSHSTART_R3I5/g' tools/build_native.py tools/validate_image.py
+          sed -i 's/G30D-FO76-PUSHSTART-R3I3/G30D-FO76-PUSHSTART-R3I5/g' tools/validate_image.py
+          python3 -m py_compile ci/g30_r3i5_pushstart_test.py
+          python3 ci/apply_r3i6.py
+          grep -q 'G30D-FO76-PUSHSTART-R3I6' SOURCE_KOXX3/common_files/src/defines.h
+          grep -q 'G30_R3I6_CATCH_GOOD_1K 20u' SOURCE_KOXX3/common_files/src/g30_fo76_shadow.c
+          grep -q 'sensorless_catch_state=1u' SOURCE_KOXX3/common_files/src/g30_fo76_shadow.c
+          grep -q 'catch state=%u phase=%u err=%d ticks=%u' SOURCE_KOXX3/common_files/src/terminal.c
+          sed -i 's/FO76_PUSHSTART_R3I5/FO76_PUSHSTART_R3I6/g' tools/build_native.py tools/validate_image.py
+          sed -i 's/G30D-FO76-PUSHSTART-R3I5/G30D-FO76-PUSHSTART-R3I6/g' tools/validate_image.py
+          python3 -m py_compile ci/g30_r3i6_pushstart_test.py
+          python3 ci/apply_r3i7.py
+          grep -q 'G30D-FO76-PUSHSTART-R3I7' SOURCE_KOXX3/common_files/src/defines.h
+          grep -q 'sensorless_catch_step_q4=(int16_t)((int32_t)sensorless_catch_step_q4 + diff/4);' SOURCE_KOXX3/common_files/src/g30_fo76_shadow.c
+          grep -q 'if(!takeover_coast_request) takeover_latch_coast' SOURCE_KOXX3/common_files/src/g30_fo76_shadow.c
+          grep -q 'R3I7 ARM: PWM blocked; IDLE auto-restarts at zero' SOURCE_KOXX3/common_files/src/terminal.c
+          grep -q 'catch state=%u phase=%u err=%d ticks=%u step_q4=%d' SOURCE_KOXX3/common_files/src/terminal.c
+          sed -i 's/FO76_PUSHSTART_R3I6/FO76_PUSHSTART_R3I7/g' tools/build_native.py tools/validate_image.py
+          sed -i 's/G30D-FO76-PUSHSTART-R3I6/G30D-FO76-PUSHSTART-R3I7/g' tools/validate_image.py
+          python3 -m py_compile ci/g30_r3i7_pushstart_test.py
+          python3 ci/apply_r3i8.py
+          grep -q 'G30D-FO76-PUSHSTART-R3I8' SOURCE_KOXX3/common_files/src/defines.h
+          grep -q 'vbus_now=%ld adc_vbus=%u' SOURCE_KOXX3/common_files/src/terminal.c
+          sed -i 's/FO76_PUSHSTART_R3I7/FO76_PUSHSTART_R3I8/g' tools/build_native.py tools/validate_image.py
+          sed -i 's/G30D-FO76-PUSHSTART-R3I7/G30D-FO76-PUSHSTART-R3I8/g' tools/validate_image.py
+          python3 -m py_compile ci/g30_r3i8_pushstart_test.py
+          python3 ci/apply_r3i9.py
+          grep -q 'G30D-FO76-PUSHSTART-R3I9' SOURCE_KOXX3/common_files/src/defines.h
+          grep -q '(uint16_t)HALL_M1.MeasuredElAngle' SOURCE_KOXX3/common_files/src/mc_tasks.c
+          grep -q 'last_cal_hall_valid || hall_angle!=last_cal_hall' SOURCE_KOXX3/common_files/src/g30_r3i_pushstart.c
+          sed -i 's/FO76_PUSHSTART_R3I8/FO76_PUSHSTART_R3I9/g' tools/build_native.py tools/validate_image.py
+          sed -i 's/G30D-FO76-PUSHSTART-R3I8/G30D-FO76-PUSHSTART-R3I9/g' tools/validate_image.py
+          python3 -m py_compile ci/g30_r3i9_pushstart_test.py
+          patch -d SOURCE_KOXX3 -p1 --dry-run < ci/R3I10_FROM_R3I9.patch
+          patch -d SOURCE_KOXX3 -p1 < ci/R3I10_FROM_R3I9.patch
+          grep -q 'G30D-FO76-PUSHSTART-R3I10' SOURCE_KOXX3/common_files/src/defines.h
+          patch -d SOURCE_KOXX3 -p1 --dry-run < ci/R3I11_FROM_R3I10.patch
+          patch -d SOURCE_KOXX3 -p1 < ci/R3I11_FROM_R3I10.patch
+          grep -q 'G30D-FO76-PUSHSTART-R3I11' SOURCE_KOXX3/common_files/src/defines.h
+          patch -d SOURCE_KOXX3 -p1 --dry-run < ci/R3I12_FROM_R3I11.patch
+          patch -d SOURCE_KOXX3 -p1 < ci/R3I12_FROM_R3I11.patch
+          sed -i 's/G30D-FO76-PUSHSTART-R3I11/G30D-FO76-PUSHSTART-R3I12/g' SOURCE_KOXX3/common_files/src/defines.h
+          sed -i 's/FO76_R3I11/FO76_R3I12/g; s/R3I11 preload/R3I12 preload/g; s/R3I11 ARM:/R3I12 ARM:/g' SOURCE_KOXX3/common_files/src/terminal.c
+          grep -q 'G30D-FO76-PUSHSTART-R3I12' SOURCE_KOXX3/common_files/src/defines.h
+          grep -q 'sensorless_catch_phase_q4=((int32_t)(uint16_t)obs_pred)<<4;' SOURCE_KOXX3/common_files/src/g30_fo76_shadow.c
+          grep -q 'catch_phase=obs_pred;' SOURCE_KOXX3/common_files/src/g30_fo76_shadow.c
+          grep -q 'sensorless_catch_error=0;' SOURCE_KOXX3/common_files/src/g30_fo76_shadow.c
+          patch -d SOURCE_KOXX3 -p1 --dry-run < ci/R3I13_FROM_R3I12.patch
+          patch -d SOURCE_KOXX3 -p1 < ci/R3I13_FROM_R3I12.patch
+          grep -q 'G30D-FO76-PUSHSTART-R3I13' SOURCE_KOXX3/common_files/src/defines.h
+          grep -q 'erpm = -erpm;' SOURCE_KOXX3/common_files/src/VescToSTM.c
+          grep -q 'VescToSTM_set_brake(0);' SOURCE_KOXX3/common_files/src/VescToSTM.c
+          grep -q 'R3I13 drive vesc_erpm=' SOURCE_KOXX3/common_files/src/terminal.c
+          patch -d SOURCE_KOXX3 -p1 --dry-run < ci/R3I14_FROM_R3I13.patch
+          patch -d SOURCE_KOXX3 -p1 < ci/R3I14_FROM_R3I13.patch
+          sed -i 's/G30D-FO76-PUSHSTART-R3I13/G30D-FO76-PUSHSTART-R3I14/g' SOURCE_KOXX3/common_files/src/defines.h
+          sed -i 's/FO76_R3I13/FO76_R3I14/g; s/R3I13 preload/R3I14 preload/g; s/R3I13 drive/R3I14 drive/g; s/R3I13 ARM:/R3I14 ARM:/g' SOURCE_KOXX3/common_files/src/terminal.c
+          grep -q 'G30D-FO76-PUSHSTART-R3I14' SOURCE_KOXX3/common_files/src/defines.h
+          grep -q '(-(int32_t)odpp)' SOURCE_KOXX3/common_files/src/mc_tasks.c
+          ! grep -q 'erpm = -erpm;' SOURCE_KOXX3/common_files/src/VescToSTM.c
+          patch -d SOURCE_KOXX3 -p1 --dry-run < ci/R3I15_FROM_R3I14.patch
+          patch -d SOURCE_KOXX3 -p1 < ci/R3I15_FROM_R3I14.patch
+          grep -q 'G30D-FO76-PUSHSTART-R3I15' SOURCE_KOXX3/common_files/src/defines.h
+          grep -q 'VescToSTM_g30_pushstart_command(raw != 0)' SOURCE_KOXX3/common_files/src/VescCommand.c
+          grep -q 'if(ps.mode!=0u) return;' SOURCE_KOXX3/common_files/src/VescToSTM.c
+          patch -d SOURCE_KOXX3 -p0 --dry-run < ci/R3I15HF1_FROM_R3I15.patch
+          patch -d SOURCE_KOXX3 -p0 < ci/R3I15HF1_FROM_R3I15.patch
+          grep -q 'G30D-FO76-PUSHSTART-R3I15HF1' SOURCE_KOXX3/common_files/src/defines.h
+          grep -q 'R3I_FIXED_BEMF_TO_CONTROL_OFFSET 0' SOURCE_KOXX3/common_files/src/g30_r3i_pushstart.c
+          grep -q '(void)hall_angle;' SOURCE_KOXX3/common_files/src/g30_r3i_pushstart.c
+          grep -q 'r3i_diag.mode==1u' SOURCE_KOXX3/common_files/src/mc_tasks.c
+          patch -d SOURCE_KOXX3 -p1 --dry-run < ci/R3I15HF2_FROM_R3I15HF1.patch
+          patch -d SOURCE_KOXX3 -p1 < ci/R3I15HF2_FROM_R3I15HF1.patch
+          grep -q 'G30D-FO76-PUSHSTART-R3I15HF2' SOURCE_KOXX3/common_files/src/defines.h
+          grep -q 'if(ps.mode==1u)' SOURCE_KOXX3/common_files/src/VescToSTM.c
+          grep -q 'Only after MOE/gate outputs are off' SOURCE_KOXX3/common_files/src/VescToSTM.c
+          grep -q 'if(raw == 0){ VescToSTM_timeout_reset(); break; }' SOURCE_KOXX3/common_files/src/VescCommand.c
+          patch -d SOURCE_KOXX3 -p1 --dry-run < ci/R3I15HF3_FROM_R3I15HF2.patch
+          patch -d SOURCE_KOXX3 -p1 < ci/R3I15HF3_FROM_R3I15HF2.patch
+          grep -q 'G30D-FO76-PUSHSTART-R3I15HF3' SOURCE_KOXX3/common_files/src/defines.h
+          grep -q 'drive_request && d.forward_edges' SOURCE_KOXX3/common_files/src/g30_r3i_pushstart.c
+          grep -q 'g30_r3i_motion_recent()' SOURCE_KOXX3/common_files/src/VescToSTM.c
+          patch -d SOURCE_KOXX3 -p0 --dry-run < ci/R3I15HF4_FROM_R3I15HF3.patch
+          patch -d SOURCE_KOXX3 -p0 < ci/R3I15HF4_FROM_R3I15HF3.patch
+          grep -q 'G30D-FO76-PUSHSTART-R3I15HF4' SOURCE_KOXX3/common_files/src/defines.h
+          grep -q 'if(!g30_fo76_coast_requested()) return;' SOURCE_KOXX3/common_files/src/VescToSTM.c
+          grep -q 'if(STM_GetState(&STM\[M1\])==IDLE)' SOURCE_KOXX3/common_files/src/VescToSTM.c
+
+      - name: Add telemetry-only HF4 dashboard link and run captured-frame regressions
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 ci/apply_hf4_dash_link_r1.py SOURCE_KOXX3
+          cc -std=c11 -Wall -Wextra -Werror -fsanitize=address,undefined -fno-omit-frame-pointer -Ici/hf4_dash_link_r1 ci/hf4_dash_link_r1/test_hf4_dash_proto.c -o /tmp/hf4_dash_proto_test
+          ASAN_OPTIONS=detect_leaks=0 /tmp/hf4_dash_proto_test | tee OUTPUT/DASH_R1_HOST_TESTS.txt
+
+      - name: Apply R3I22 base and R3I23 startup torque ramp
+        shell: bash
+        run: |
+          set -euo pipefail
+          patch -d SOURCE_KOXX3 -p1 --dry-run < ci/HF4_DASH_R2_FROM_R1.patch
+          patch -d SOURCE_KOXX3 -p1 < ci/HF4_DASH_R2_FROM_R1.patch
+          patch -d SOURCE_KOXX3 -p1 --dry-run < ci/R2_TO_R2P1_POWER_FIX.patch
+          patch -d SOURCE_KOXX3 -p1 < ci/R2_TO_R2P1_POWER_FIX.patch
+          patch -d SOURCE_KOXX3 -p1 --dry-run < ci/R2P1_BUILD_FIX.patch
+          patch -d SOURCE_KOXX3 -p1 < ci/R2P1_BUILD_FIX.patch
+          patch -d SOURCE_KOXX3 -p1 --dry-run < ci/R3I21_DASH_BUTTON_FROM_R2P1.patch
+          patch -d SOURCE_KOXX3 -p1 < ci/R3I21_DASH_BUTTON_FROM_R2P1.patch
+          patch -d SOURCE_KOXX3 -p1 --dry-run < ci/R3I22_GAS_BRAKE_FROM_R3I21.patch
+          patch -d SOURCE_KOXX3 -p1 < ci/R3I22_GAS_BRAKE_FROM_R3I21.patch
+          patch -d SOURCE_KOXX3 -p1 --dry-run < ci/R3I23_STARTUP_TORQUE_RAMP_FROM_R3I22.patch
+          patch -d SOURCE_KOXX3 -p1 < ci/R3I23_STARTUP_TORQUE_RAMP_FROM_R3I22.patch
+          grep -q 'G30D-R3I23-STARTUP-TORQUE-RAMP' SOURCE_KOXX3/common_files/src/defines.h
+          patch -d SOURCE_KOXX3 -p1 --dry-run < ci/R3I23_HS1_DUALMODE_FROM_R3I23.patch
+          patch -d SOURCE_KOXX3 -p1 < ci/R3I23_HS1_DUALMODE_FROM_R3I23.patch
+          grep -q 'G30D-R3I23-HS1-DUALMODE' SOURCE_KOXX3/common_files/src/defines.h
+          patch -d SOURCE_KOXX3 -p1 --dry-run < ci/R3I23_HS3_DASH_VBUS_GATE_FROM_HS1.patch
+          patch -d SOURCE_KOXX3 -p1 < ci/R3I23_HS3_DASH_VBUS_GATE_FROM_HS1.patch
+          grep -q 'G30D-R3I23-HS3-DASH-VBUS-GATE-FIX' SOURCE_KOXX3/common_files/src/defines.h
+          patch -d SOURCE_KOXX3 -p1 --dry-run < ci/HS3_HF4SL1_SENSORLESS_TRANSPLANT.patch
+          patch -d SOURCE_KOXX3 -p1 < ci/HS3_HF4SL1_SENSORLESS_TRANSPLANT.patch
+          grep -q 'G30D-R3I23-HS3-HF4SL1' SOURCE_KOXX3/common_files/src/defines.h
+          echo 'f4decca68485a0a0e76973b0da582e03c6ce0727617fc8400a6d1803c124e005  SOURCE_KOXX3/common_files/src/g30_fo76_shadow.c' | sha256sum -c -
+          echo 'd4c7d026b42dc8165becb6a7665e33d3169d68fb254844cc6214b0975f91966e  SOURCE_KOXX3/common_files/src/g30_fo76_shadow.h' | sha256sum -c -
+          echo '7e73fe8e08a28ce9c500e2fe31bc368d6ddbded3495349949cb85d54a4730c5e  SOURCE_KOXX3/common_files/src/g30_r3i_pushstart.c' | sha256sum -c -
+          echo 'a660d0b1d4695492d8a356fccb65a0d0f28d751e589ad68a8ede06f8d72a6893  SOURCE_KOXX3/common_files/src/g30_r3i_pushstart.h' | sha256sum -c -
+          python3 ci/apply_sesc_hybrid_devv01.py
+          grep -q 'SESC-HYBRID-DEVV0.1' SOURCE_KOXX3/common_files/src/defines.h
+          python3 ci/apply_sesc_hybrid_devv02.py
+          grep -q 'SESC-HYBRID-DEVV0.2' SOURCE_KOXX3/common_files/src/defines.h
+          python3 ci/apply_sesc_hall_devv01.py
+          grep -q 'SESC-HALL-DEVV0.1' SOURCE_KOXX3/common_files/src/defines.h
+          echo 'c235c521cc1684278bc2e2f250c0ef707a8498b53ef682b1f8dda49fe7db8406  SOURCE_KOXX3/common_files/src/mc_tasks.c' | sha256sum -c -
+          echo '7a6795f6d2b8f059506308104abfa850927d73dd071abfe2beddbd3c9b278ed0  SOURCE_KOXX3/common_files/src/VescToSTM.c' | sha256sum -c -
+          echo 'fc545388fd55ad75f81f17db300175881da37d0336648d34df72ad008c503a88  SOURCE_KOXX3/common_files/src/mc_config.c' | sha256sum -c -
+          echo 'a8a547254b93ed24c18eab11226fdae3dbdd6bfb70af15fbac4a88f12438d3f0  SOURCE_KOXX3/common_files/src/conf_general.c' | sha256sum -c -
+          echo 'e343872d1495fed7434f0cfbd8931cd9b56d3b092b59428d6b93185b1c8043a7  SOURCE_KOXX3/common_files/inc/drive_parameters.h' | sha256sum -c -
+          echo 'cbd0c42752f0d908ee5b69db57383432bb9ec4677b2388030f6c5997ca34d273  SOURCE_KOXX3/common_files/inc/parameters_conversion.h' | sha256sum -c -
+          echo '963a9f791c8a048f1089ccd04053ca923dcb7c4ea61311f31ebbf66d7af9a1d7  SOURCE_KOXX3/common_files/inc/product.h' | sha256sum -c -
+          echo 'bebc0e2f8e5bf29158fbad1318507d198966c38f4aa16466cfba09044851ba50  SOURCE_KOXX3/common_files/MotorControl/MCSDK/MCLib/Any/Src/pwm_curr_fdbk.c' | sha256sum -c -
+          echo '8957423d038e882c7f635e848c1efed9cae69069033bc6716babd5722a5612f1  SOURCE_KOXX3/common_files/MotorControl/MCSDK/MCLib/F1xx/Src/r3_2_f1xx_pwm_curr_fdbk.c' | sha256sum -c -
+          python3 ci/apply_sesc_motorpath_audit_v01.py
+          python3 ci/apply_sesc_motorpath_audit_v02.py
+          grep -q 'SESC-MOTORPATH-AUDIT-V0.2' SOURCE_KOXX3/common_files/src/defines.h
+          python3 ci/test_sesc_motorpath_v02.py | tee OUTPUT/MOTORPATH_V02_HOST_TESTS.txt
+          python3 ci/apply_sesc_motorpath_audit_v03.py
+          grep -q 'SESC-MOTORPATH-AUDIT-V0.3' SOURCE_KOXX3/common_files/src/defines.h
+          python3 ci/test_sesc_motorpath_v03.py | tee OUTPUT/MOTORPATH_V03_HOST_TESTS.txt
+          python3 ci/apply_sesc_drv126_shadow_r0.py
+          grep -q 'SESC-DRV126-SHADOW-R0' SOURCE_KOXX3/common_files/src/defines.h
+          python3 ci/test_sesc_drv126_shadow_r0.py | tee OUTPUT/DRV126_SHADOW_R0_HOST_TESTS.txt
+          python3 ci/apply_sesc_drv126_shadow_r01.py
+          grep -q 'SESC-DRV126-SHADOW-R0.1' SOURCE_KOXX3/common_files/src/defines.h
+          python3 ci/test_sesc_drv126_shadow_r01.py | tee OUTPUT/DRV126_SHADOW_R01_HOST_TESTS.txt
+          python3 ci/apply_sesc_drv126_shadow_r02.py
+          grep -q 'SESC-DRV126-SHADOW-R0.2' SOURCE_KOXX3/common_files/src/defines.h
+          python3 ci/test_sesc_drv126_shadow_r02.py | tee OUTPUT/DRV126_SHADOW_R02_HOST_TESTS.txt
+          grep -q 'DRV126 Shadow R0.2' SOURCE_KOXX3/common_files/src/mc_tasks.c
+          grep -q 'mode=STOCK_DOMAIN_ATOMIC owner=SESC_HALL writes=0' SOURCE_KOXX3/common_files/src/terminal.c
+          grep -q 'scale=51575/16384 snapshot=atomic' SOURCE_KOXX3/common_files/src/terminal.c
+          grep -q '__get_PRIMASK' SOURCE_KOXX3/common_files/src/mc_tasks.c
+          grep -q '__set_PRIMASK(pm)' SOURCE_KOXX3/common_files/src/mc_tasks.c
+          grep -q 'SESC-DRV126-SHADOW-R0.2' SOURCE_KOXX3/common_files/src/defines.h
+          python3 ci/apply_sesc_drv126_shadow_r03.py
+          grep -q 'SESC-DRV126-SHADOW-R0.3' SOURCE_KOXX3/common_files/src/defines.h
+          python3 ci/test_sesc_drv126_shadow_r03.py | tee OUTPUT/DRV126_SHADOW_R03_HOST_TESTS.txt
+          grep -q 'DRV126 Shadow R0.3' SOURCE_KOXX3/common_files/src/mc_tasks.c
+          grep -q 'mode=FULL_STOCK_SHADOW owner=SESC_HALL writes=0' SOURCE_KOXX3/common_files/src/terminal.c
+          grep -q 'g30_drv126_stock_invpark' SOURCE_KOXX3/common_files/src/mc_tasks.c
+          grep -q 'g30_drv126_stock_svpwm' SOURCE_KOXX3/common_files/src/mc_tasks.c
+          grep -q 'period=4000, active-span limit=3920' SOURCE_KOXX3/common_files/src/mc_tasks.c
+          grep -q 'orderMis=%u ccrErrMax=%u' SOURCE_KOXX3/common_files/src/terminal.c
+          grep -q 'SESC-DRV126-SHADOW-R0.3' SOURCE_KOXX3/common_files/src/defines.h
+          python3 ci/apply_sesc_drv126_r1_gated.py
+          grep -q 'SESC-DRV126-MOTORCORE-R1-GATED' SOURCE_KOXX3/common_files/src/defines.h
+          python3 ci/test_sesc_drv126_r1_gated.py | tee OUTPUT/DRV126_R1_GATED_HOST_TESTS.txt
+          grep -q 'mode=GATED_4K owner=%s' SOURCE_KOXX3/common_files/src/terminal.c
+          grep -q '#define G30_DRV126_R1_MAX_QREF_U 1500' SOURCE_KOXX3/common_files/src/mc_tasks.c
+          grep -q '#define G30_DRV126_R1_RAIL_MIN_RAW 80u' SOURCE_KOXX3/common_files/src/mc_tasks.c
+          grep -q 'g30_drv126_r1_step(pwmcHandle\[M1\]' SOURCE_KOXX3/common_files/src/mc_tasks.c
+          grep -q 'pHdl->pFctSetADCSampPointSectX(pHdl)' SOURCE_KOXX3/common_files/src/mc_tasks.c
+          grep -q 'if(g30_drv126_r1_trip_active()) return;' SOURCE_KOXX3/common_files/src/VescToSTM.c
+          ! grep -q 'g30_drv126_shadow_tick_1k();' SOURCE_KOXX3/common_files/src/mc_tasks.c
+          python3 ci/apply_sesc_drv126_r11_timing.py
+          grep -q 'SESC-DRV126-MOTORCORE-R1.1-TIMING' SOURCE_KOXX3/common_files/src/defines.h
+          python3 ci/test_sesc_drv126_r11_timing.py | tee OUTPUT/DRV126_R11_TIMING_HOST_TESTS.txt
+          grep -q 'DRV126R11 mode=GATED_4K_TIMING' SOURCE_KOXX3/common_files/src/terminal.c
+          grep -q 'DRV126R11 timing cycles=%u max=%u budget=4000' SOURCE_KOXX3/common_files/src/terminal.c
+          grep -q 'return pHdl->pFctSetADCSampPointSectX(pHdl);' SOURCE_KOXX3/common_files/src/mc_tasks.c
+          grep -q 'g30_drv126_r11_cycles_max' SOURCE_KOXX3/common_files/src/mc_tasks.c
+          python3 ci/apply_sesc_drv126_r12_loadsym.py
+          grep -q 'SESC-DRV126-MOTORCORE-R1.2-LOADSYM' SOURCE_KOXX3/common_files/src/defines.h
+          python3 ci/test_sesc_drv126_r12_loadsym.py | tee OUTPUT/DRV126_R12_LOADSYM_HOST_TESTS.txt
+          grep -q '#define G30_DRV126_R1_MAX_QREF_U 3800' SOURCE_KOXX3/common_files/src/mc_tasks.c
+          grep -q '#define G30_DRV126_R1_MAX_PHASE_U 5000' SOURCE_KOXX3/common_files/src/mc_tasks.c
+          grep -q 'DRV126R12 mode=LOADSYM_4K' SOURCE_KOXX3/common_files/src/terminal.c
+          grep -q 'DRV126R12 sync hallRaw=%u elAngle=%d' SOURCE_KOXX3/common_files/src/terminal.c
+          python3 ci/apply_sesc_drv126_final_v1.py
+          grep -q 'SESC-DRV126-MOTORCORE-FINAL-V1' SOURCE_KOXX3/common_files/src/defines.h
+          python3 ci/test_sesc_drv126_final_v1.py | tee OUTPUT/DRV126_FINAL_V1_OFFLINE_SUITE.txt
+          python3 ci/apply_sesc_drv126_powercore6500_final_v1.py
+          grep -q 'SESC-DRV126-POWERCORE6500-FINAL-V1' SOURCE_KOXX3/common_files/src/defines.h
+          python3 ci/test_sesc_drv126_powercore6500_final_v1.py | tee OUTPUT/DRV126_POWERCORE6500_FINAL_V1_OFFLINE_SUITE.txt
+          python3 ci/apply_sesc_speedtel_v1.py
+          grep -q 'SESC-DRV126-POWERCORE6500-SPEEDTEL-V1' SOURCE_KOXX3/common_files/src/defines.h
+          python3 ci/test_sesc_speedtel_v1.py | tee OUTPUT/SPEEDTEL_V1_STATIC_TESTS.txt
+          python3 ci/apply_sesc_bmstel_v2.py
+          grep -q 'SESC-DRV126-POWERCORE6500-BMSTEL-V2' SOURCE_KOXX3/common_files/src/defines.h
+          python3 ci/test_sesc_bmstel_v2.py | tee OUTPUT/BMSTEL_V2_STATIC_TESTS.txt
+          python3 ci/apply_sesc_bmsprobe_v1.py
+          grep -q 'SESC-DRV126-POWERCORE6500-BMSPROBE-V1' SOURCE_KOXX3/common_files/src/defines.h
+          python3 ci/test_sesc_bmsprobe_v1.py | tee OUTPUT/BMSPROBE_V1_STATIC_TESTS.txt
+          grep -q '#define G30_DRV126_CURRENT_RAISING_COEFF_MA 6500' SOURCE_KOXX3/common_files/src/mc_tasks.c
+          grep -q '#define G30_DRV126_CURRENT_RAISING_STEP_MC 2435' SOURCE_KOXX3/common_files/src/mc_tasks.c
+          grep -q 'g30_drv126_final_power_step' SOURCE_KOXX3/common_files/src/mc_tasks.c
+          grep -q 'g30_drv126_final_preload(initial.vq_counts,initial.vd_counts);' SOURCE_KOXX3/common_files/src/VescToSTM.c
+          grep -q 'g30_drv126_final_power_step' SOURCE_KOXX3/common_files/src/mc_tasks.c
+          grep -q 'FW_DataProcess(pFW\[M1\],Vqd,Iqd);' SOURCE_KOXX3/common_files/src/mc_tasks.c
+          ! grep -q 'g30_drv126_r1_command' SOURCE_KOXX3/common_files/src/mc_tasks.c
+          ! grep -q 'g30_drv126_r1' SOURCE_KOXX3/common_files/src/terminal.c
+          grep -q 'strcmp(argv\[0\], "g30_motorpath")' SOURCE_KOXX3/common_files/src/terminal.c
+          grep -q 'int32_t ic_oc = -ia_oc - ib_oc;' SOURCE_KOXX3/common_files/MotorControl/MCSDK/MCLib/F1xx/Src/r3_2_f1xx_pwm_curr_fdbk.c
+          grep -q '(ic_oc > oc) || (ic_oc < -oc)' SOURCE_KOXX3/common_files/MotorControl/MCSDK/MCLib/F1xx/Src/r3_2_f1xx_pwm_curr_fdbk.c
+          grep -q 'MP sample ccr4=' SOURCE_KOXX3/common_files/src/terminal.c
+          grep -q 'g30_motorpath_reset' SOURCE_KOXX3/common_files/src/terminal.c
+          ! grep -q 'abs(pHandle->_Super.Ia).*abs(pHandle->_Super.Ia).*abs(pHandle->_Super.Ic)' SOURCE_KOXX3/common_files/MotorControl/MCSDK/MCLib/F1xx/Src/r3_2_f1xx_pwm_curr_fdbk.c
+          grep -q 'utils_map_int(temp, fp.temp_cut_start, fp.temp_cut_end, 0, iq)' SOURCE_KOXX3/common_files/src/VescToSTM.c
+          grep -q 'HallDevV0.1: use the live GPIO state' SOURCE_KOXX3/common_files/src/VescToSTM.c
+          grep -q 'HallDevV0.1: a disconnected/illegal Hall state at standstill' SOURCE_KOXX3/common_files/src/mc_tasks.c
+          grep -q 'HallDevV0.1: reliability faults are cleared only by HALL_Clear' SOURCE_KOXX3/common_files/MotorControl/MCSDK/MCLib/Any/Src/hall_speed_pos_fdbk.c
+          grep -q 'LL_TIM_DisableAllOutputs(TIM1);' SOURCE_KOXX3/common_files/src/stm32f10x_mc_it.c
+          grep -q 'coast_deadband_speed_unit=20' SOURCE_KOXX3/common_files/src/VescToSTM.c
+          grep -q 'static bool g30_hall_lut_valid(void)' SOURCE_KOXX3/common_files/src/VescToSTM.c
+          grep -q 'after reconnect/fault recovery there is no valid' SOURCE_KOXX3/common_files/MotorControl/MCSDK/MCLib/Any/Src/hall_speed_pos_fdbk.c
+          grep -q 'hall_erpm=VescToSTM_get_erpm_fast()\*2' SOURCE_KOXX3/common_files/src/VescToSTM.c
+          grep -q 'strcmp(argv\[0\], "g30_hall")' SOURCE_KOXX3/common_files/src/terminal.c
+          grep -q 'HallDevV0.1: an MC_SPEED_FDBK Hall fault is deliberately release-latched' SOURCE_KOXX3/common_files/src/VescToSTM.c
+          grep -q 'HallDevV0.1: never restart from a Hall feedback fault' SOURCE_KOXX3/common_files/src/task_LED.c
+          grep -q 'STM_FaultProcessing(&STM\[M1\],0u,MC_SPEED_FDBK)' SOURCE_KOXX3/common_files/src/VescToSTM.c
+          grep -q 'HALL_FAULT_REQUIRES_RELEASE' ci/test_sesc_hall_devv01.py
+          grep -q 'HALL_SPEED_FAULT_RESET_ON_VALID_RELEASE' ci/test_sesc_hall_devv01.py
+          grep -q 'HALL_LUT_PLAUSIBILITY' ci/test_sesc_hall_devv01.py
+          grep -q 'HALL_SINGLE_BIT_TRANSITION_GUARD' ci/test_sesc_hall_devv01.py
+          python3 ci/test_sesc_hall_devv01.py | tee OUTPUT/HALL_DEVV01_HOST_TESTS.txt
+          echo 'cec66fd9085dc363e02cb1b9220b44c7ed643e0f28563782c20f19d5af3ba09b  SOURCE_KOXX3/common_files/src/g30_fo76_shadow.c' | sha256sum -c -
+          echo 'd4c7d026b42dc8165becb6a7665e33d3169d68fb254844cc6214b0975f91966e  SOURCE_KOXX3/common_files/src/g30_fo76_shadow.h' | sha256sum -c -
+          echo '7e73fe8e08a28ce9c500e2fe31bc368d6ddbded3495349949cb85d54a4730c5e  SOURCE_KOXX3/common_files/src/g30_r3i_pushstart.c' | sha256sum -c -
+          echo 'a660d0b1d4695492d8a356fccb65a0d0f28d751e589ad68a8ede06f8d72a6893  SOURCE_KOXX3/common_files/src/g30_r3i_pushstart.h' | sha256sum -c -
+          grep -q 'DevV0.2: sensorless rolling start owns the first PWM enable' SOURCE_KOXX3/common_files/src/mc_tasks.c
+          grep -q 'if(!VescToSTM_g30_sensorless_selected())' SOURCE_KOXX3/common_files/src/mc_tasks.c
+          grep -q 'DevV0.2: clamp the already-prepared current reference BEFORE' SOURCE_KOXX3/common_files/src/VescToSTM.c
+          grep -q 'int16_t one_a_q=(int16_t)current_to_torque(1000);' SOURCE_KOXX3/common_files/src/VescToSTM.c
+          grep -q 'G30_DEVV01_RUN_BAD_GRACE_1K 4u' SOURCE_KOXX3/common_files/src/g30_fo76_shadow.c
+          grep -q 'const uint32_t ramp_ms=1000u' SOURCE_KOXX3/common_files/src/VescToSTM.c
+          grep -q 'Repeated drive packets may not clear' SOURCE_KOXX3/common_files/src/VescToSTM.c
+          grep -q 'g30_r3i_request_arm(0u);' SOURCE_KOXX3/common_files/src/VescToSTM.c
+          ! grep -q 'torque=g30_dash_r3i23_startup_limit' SOURCE_KOXX3/common_files/src/g30_dash_link.c
+          grep -q 'do not duplicate the motor battery-cut' SOURCE_KOXX3/common_files/src/g30_dash_link.c
+          ! grep -q 'VescToSTM_get_bus_voltage()>=18.0f' SOURCE_KOXX3/common_files/src/g30_dash_link.c
+          grep -q '#define R3I_MIN_DPP 64' SOURCE_KOXX3/common_files/src/g30_r3i_pushstart.c
+          grep -q 'VescToSTM_g30_hall_selected' SOURCE_KOXX3/common_files/src/VescToSTM.c
+          grep -q 'VescToSTM_g30_sensorless_selected' SOURCE_KOXX3/common_files/src/VescToSTM.c
+          grep -q 'if(VescToSTM_g30_sensorless_selected())' SOURCE_KOXX3/common_files/src/mc_tasks.c
+          python3 - <<'PY'
+          from pathlib import Path
+          conf=Path('SOURCE_KOXX3/common_files/src/conf_general.c').read_text()
+          start=conf.index('void conf_general_setup_mc(')
+          end=conf.index('\nvoid ',start+5)
+          setup=conf[start:end]
+          assert 'mcconf->foc_sensor_mode = FOC_SENSOR_MODE_HALL;' in setup
+          assert 'mcconf->foc_sensor_mode != FOC_SENSOR_MODE_HALL' in setup
+          # Exactly one assignment remains inside setup: the unsupported-mode fallback.
+          assert setup.count('mcconf->foc_sensor_mode = FOC_SENSOR_MODE_HALL;') == 1
+          vs=Path('SOURCE_KOXX3/common_files/src/VescToSTM.c').read_text()
+          assert 'if(VescToSTM_g30_hall_selected())' in vs
+          assert 'g30_r3i_request_arm(VescToSTM_g30_sensorless_selected() ? 1u : 0u);' in vs
+          dash=Path('SOURCE_KOXX3/common_files/src/g30_dash_link.c').read_text()
+          assert 'torque=g30_dash_r3i23_startup_limit' not in dash
+          print('R3I23_HS1_MODE_GATES=PASS')
+          PY
+          grep -q 'G30_DASH_R3I23_START_TORQUE 13107u' SOURCE_KOXX3/common_files/src/g30_dash_drive_logic.h
+          grep -q 'G30_DASH_R3I23_RAMP_MS        400u' SOURCE_KOXX3/common_files/src/g30_dash_drive_logic.h
+          ! grep -q 'g30_dash_r3i23_startup_limit(torque,g30_r3i_active_age_ms())' SOURCE_KOXX3/common_files/src/g30_dash_link.c
+          grep -q 'G30_DASH_R2_GAS_IDLE       67u' SOURCE_KOXX3/common_files/src/g30_dash_drive_logic.h
+          grep -q 'held_ms >= 2500u' SOURCE_KOXX3/common_files/src/task_pwr.c
+          grep -q 'pending == 2u' SOURCE_KOXX3/common_files/src/task_pwr.c
+          cc -std=c11 -Wall -Wextra -Werror -I SOURCE_KOXX3/common_files/src ci/test_hf4_dash_r2.c -o /tmp/hf4_dash_r2_test
+          /tmp/hf4_dash_r2_test | tee OUTPUT/DASH_R2_HOST_TESTS.txt
+          cc -std=c11 -Wall -Wextra -Werror -fsanitize=address,undefined -fno-omit-frame-pointer -I SOURCE_KOXX3/common_files/src ci/test_r3i22_gas_brake.c -o /tmp/r3i22_gas_brake_test
+          ASAN_OPTIONS=detect_leaks=0 /tmp/r3i22_gas_brake_test | tee OUTPUT/R3I22_GAS_BRAKE_HOST_TESTS.txt
+          cc -std=c11 -Wall -Wextra -Werror -fsanitize=address,undefined -fno-omit-frame-pointer -I SOURCE_KOXX3/common_files/src ci/test_r3i23_startup_ramp.c -o /tmp/r3i23_startup_ramp_test
+          ASAN_OPTIONS=detect_leaks=0 /tmp/r3i23_startup_ramp_test | tee OUTPUT/R3I23_STARTUP_RAMP_HOST_TESTS.txt
+          cc -std=c11 -Wall -Wextra -Werror -fsanitize=address,undefined -fno-omit-frame-pointer ci/test_r3i21_button.c -o /tmp/r3i21_button_test
+          for c in single150 single950 double_long2 double_bounce2 long verylong bounce; do ASAN_OPTIONS=detect_leaks=0 /tmp/r3i21_button_test "$c"; done | tee OUTPUT/POWER_BUTTON_HOST_TESTS.txt
+
+      - name: Install ARM GNU GCC 13.2.1
+        shell: bash
+        run: |
+          set -euo pipefail
+          URL=https://github.com/xpack-dev-tools/arm-none-eabi-gcc-xpack/releases/download/v13.2.1-1.1
+          FILE=xpack-arm-none-eabi-gcc-13.2.1-1.1-linux-x64.tar.gz
+          curl -fL "$URL/$FILE" -o "/tmp/$FILE"
+          curl -fL "$URL/$FILE.sha" -o "/tmp/$FILE.sha"
+          cd /tmp
+          sha256sum -c "$FILE.sha"
+          tar -xzf "$FILE"
+          echo "/tmp/xpack-arm-none-eabi-gcc-13.2.1-1.1/bin" >> "$GITHUB_PATH"
+
+      - name: Compile and validate SESC DRV126 PowerCore6500 BMSPROBE V1
+        shell: bash
+        run: |
+          set -euo pipefail
+          arm-none-eabi-gcc --version
+          sed -i 's/FO76_PUSHSTART_R3I9/SESC_DRV126_POWERCORE6500_BMSPROBE_V1/g' tools/build_native.py tools/validate_image.py
+          sed -i 's/G30D-FO76-PUSHSTART-R3I9/SESC-DRV126-POWERCORE6500-BMSPROBE-V1/g' tools/validate_image.py
+          mkdir -p OUTPUT
+          python3 tools/build_native.py | tee OUTPUT/build.log
+          python3 tools/validate_image.py | tee OUTPUT/validation.log
+          BIN=OUTPUT/SmartESC_v2_G30D_SESC_DRV126_POWERCORE6500_BMSPROBE_V1_STLINK_APP_0x08001000.bin
+          ELF=OUTPUT/SmartESC_v2_G30D_SESC_DRV126_POWERCORE6500_BMSPROBE_V1.elf
+          sha256sum "$BIN" > OUTPUT/SHA256_BIN.txt
+          arm-none-eabi-size "$ELF" > OUTPUT/SIZE.txt
+          python3 - <<'PY'
+          from pathlib import Path
+          parts=Path('OUTPUT/SIZE.txt').read_text().splitlines()[-1].split()
+          text,data,bss=map(int,parts[:3])
+          ram=data+bss
+          flash=text+data
+          print(f'SESC_DRV126_POWERCORE6500_BMSPROBE_V1_FLASH={flash} SESC_DRV126_POWERCORE6500_BMSPROBE_V1_RAM={ram}')
+          assert ram <= 20480, f'RAM overflow: {ram} > 20480'
+          assert flash <= 118784, f'APP flash overflow: {flash} > 118784'
+          Path('OUTPUT/MEMORY_GATE.txt').write_text(f'FLASH={flash}/118784\nRAM={ram}/20480\nPASS\n')
+          PY
+          arm-none-eabi-nm -S --size-sort "$ELF" | tail -40 > OUTPUT/LARGEST_SYMBOLS.txt
+          tar --exclude='SOURCE_KOXX3/.git' -czf OUTPUT/SOURCE_KOXX3_SESC_DRV126_POWERCORE6500_BMSPROBE_V1_EXACT.tgz SOURCE_KOXX3
+          cp ci/R3I15HF4_FROM_R3I15HF3.patch OUTPUT/
+          python3 - <<'PY' | tee OUTPUT/R3I15HF4_STATIC_GATES.txt
+          from pathlib import Path
+          sh=Path('SOURCE_KOXX3/common_files/src/g30_fo76_shadow.c').read_text()
+          vs=Path('SOURCE_KOXX3/common_files/src/VescToSTM.c').read_text()
+          mc=Path('SOURCE_KOXX3/common_files/src/mc_tasks.c').read_text()
+          te=Path('SOURCE_KOXX3/common_files/src/terminal.c').read_text()
+          de=Path('SOURCE_KOXX3/common_files/src/defines.h').read_text()
+          hf=mc[mc.index('__weak uint8_t TSK_HighFrequencyTask'):mc.index('inline uint16_t FOC_CurrControllerM1')]
+          gates={
+            'build_id':'SESC-DRV126-POWERCORE6500-BMSPROBE-V1' in de,
+            'drv126_final_auto_hall':'VescToSTM_g30_hall_selected() ||' in mc and 'g30_drv126_final_power_step' in mc,
+            'drv126_final_no_arm':'g30_drv126_r1_command' not in mc and 'g30_drv126_r1' not in te,
+            'drv126_final_4k_divider':'g30_drv126_final_div' in mc and '&3u' in mc,
+            'drv126_final_16k_commit':'return pHdl->pFctSetADCSampPointSectX(pHdl);' in mc,
+            'drv126_final_config_limits':'MaxPositiveTorque' in mc and 'MinNegativeTorque' in mc,
+            'drv126_final_hall_guard':'raw==0u || raw==7u || HALL_M1.lut[raw]==255u' in mc,
+            'drv126_final_pi_b':'25500057,31128' in mc,
+            'drv126_final_pi_c':'8500019,10376' in mc,
+            'drv126_final_clarke':'((ia+2*ib)*2365)>>12' in mc,
+            'drv126_final_stock_domain':'g30_drv126_final_stock_u_from_mc' in mc and 'counts*51575' in mc,
+            'drv126_final_invpark':'g30_drv126_final_invpark' in mc and 'co*(int32_t)q' in mc,
+            'drv126_final_svpwm':'g30_drv126_final_svpwm' in mc and 'const int32_t per=4000,lim=3920' in mc,
+            'drv126_final_stock_sector':'pHdl->Sector=(uint8_t)(sec-1u);' in mc and 'g30_drv126_order3' not in mc,
+            'drv126_final_fw_telemetry':'FOCVars[M1].Vqd=Vqd;' in mc and 'FOCVars[M1].Iqd=Iqd;' in mc and 'FW_DataProcess(pFW[M1],Vqd,Iqd);' in mc,
+            'drv126_final_preload':'g30_drv126_final_preload(drv_vq,drv_vd);' in vs,
+            'drv126_final_reset':'g30_drv126_final_reset();' in vs and 'if(bMotor==M1) g30_drv126_final_reset();' in mc,
+            'motorpath_diag':'strcmp(argv[0], "g30_motorpath")' in te and 'MP dtcomp enabled=' in te and 'MP cpu last=' in te and 'MP sample ccr4=' in te and 'g30_motorpath_reset' in te,
+            'dtcomp_stays_off':'DTTest = 0' in Path('SOURCE_KOXX3/common_files/src/mc_config.c').read_text() and 'DTTest = 0u' in Path('SOURCE_KOXX3/common_files/MotorControl/MCSDK/MCLib/F1xx/Src/r3_2_f1xx_pwm_curr_fdbk.c').read_text(),
+            'physical_deadtime_unchanged':'#define SW_DEADTIME_NS                   1000' in Path('SOURCE_KOXX3/common_files/inc/drive_parameters.h').read_text(),
+            'pwm_16k_unchanged':'#define PWM_FREQUENCY   16000' in Path('SOURCE_KOXX3/common_files/inc/drive_parameters.h').read_text(),
+            'phase_abc_ocp':'int32_t ic_oc = -ia_oc - ib_oc;' in Path('SOURCE_KOXX3/common_files/MotorControl/MCSDK/MCLib/F1xx/Src/r3_2_f1xx_pwm_curr_fdbk.c').read_text() and '(ic_oc > oc) || (ic_oc < -oc)' in Path('SOURCE_KOXX3/common_files/MotorControl/MCSDK/MCLib/F1xx/Src/r3_2_f1xx_pwm_curr_fdbk.c').read_text(),
+            'ocp_threshold_saturates':'utils_truncate_number(&oc_counts_f, 0.0f, (float)INT16_MAX);' in Path('SOURCE_KOXX3/common_files/src/conf_general.c').read_text(),
+            'torque_output_scaling':'hLowerOutputLimit = allow_braking ? -q : 0;' in vs and 'hUpperOutputLimit = allow_braking ? -q : 0;' in vs,
+            'g30_torque_no_regen':'const bool allow_braking = false;' in vs and 'G30 brake policy is Coast' in vs,
+            'temp_derate_endpoint':'utils_map_int(temp, fp.temp_cut_start, fp.temp_cut_end, 0, iq)' in vs,
+            'dual_mode_helpers':'VescToSTM_g30_hall_selected' in vs and 'VescToSTM_g30_sensorless_selected' in vs,
+            'hall_zero_speed_path':'if(VescToSTM_g30_hall_selected())' in vs and 'MCI_StartMotor(pMCI[M1])' in vs,
+            'sensorless_start_dpp_64':'#define R3I_MIN_DPP 64' in Path('SOURCE_KOXX3/common_files/src/g30_r3i_pushstart.c').read_text(),
+            'sensorless_tick_gated':'if(VescToSTM_g30_sensorless_selected())' in mc,
+            'dash_hf4_no_startup_shape':'torque=g30_dash_r3i23_startup_limit' not in Path('SOURCE_KOXX3/common_files/src/g30_dash_link.c').read_text(),
+            'r3i12_catch_retained':'sensorless_catch_phase_q4=((int32_t)(uint16_t)obs_pred)<<4;' in sh and 'catch_phase=obs_pred;' in sh,
+            'no_command_inversion':'erpm = -erpm;' not in vs,
+            'speed_feedback_normalized':'(-(int32_t)odpp)' in mc,
+            'observer_dpp_retained':'HALL_M1._Super.hElSpeedDpp=odpp;' in mc and 'HALL_M1.AvrElSpeedDpp=odpp;' in mc,
+            'rpm_zero_coasts':'if(erpm == 0)' in vs and 'VescToSTM_set_brake(0);' in vs,
+            'timeout_coasts':'timeout_brake_current into regenerative' in vs,
+            'brake_coasts':'all brake/zero requests are true coast' in vs and 'VescToSTM_g30_coast_rearm();' in vs,
+            'speed_no_braking':'SpeednTorqCtrlM1.PISpeed->wUpperIntegralLimit = 0;' in vs and 'SpeednTorqCtrlM1.PISpeed->wLowerIntegralLimit = 0;' in vs,
+            'drive_diag':'R3I15HF4 drive vesc_erpm=' in te,
+            'lambda_retained':'G30_FO76_LAMBDA_PROVEN_UWB 24200u' in sh,
+            'vesc_auto_arm':'VescToSTM_g30_pushstart_command(raw != 0)' in Path('SOURCE_KOXX3/common_files/src/VescCommand.c').read_text(),
+            'repeat_packets_do_not_rearm':(lambda start,block: 'g30_r3i_request_arm(1u);' not in block)(vs.index('if(ps.mode==1u)',vs.index('void VescToSTM_g30_pushstart_command')), vs[vs.index('if(ps.mode==1u)',vs.index('void VescToSTM_g30_pushstart_command')):vs.index('VescToSTM_pwm_stop();',vs.index('if(ps.mode==1u)',vs.index('void VescToSTM_g30_pushstart_command')))]),
+            'coast_rearms_sensorless':'g30_r3i_request_arm(1u);' in vs and 'if(ps.mode==1u)' in vs,
+            'hallfree_fixed_bemf':'R3I_FIXED_BEMF_TO_CONTROL_OFFSET 0' in Path('SOURCE_KOXX3/common_files/src/g30_r3i_pushstart.c').read_text(),
+            'hallfree_no_start_gate':'(void)hall_angle;' in Path('SOURCE_KOXX3/common_files/src/g30_r3i_pushstart.c').read_text(),
+            'hallfree_armed_speed':'r3i_diag.mode==1u' in mc,
+            'zero_packets_skip_setter':'if(raw == 0){ VescToSTM_timeout_reset(); break; }' in Path('SOURCE_KOXX3/common_files/src/VescCommand.c').read_text(),
+            'brake_is_coast_rearm':'VescToSTM_g30_coast_rearm();' in vs,
+            'pwm_off_before_takeover':(lambda stop: stop.index('PWMC_SwitchOffPWM') < stop.index('g30_fo76_request_takeover(0u)'))(vs[vs.index('void VescToSTM_pwm_stop'):vs.index('void VescToSTM_prepare_sensorless_start')]),
+            'takeover_requires_drive':'drive_request && d.forward_edges' in Path('SOURCE_KOXX3/common_files/src/g30_r3i_pushstart.c').read_text(),
+            'coast_clears_drive_request':'g30_r3i_set_drive_request(0u);' in vs,
+            'fallback_latched_until_release':'if(!g30_fo76_coast_requested()) return;' in vs and 'Repeated drive packets may not clear' in vs and 'g30_r3i_request_arm(1u);\n        ps=g30_r3i_get_diag();' not in vs,
+            'mode1_preserves_bemf':'if(STM_GetState(&STM[M1])==IDLE)' in vs,
+            'run_bad_grace':'G30_DEVV01_RUN_BAD_GRACE_1K 4u' in sh and 'observer_run_bad_1k' in sh and 'severe_bad' in sh,
+            'smooth_iq_release':'const uint32_t ramp_ms=1000u' in vs and 'hold_ms=800u' in vs,
+            'sensorless_clear_stays_pwm_off':"if(!VescToSTM_g30_sensorless_selected())" in mc and "sensorless rolling start owns the first PWM enable" in mc,
+            'sensorless_first_pwm_iq_capped':"int16_t one_a_q=(int16_t)current_to_torque(1000);" in vs and "FOCVars[M1].hTeref=FOCVars[M1].Iqdref.q;" in vs and vs.index("int16_t one_a_q=(int16_t)current_to_torque(1000);") < vs.index("PWMC_SwitchOnPWM(&PWM_Handle_M1._Super);"),
+            'hall_live_gpio_validity':'VescToSTM_g30_hall_feedback_valid' in vs and 'uint8_t raw=HALL_read(&HALL_M1);' in vs,
+            'hall_pwm_start_guard':'VescToSTM_g30_hall_selected() && !VescToSTM_g30_hall_feedback_valid()' in vs,
+            'hall_clear_fault_guard':'disconnected/illegal Hall state at standstill' in mc and 'MC_SPEED_FDBK' in mc,
+            'hall_run_fault_guard':'fail safe on Hall loss/illegal transition' in mc and 'VescToSTM_pwm_stop();' in mc,
+            'hall_fault_latched':'reliability faults are cleared only by HALL_Clear()' in Path('SOURCE_KOXX3/common_files/MotorControl/MCSDK/MCLib/Any/Src/hall_speed_pos_fdbk.c').read_text(),
+            'hall_irq_moe_kill':'LL_TIM_DisableAllOutputs(TIM1);' in Path('SOURCE_KOXX3/common_files/src/stm32f10x_mc_it.c').read_text(),
+            'hall_reverse_coast_interlock':'VescToSTM_g30_hall_direction_allowed' in vs and 'coast_deadband_speed_unit=20' in vs,
+            'hall_command_precheck':'!VescToSTM_g30_hall_direction_allowed(raw)' in Path('SOURCE_KOXX3/common_files/src/VescCommand.c').read_text(),
+            'hall_dash_precheck':'!VescToSTM_g30_hall_direction_allowed(1)' in Path('SOURCE_KOXX3/common_files/src/g30_dash_link.c').read_text(),
+            'hall_lut_guard':'static bool g30_hall_lut_valid(void)' in vs and 'mag<25 || mag>65' in vs,
+            'hall_safe_reseed':'after reconnect/fault recovery there is no valid' in Path('SOURCE_KOXX3/common_files/MotorControl/MCSDK/MCLib/Any/Src/hall_speed_pos_fdbk.c').read_text(),
+            'hall_live_bemf_preload':'hall_erpm=VescToSTM_get_erpm_fast()*2' in vs and 'motor_voltage=hall_rad_s*mc_conf.foc_motor_flux_linkage;' in vs,
+            'hall_diag':'strcmp(argv[0], "g30_hall")' in te and 'HALL lut=' in te,
+            'hall_fault_release_rearm':'MC_SPEED_FDBK Hall fault is deliberately release-latched' in vs and 'HALL_Clear(&HALL_M1);' in vs,
+            'hall_fault_no_auto_restart':'never restart from a Hall feedback fault' in Path('SOURCE_KOXX3/common_files/src/task_LED.c').read_text() and 'hall_speed_fault' in Path('SOURCE_KOXX3/common_files/src/task_LED.c').read_text(),
+            'hall_speed_fault_selective_reset':'STM_FaultProcessing(&STM[M1],0u,MC_SPEED_FDBK)' in vs,
+            'sensorless_observer_untouched':'G30_DEVV01_RUN_BAD_GRACE_1K 4u' in sh and '#define R3I_MIN_DPP 64' in Path('SOURCE_KOXX3/common_files/src/g30_r3i_pushstart.c').read_text(),
+            'powercore6500_coeff':'G30_DRV126_CURRENT_RAISING_COEFF_MA 6500' in mc and 'G30_DRV126_CURRENT_RAISING_STEP_MC 2435' in mc,
+            'powercore6500_shared_modes':'g30_drv126_final_power_step' in mc and 'VescToSTM_g30_hall_selected() ||' in mc and 'g30_fo76_sensorless_active()' in mc,
+            'powercore6500_sensorless_pwm_feedback':'g30_old_ca=pwmcHandle[M1]->CntPhA' in mc and 'g30_fo76_shadow_step(Iab.a,Iab.b,HALL_M1._Super.hElAngle' in mc,
+            'powercore6500_sensorless_preload':'g30_drv126_final_preload(initial.vq_counts,initial.vd_counts);' in vs,
+            'powercore6500_no_hybrid':'G30_HYBRID' not in mc and 'HYBRID-SENSORLESS' not in te,
+          }
+          for k,v in gates.items(): print(f'{k}={int(v)}')
+          assert all(gates.values()), gates
+          print('R3I15HF4_STATIC_GATES=PASS')
+          PY
+
+      - name: Upload diagnostic SESC Motorpath Audit V0.3
+        uses: actions/upload-artifact@v4
+        with:
+          name: G30D_SESC_DRV126_POWERCORE6500_BMSPROBE_V1_COMPILED
+          if-no-files-found: error
+          retention-days: 7
+          path: |
+            OUTPUT/SmartESC_v2_G30D_SESC_DRV126_POWERCORE6500_BMSPROBE_V1.elf
+            OUTPUT/SmartESC_v2_G30D_SESC_DRV126_POWERCORE6500_BMSPROBE_V1.map
+            OUTPUT/SmartESC_v2_G30D_SESC_DRV126_POWERCORE6500_BMSPROBE_V1_STLINK_APP_0x08001000.bin
+            OUTPUT/SmartESC_v2_G30D_SESC_DRV126_POWERCORE6500_BMSPROBE_V1_STLINK_APP_0x08001000.hex
+            OUTPUT/VERIFICATION.json
+            OUTPUT/SHA256_BIN.txt
+            OUTPUT/SIZE.txt
+            OUTPUT/MEMORY_GATE.txt
+            OUTPUT/LARGEST_SYMBOLS.txt
+            OUTPUT/SOURCE_KOXX3_SESC_DRV126_POWERCORE6500_BMSPROBE_V1_EXACT.tgz
+            OUTPUT/APPLY_R3I14_EXACT.py
+            OUTPUT/R3I15HF4_BUILD_WORKFLOW.yml
+            OUTPUT/R3I15HF4_STATIC_GATES.txt
+            ci/g30_r3i9_pushstart_test.py
+            ci/01_AUTO_R3I14_TWO_PUSH_TEST.cmd
+            OUTPUT/build.log
+            OUTPUT/compile.log
+            OUTPUT/validation.log
+
+            OUTPUT/DASH_R1_CHANGE_AUDIT.json
+            OUTPUT/HF4_DASH_LINK_R2P1_FROM_FROZEN_HF4.patch
+            OUTPUT/DASH_R1_HOST_TESTS.txt
+            OUTPUT/DASH_R2_HOST_TESTS.txt
+            OUTPUT/POWER_BUTTON_HOST_TESTS.txt
+            ci/R3I21_DASH_BUTTON_FROM_R2P1.patch
+            ci/R3I22_GAS_BRAKE_FROM_R3I21.patch
+            ci/R3I23_STARTUP_TORQUE_RAMP_FROM_R3I22.patch
+            ci/R3I23_HS1_DUALMODE_FROM_R3I23.patch
+            ci/R3I23_HS3_DASH_VBUS_GATE_FROM_HS1.patch
+            ci/HS3_HF4SL1_SENSORLESS_TRANSPLANT.patch
+            ci/apply_sesc_hybrid_devv01.py
+            ci/apply_sesc_hybrid_devv02.py
+            ci/apply_sesc_hall_devv01.py
+            ci/apply_sesc_motorpath_audit_v01.py
+            ci/apply_sesc_motorpath_audit_v02.py
+            ci/apply_sesc_motorpath_audit_v03.py
+            ci/apply_sesc_drv126_shadow_r0.py
+            ci/test_sesc_drv126_shadow_r0.py
+            OUTPUT/DRV126_SHADOW_R0_HOST_TESTS.txt
+            ci/apply_sesc_drv126_shadow_r01.py
+            ci/test_sesc_drv126_shadow_r01.py
+            OUTPUT/DRV126_SHADOW_R01_HOST_TESTS.txt
+            ci/apply_sesc_drv126_shadow_r02.py
+            ci/test_sesc_drv126_shadow_r02.py
+            OUTPUT/DRV126_SHADOW_R02_HOST_TESTS.txt
+            ci/apply_sesc_drv126_shadow_r03.py
+            ci/test_sesc_drv126_shadow_r03.py
+            OUTPUT/DRV126_SHADOW_R03_HOST_TESTS.txt
+            ci/apply_sesc_drv126_r1_gated.py
+            ci/test_sesc_drv126_r1_gated.py
+            OUTPUT/DRV126_R1_GATED_HOST_TESTS.txt
+            ci/apply_sesc_drv126_r11_timing.py
+            ci/test_sesc_drv126_r11_timing.py
+            OUTPUT/DRV126_R11_TIMING_HOST_TESTS.txt
+            ci/apply_sesc_drv126_r12_loadsym.py
+            ci/test_sesc_drv126_r12_loadsym.py
+            OUTPUT/DRV126_R12_LOADSYM_HOST_TESTS.txt
+            ci/apply_sesc_drv126_final_v1.py
+            ci/test_sesc_drv126_final_v1.py
+            OUTPUT/DRV126_FINAL_V1_OFFLINE_SUITE.txt
+            ci/apply_sesc_drv126_powercore6500_final_v1.py
+            ci/test_sesc_drv126_powercore6500_final_v1.py
+            OUTPUT/DRV126_POWERCORE6500_FINAL_V1_OFFLINE_SUITE.txt
+            ci/apply_sesc_speedtel_v1.py
+            ci/test_sesc_speedtel_v1.py
+            OUTPUT/SPEEDTEL_V1_STATIC_TESTS.txt
+            ci/apply_sesc_bmstel_v2.py
+            ci/test_sesc_bmstel_v2.py
+            OUTPUT/BMSTEL_V2_STATIC_TESTS.txt
+            ci/apply_sesc_bmsprobe_v1.py
+            ci/test_sesc_bmsprobe_v1.py
+            OUTPUT/BMSPROBE_V1_STATIC_TESTS.txt
+            ci/test_sesc_motorpath_v03.py
+            OUTPUT/MOTORPATH_V03_HOST_TESTS.txt
+            ci/test_sesc_motorpath_v02.py
+            OUTPUT/MOTORPATH_V02_HOST_TESTS.txt
+            ci/test_sesc_hall_devv01.py
+            OUTPUT/HALL_DEVV01_HOST_TESTS.txt
+            ci/test_r3i23_startup_ramp.c
+            ci/test_r3i22_gas_brake.c
+            ci/test_r3i21_button.c
+            OUTPUT/R3I22_GAS_BRAKE_HOST_TESTS.txt
+            OUTPUT/R3I23_STARTUP_RAMP_HOST_TESTS.txt
+            OUTPUT/build.log
+            OUTPUT/compile.log
+            OUTPUT/validation.log
+
+# R0.1 qualifier-clean rebuild
