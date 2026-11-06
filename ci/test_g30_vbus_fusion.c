@@ -1,7 +1,8 @@
 #include <stdio.h>
 #include <stdint.h>
 #include <stdlib.h>
-#include "g30_vbus_fusion.h"\n#include "g30_vbus_fusion_impl.inc"
+#include "g30_vbus_fusion.h"
+#include "g30_vbus_fusion_impl.inc"
 
 static void ck(int ok,const char *msg){ if(!ok){ fprintf(stderr,"FAIL %s\n",msg); exit(2);} }
 
