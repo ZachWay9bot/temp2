@@ -1,0 +1,197 @@
+--- a/common_files/src/defines.h
++++ b/common_files/src/defines.h
+@@ -2,7 +2,7 @@
+ #define DEFINES_H_
+ 
+ #ifdef G30P
+-#define HW_NAME "SESC-DRV126-POWERCORE6500-SPEEDTEL-V1"
++#define HW_NAME "SESC-DRV126-POWERCORE6500-14S-VBUSFIX-V1"
+ #else
+ #define HW_NAME "40"
+ #endif
+--- a/common_files/src/VescToSTM.c
++++ b/common_files/src/VescToSTM.c
+@@ -49,6 +49,8 @@
+ fp_struct fp;
+ 
+ volatile bool pwm_force; //State of PWM force on
++
++static inline int32_t VescToSTM_pole_pairs(void);
+ 
+ /**
+  * Calculates integer torque from mA.
+@@ -140,6 +142,30 @@
+             }
+             if(mag>lim)mag=lim;
+             iq=(int16_t)(sign*mag);
++        }
++
++        /* 14S rail mode: the observer intentionally uses a bounded model VBUS
++         * because the stock hardware ADC cannot resolve above ~47.22 V. Keep
++         * phase current inside an observer-safe envelope until speed makes the
++         * R/L model error negligible: 2 A per km/h, with the proven 1 A catch
++         * still taking precedence during the first 800 ms. At 20 km/h this
++         * already permits 40 A phase current; configured motor limits remain
++         * authoritative above that. A 60 A absolute rail-mode ceiling keeps
++         * the bounded-VBUS model inside the validated FO76 phase/magnitude
++         * envelope even if mc_conf allows substantially more phase current. */
++        if(g30_fo76_sensorless_vbus_rail_mode()){
++            int32_t erpm=g30_r3i_erpm();
++            if(erpm<0)erpm=-erpm;
++            float mech_rps=((float)erpm/60.0f)/(float)VescToSTM_pole_pairs();
++            float kmh=(mech_rps*mc_conf.si_wheel_diameter*(float)M_PI/
++                       mc_conf.si_gear_ratio)*3.6f;
++            int32_t rail_ma=(int32_t)(kmh*2000.0f+0.5f);
++            if(rail_ma<1000)rail_ma=1000;
++            if(rail_ma>60000)rail_ma=60000;
++            int32_t rail_q=current_to_torque(rail_ma);
++            int32_t q=(int32_t)iq;
++            if(q>rail_q)iq=(int16_t)rail_q;
++            else if(q< -rail_q)iq=(int16_t)-rail_q;
+         }
+     }
+ #endif
+@@ -546,8 +572,8 @@
+     if(!VescToSTM_g30_sensorless_selected() || !g30_r3i_sensorless_active() || !PWM_Handle_M1._Super.PWM_off) return;
+     uint16_t lambda=g30_fo76_model_lambda_uwb();
+     int16_t speed=g30_fo76_control_speed_dpp();
+-    float bus_v=VescToSTM_get_bus_voltage();
+-    uint16_t bus_mv=(bus_v>=0.0f && bus_v<=65.535f)?(uint16_t)(bus_v*1000.0f+0.5f):0u;
++    uint16_t bus_mv=g30_fo76_sensorless_model_vbus_mv(
++        RealBusVoltageSensorParamsM1._Super.AvBusVoltage_d);
+     g30_r3i_preload_result_t initial=g30_r3i_preload_calculate(speed,lambda,bus_mv);
+     PIDIqHandle_M1.wIntegralTerm=g30_r3i_preload_integral(initial.vq_counts,
+         PIDIqHandle_M1.hKiDivisor,PIDIqHandle_M1.wLowerIntegralLimit,PIDIqHandle_M1.wUpperIntegralLimit);
+@@ -611,26 +637,30 @@
+         }else
+ #endif
+         {
+-            /* HallDevV0.1: preserve the established preload formula, but feed
+-             * it from the live Hall speed every time PWM is re-enabled. */
+ #ifdef G30P
+             if(VescToSTM_g30_hall_selected()){
+-                int32_t hall_erpm=VescToSTM_get_erpm_fast()*2;
+-                float hall_rad_s=(float)hall_erpm*((2.0f*(float)M_PI)/60.0f);
+-                motor_voltage=hall_rad_s*mc_conf.foc_motor_flux_linkage;
++                /* Stock DRV126 initializes both current-PI accumulators to
++                 * zero and never divides the fast FOC by VBUS. Mirror that
++                 * behavior exactly for Hall. This also removes the only Hall
++                 * startup dependency on the 47.22 V-limited ADC. */
++                PIDIqHandle_M1.wIntegralTerm=0;
++                PIDIdHandle_M1.wIntegralTerm=0;
++                g30_drv126_final_preload(0,0);
++                /* Keep the speed-derived BEMF estimate for off-state duty
++                 * telemetry only. It no longer seeds either current PI. */
++                {
++                    int32_t hall_erpm=VescToSTM_get_erpm_fast()*2;
++                    float hall_rad_s=(float)hall_erpm*((2.0f*(float)M_PI)/60.0f);
++                    motor_voltage=hall_rad_s*mc_conf.foc_motor_flux_linkage;
++                }
++            }else
++#endif
++            {
++                float fVd = 32768.0 / VescToSTM_get_bus_voltage() * motor_voltage;
++                utils_truncate_number(&fVd, -32767, 32767);
++                PIDIqHandle_M1.wIntegralTerm = fVd * TF_KIDIV;
++                PIDIdHandle_M1.wIntegralTerm = -PIDIqHandle_M1.wIntegralTerm/4;
+             }
+-#endif
+-            float fVd = 32768.0 / VescToSTM_get_bus_voltage() * motor_voltage;
+-            utils_truncate_number(&fVd, -32767, 32767);
+-            PIDIqHandle_M1.wIntegralTerm = fVd * TF_KIDIV;
+-            PIDIdHandle_M1.wIntegralTerm = -PIDIqHandle_M1.wIntegralTerm/4;
+-#ifdef G30P
+-            if(VescToSTM_g30_hall_selected()){
+-                int16_t drv_vq=(int16_t)fVd;
+-                int16_t drv_vd=(int16_t)(-drv_vq/4);
+-                g30_drv126_final_preload(drv_vq,drv_vd);
+-            }
+-#endif
+         }
+         HALL_M1._Super.hElAngle = HALL_M1.MeasuredElAngle;
+         HALL_M1.CompSpeed = 0;
+--- a/common_files/src/g30_fo76_shadow.c
++++ b/common_files/src/g30_fo76_shadow.c
+@@ -34,6 +34,22 @@
+ #define G30_FO76_DT_K_Q15 (-22528) /* FO76 Observer C: -0.6875, hardware-proven */
+ #define G30_FO76_MIN_TRACK_DPP 40
+ 
++/* G30 Gen1 VBUS ADC rails at about 47.22 V. Stock DRV126 tolerates this
++ * because its fast FOC is not normalized by measured VBUS. FO76, however,
++ * reconstructs physical alpha/beta voltage from PWM*VBUS. Above the rail the
++ * true bus is only known to be in [ADC full-scale, 14S Li-ion max].
++ *
++ * Use the harmonic/minimax model voltage for that bounded interval:
++ *   2*47.222*58.800/(47.222+58.800) = 52.379 V
++ * This makes the worst multiplicative model error symmetric at +/-10.92%,
++ * instead of the -19.69% error from blindly using the clipped ADC value.
++ * The mode is latched for one sensorless run to prevent model jumps as load
++ * sag moves the filtered ADC around the rail. */
++#define G30_VBUS_RAIL_DETECT_ADC 65400u
++#define G30_VBUS_14S_MODEL_MV 52379u
++static volatile uint8_t g30_vbus_mode_latched;
++static volatile uint8_t g30_vbus_rail_mode;
++
+ /* R3G controlled takeover thresholds. DPP is electrical angle counts per
+  * 16 kHz FOC tick. 64 counts is about 937.5 eRPM, approximately the desired
+  * G30 Gen1 3 km/h roll-start region with 15 pole pairs. */
+@@ -98,6 +114,8 @@
+ static int32_t sin_phase_q15(uint16_t phase);
+ 
+ void g30_fo76_sensorless_seed(uint16_t control_phase, int16_t speed_dpp) {
++    g30_vbus_mode_latched=0u;
++    g30_vbus_rail_mode=0u;
+     int32_t psi0=(int32_t)(d.lambda_uwb?d.lambda_uwb:G30_FO76_LAMBDA_PROVEN_UWB)*Q8;
+     uint16_t flux_phase=hall_to_flux((int16_t)control_phase);
+     ++seq;
+@@ -122,6 +140,8 @@
+ }
+ uint8_t g30_fo76_sensorless_active(void){return sensorless_external;}
+ void g30_fo76_sensorless_clear(void){
++    g30_vbus_mode_latched=0u;
++    g30_vbus_rail_mode=0u;
+     g30_hall_trace_freeze(G30_HT_CLEAR);
+     sensorless_external=0u;
+     takeover_enable_request=0u;
+@@ -137,6 +157,17 @@
+ uint16_t g30_fo76_model_lambda_uwb(void){
+     return d.lambda_uwb?d.lambda_uwb:G30_FO76_LAMBDA_PROVEN_UWB;
+ }
++uint16_t g30_fo76_sensorless_model_vbus_mv(uint16_t vbus_adc){
++    if(!g30_vbus_mode_latched){
++        g30_vbus_rail_mode=(uint8_t)(vbus_adc>=G30_VBUS_RAIL_DETECT_ADC);
++        g30_vbus_mode_latched=1u;
++    }
++    if(g30_vbus_rail_mode) return G30_VBUS_14S_MODEL_MV;
++    uint32_t mv=((uint32_t)vbus_adc*vbus_mv_per_count_q16)>>16;
++    if(mv>65535u)mv=65535u;
++    return (uint16_t)mv;
++}
++uint8_t g30_fo76_sensorless_vbus_rail_mode(void){return g30_vbus_rail_mode;}
+ int16_t g30_fo76_control_speed_dpp(void){
+     if(sensorless_external && sensorless_catch_state)
+         return (int16_t)(sensorless_catch_step_q4/16);
+@@ -497,7 +528,9 @@
+     if(++decim16<4u)return;
+     decim16=0;
+     if (!d.r_mohm || !d.l_uh || !d.lambda_uwb || !period || !current_ua_per_count) return;
+-    uint32_t vbus_mv=((uint32_t)vbus_adc * vbus_mv_per_count_q16)>>16;
++    uint32_t vbus_mv=sensorless_external ?
++        (uint32_t)g30_fo76_sensorless_model_vbus_mv(vbus_adc) :
++        (((uint32_t)vbus_adc * vbus_mv_per_count_q16)>>16);
+     if(vbus_mv<4000u || vbus_mv>60000u){
+         ++seq; d.valid=0; d.good_eval_1k=0; d.tracking=0; d.seeded=0; ++seq;
+         return;
+--- a/common_files/src/g30_fo76_shadow.h
++++ b/common_files/src/g30_fo76_shadow.h
+@@ -67,6 +67,10 @@
+ int16_t g30_fo76_control_speed_dpp(void);
+ /* Atomic 16-bit read of the live observer lambda; foreground startup only. */
+ uint16_t g30_fo76_model_lambda_uwb(void);
++/* 14S rail-safe model bus. The physical ADC remains untouched for telemetry,
++ * UV/OV and protection. This helper is used only by sensorless preload/FO76. */
++uint16_t g30_fo76_sensorless_model_vbus_mv(uint16_t vbus_adc);
++uint8_t g30_fo76_sensorless_vbus_rail_mode(void);
+ /* Read-only capture probe: latest applied FOC angle, observer predictor and
+  * synthetic control speed. No Hall feedback enters the controller here. */
+ typedef struct {
