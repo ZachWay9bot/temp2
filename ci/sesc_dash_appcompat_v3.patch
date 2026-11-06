@@ -1,0 +1,168 @@
+--- a/SOURCE_KOXX3/common_files/src/defines.h
++++ b/SOURCE_KOXX3/common_files/src/defines.h
+@@ -2,12 +2,13 @@
+ #define DEFINES_H_
+ 
+ #ifdef G30P
+-#define HW_NAME "SESC-DRV126-P6500-H14-SHUD4BMS-APPCOMPAT-V2"
++#define HW_NAME "SESC-DRV126-P6500-H14-SHUD4BMS-APPCOMPAT-V3"
+ #define G30_HALL14S_V1 1
+ #define G30_SHUD4_BMS_V1 1
+ #define G30_SHUD4_CLONKFREE_V1 1
+ #define G30_DASH_APPCOMPAT_V1 1
+ #define G30_DASH_APPCOMPAT_V2 1
++#define G30_DASH_APPCOMPAT_V3 1
+ #define G30_POWERPATH_RESTORE_V1 1
+ #else
+ #define HW_NAME "40"
+--- a/SOURCE_KOXX3/common_files/src/g30_dash_link.c
++++ b/SOURCE_KOXX3/common_files/src/g30_dash_link.c
+@@ -25,6 +25,11 @@
+ #ifdef G30_DASH_APPCOMPAT_V2
+     uint32_t meta_queries, meta_replies, meta_query_ms;
+     uint8_t meta_seen, meta_query_sent, meta_len, meta[13];
++#ifdef G30_DASH_APPCOMPAT_V3
++    uint32_t app_deferred_queued, app_piggybacked, app_deferred_dropped;
++    uint8_t app_deferred, app_deferred_src, app_deferred_dst;
++    uint8_t app_deferred_arg, app_deferred_ask;
++#endif
+ #endif
+ #endif
+     uint16_t version;
+@@ -226,6 +231,41 @@
+     *outlen=(uint16_t)g30_dash_frame(p->dst,p->src,0x04u,p->arg,data,ask,out);
+     return *outlen!=0u;
+ }
++#ifdef G30_DASH_APPCOMPAT_V3
++/* Lucidnx/G30 hardware strategy: never open a separate Yellowwire TX window
++ * just for an app read. Keep only the request descriptor and append its CMD04
++ * reply to the next normal CMD64 status transmission. The dashboard protocol
++ * is framed by 5A A5 + LEN, so multiple complete frames may share one TX. */
++static bool g30_dash_defer_app_read(dash_link_state *d){
++    const g30_dash_parser *p=&d->parser;
++    if((p->src<0x3Du||p->src>0x3Fu) || p->cmd!=0x01u) return false;
++    if(p->len!=1u && p->len!=4u){d->app_ignored++;return false;}
++    uint8_t ask=p->payload[0];
++    if(!ask || ask>G30_DASH_MAX_PAYLOAD){d->app_ignored++;return false;}
++    if(p->dst!=0x20u && p->dst!=0x22u) return false;
++    if(d->app_deferred){d->app_ignored++;d->app_deferred_dropped++;return false;}
++    d->app_deferred_src=p->src;
++    d->app_deferred_dst=p->dst;
++    d->app_deferred_arg=p->arg;
++    d->app_deferred_ask=ask;
++    d->app_deferred=1u;
++    d->app_deferred_queued++;
++    if(p->dst==0x20u) d->app_reads++; else d->bms_reads++;
++    return true;
++}
++
++static unsigned g30_dash_build_deferred_app_reply(dash_link_state *d,uint8_t *out){
++    uint8_t data[G30_DASH_MAX_PAYLOAD];
++    if(!d->app_deferred) return 0u;
++    if(d->app_deferred_dst==0x20u)
++        g30_dash_read_esc(d->app_deferred_arg,d->app_deferred_ask,data);
++    else if(d->app_deferred_dst==0x22u)
++        g30_dash_read_bms(d->app_deferred_arg,d->app_deferred_ask,data);
++    else return 0u;
++    return g30_dash_frame(d->app_deferred_dst,d->app_deferred_src,0x04u,
++        d->app_deferred_arg,data,d->app_deferred_ask,out);
++}
++#endif
+ #endif
+ 
+ static void send_status(dash_link_state *d) {
+@@ -233,7 +273,13 @@
+     UART_HandleTypeDef *u=d->port->uart;
+ #endif
+     uint8_t status[6]={m365_to_display.mode,0,0,0,0,0};
++#ifdef G30_DASH_APPCOMPAT_V3
++    /* 15-byte CMD64 + 9-byte metadata query + max 65-byte app CMD04. */
++    uint8_t tx[89];
++    bool app_attached=false;
++#else
+     uint8_t tx[24];
++#endif
+     float level=VescToSTM_get_battery_level(0);
+     float speed=fabsf(VescToSTM_get_speed()*3.6f);
+     if(!isfinite(level)||level<0.0f) level=0.0f;
+@@ -256,6 +302,12 @@
+         if(q){len+=q;d->meta_query_sent=1u;d->meta_query_ms=now;d->meta_queries++;}
+     }
+ #endif
++#ifdef G30_DASH_APPCOMPAT_V3
++    if(d->app_deferred){
++        unsigned a=g30_dash_build_deferred_app_reply(d,tx+len);
++        if(a){len+=a;app_attached=true;}
++    }
++#endif
+     d->tx_calls++;
+ #ifdef G30_DASH_APPCOMPAT_V1
+     HAL_StatusTypeDef result=g30_dash_tx_stocklike(d,tx,(uint16_t)len);
+@@ -269,7 +321,16 @@
+     if(HAL_HalfDuplex_EnableReceiver(u)!=HAL_OK) d->rx_errors++;
+ #endif
+     d->tx_result=(uint8_t)result+1u;
+-    if(result==HAL_OK) d->tx_ok++; else d->tx_fail++;
++    if(result==HAL_OK) {
++        d->tx_ok++;
++#ifdef G30_DASH_APPCOMPAT_V3
++        if(app_attached){
++            d->app_deferred=0u;
++            d->app_replies++;
++            d->app_piggybacked++;
++        }
++#endif
++    } else d->tx_fail++;
+ }
+ 
+ static void dash_task(void *arg) {
+@@ -289,7 +350,7 @@
+     __HAL_DMA_DISABLE_IT(u->hdmarx,DMA_IT_HT|DMA_IT_TC);
+     for(;;) {
+         unsigned reply_pending=0;
+-#ifdef G30_DASH_APPCOMPAT_V1
++#if defined(G30_DASH_APPCOMPAT_V1) && !defined(G30_DASH_APPCOMPAT_V3)
+         uint8_t app_tx[65]; uint16_t app_tx_len=0u; bool app_pending=false;
+ #endif
+         while(rd!=rx_pos(d)) {
+@@ -307,7 +368,9 @@
+                     d->meta_seen=1u; d->meta_replies++;
+                 }
+ #endif
+-#ifdef G30_DASH_APPCOMPAT_V1
++#ifdef G30_DASH_APPCOMPAT_V3
++                (void)g30_dash_defer_app_read(d);
++#elif defined(G30_DASH_APPCOMPAT_V1)
+                 if(!app_pending) app_pending=g30_dash_queue_app_read(d,app_tx,&app_tx_len);
+ #endif
+                 unsigned kind=g30_dash_input_kind(&d->parser);
+@@ -324,14 +387,14 @@
+             }
+         }
+         /* Do not switch away from RX in the middle of a newly arriving frame. */
+-#ifdef G30_DASH_APPCOMPAT_V1
++#if defined(G30_DASH_APPCOMPAT_V1) && !defined(G30_DASH_APPCOMPAT_V3)
+         if(app_pending && d->parser.state==0u && rd==rx_pos(d)){
+             d->tx_calls++;
+             HAL_StatusTypeDef ar=g30_dash_tx_stocklike(d,app_tx,app_tx_len);
+             d->tx_result=(uint8_t)ar+1u;
+             if(ar==HAL_OK){d->tx_ok++;d->app_replies++;}else d->tx_fail++;
+-            /* An app transaction has priority. Skipping one 100-ms status reply
+-             * is safer than transmitting two back-to-back frames into BLE117. */
++            /* V1/V2 behavior retained for old builds only. V3 deliberately
++             * waits for the next CMD64 and piggybacks this reply there. */
+             reply_pending=0u;
+         }
+ #endif
+@@ -384,6 +447,11 @@
+     commands_printf(phandle,"DASHMETA data=%02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X",
+         d->meta[0],d->meta[1],d->meta[2],d->meta[3],d->meta[4],d->meta[5],d->meta[6],
+         d->meta[7],d->meta[8],d->meta[9],d->meta[10],d->meta[11],d->meta[12]);
++#ifdef G30_DASH_APPCOMPAT_V3
++    commands_printf(phandle,"APPCOMPATV3 pending=%u queued=%lu piggyback=%lu dropped=%lu dst=%02X arg=%02X ask=%u",
++        d->app_deferred,(unsigned long)d->app_deferred_queued,(unsigned long)d->app_piggybacked,
++        (unsigned long)d->app_deferred_dropped,d->app_deferred_dst,d->app_deferred_arg,d->app_deferred_ask);
++#endif
+ #endif
+ #endif
+     UART_HandleTypeDef *u=d->port->uart;
