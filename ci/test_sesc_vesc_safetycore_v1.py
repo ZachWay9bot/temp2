@@ -19,6 +19,9 @@ assert 'g30_lim_erpm>3000 || g30_lim_erpm< -3000' in vs
 assert 'current_to_torque(5000)' in vs
 assert 'VescToSTM_get_bus_voltage()>45.0f' in vs
 assert 'STM_GetState(pMCI[M1]->pSTM)==FAULT_OVER' in vs
+rearm=vs[vs.index('static void VescToSTM_g30_coast_rearm'):vs.index('void VescToSTM_g30_pushstart_command')]
+assert rearm.index('MCI_FaultAcknowledged(pMCI[M1])') < rearm.index('if(ps.mode==1u)')
+assert 'vfr.source!=G30_VBUS_SRC_PA1' in vs and 'vfr.pa1_mv>45000u' in vs
 assert '(void)MCI_FaultAcknowledged(pMCI[M1]);' in vs
 assert '5.0f*CURRENT_FACTOR_A' in mc
 assert 'g30_drv126_final_vq,-8192,8192' in mc
