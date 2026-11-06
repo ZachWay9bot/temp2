@@ -307,11 +307,11 @@ jobs:
           python3 ci/test_sesc_drv126_powercore6500_final_v1.py | tee OUTPUT/DRV126_POWERCORE6500_FINAL_V1_OFFLINE_SUITE.txt
           python3 ci/apply_sesc_speedtel_v1.py
           grep -q 'SESC-DRV126-POWERCORE6500-SPEEDTEL-V1' SOURCE_KOXX3/common_files/src/defines.h
+          python3 ci/test_sesc_speedtel_v1.py | tee OUTPUT/SPEEDTEL_V1_STATIC_TESTS.txt
           patch -d SOURCE_KOXX3 -p1 --dry-run < ci/POWERCORE6500_14S_VBUSFIX_V1.patch
           patch -d SOURCE_KOXX3 -p1 < ci/POWERCORE6500_14S_VBUSFIX_V1.patch
           grep -q 'SESC-DRV126-POWERCORE6500-14S-VBUSFIX-V1' SOURCE_KOXX3/common_files/src/defines.h
           python3 ci/test_sesc_14s_vbusfix_v1.py | tee OUTPUT/14S_VBUSFIX_STATIC_MODEL.txt
-          python3 ci/test_sesc_speedtel_v1.py | tee OUTPUT/SPEEDTEL_V1_STATIC_TESTS.txt
           grep -q '#define G30_DRV126_CURRENT_RAISING_COEFF_MA 6500' SOURCE_KOXX3/common_files/src/mc_tasks.c
           grep -q '#define G30_DRV126_CURRENT_RAISING_STEP_MC 2435' SOURCE_KOXX3/common_files/src/mc_tasks.c
           grep -q 'g30_drv126_final_power_step' SOURCE_KOXX3/common_files/src/mc_tasks.c
