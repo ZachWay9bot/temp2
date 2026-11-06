@@ -6,7 +6,8 @@ on:
       - hall14s-shud4-bms-clonkfree-appcompat-diag-v1-20261107
     paths:
       - 'ci/sesc_dash_appcompat_v1.patch'
-      - 'ci/test_sesc_dash_appcompat_v1.py'\n      - 'ci/sesc_dash_appcompat_diag_v1.patch'
+      - 'ci/test_sesc_dash_appcompat_v1.py'
+      - 'ci/sesc_dash_appcompat_diag_v1.patch'
       - '.github/workflows/shud4-bms-clonkfree-appcompat-diag-v1.yml'
   workflow_dispatch:
 
@@ -47,7 +48,13 @@ jobs:
         run: |
           set -euo pipefail
           patch -p1 < ci/sesc_dash_appcompat_v1.patch
-          python3 ci/test_sesc_dash_appcompat_v1.py | tee OUTPUT/APPCOMPAT_V1_STATIC_TESTS.txt\n          patch -p1 < ci/sesc_dash_appcompat_diag_v1.patch\n          grep -q 'SESC-DRV126-P6500-H14-SHUD4BMS-APPCOMPAT-DIAG-V1' SOURCE_KOXX3/common_files/src/defines.h\n          grep -q '#define G30_DASH_APPCOMPAT_DIAG_V1 1' SOURCE_KOXX3/common_files/src/defines.h\n          grep -q 'APPDIAG req=' SOURCE_KOXX3/common_files/src/g30_dash_link.c\n          grep -q 'serialSource=%s' SOURCE_KOXX3/common_files/src/g30_dash_link.c\n          printf 'APPCOMPAT_DIAG_V1_STATIC=PASS\\n' | tee OUTPUT/APPCOMPAT_DIAG_V1_STATIC_TESTS.txt
+          python3 ci/test_sesc_dash_appcompat_v1.py | tee OUTPUT/APPCOMPAT_V1_STATIC_TESTS.txt
+          patch -p1 < ci/sesc_dash_appcompat_diag_v1.patch
+          grep -q 'SESC-DRV126-P6500-H14-SHUD4BMS-APPCOMPAT-DIAG-V1' SOURCE_KOXX3/common_files/src/defines.h
+          grep -q '#define G30_DASH_APPCOMPAT_DIAG_V1 1' SOURCE_KOXX3/common_files/src/defines.h
+          grep -q 'APPDIAG req=' SOURCE_KOXX3/common_files/src/g30_dash_link.c
+          grep -q 'serialSource=%s' SOURCE_KOXX3/common_files/src/g30_dash_link.c
+          printf 'APPCOMPAT_DIAG_V1_STATIC=PASS\n' | tee OUTPUT/APPCOMPAT_DIAG_V1_STATIC_TESTS.txt
 
       - name: Install ARM GNU GCC 13.2.1
         shell: bash
@@ -94,13 +101,14 @@ jobs:
         run: |
           set -euo pipefail
           grep -q 'SESC-DRV126-P6500-H14-SHUD4BMS-APPCOMPAT-DIAG-V1' SOURCE_KOXX3/common_files/src/defines.h
-          grep -q '#define G30_DASH_APPCOMPAT_V1 1' SOURCE_KOXX3/common_files/src/defines.h\n          grep -q '#define G30_DASH_APPCOMPAT_DIAG_V1 1' SOURCE_KOXX3/common_files/src/defines.h
+          grep -q '#define G30_DASH_APPCOMPAT_V1 1' SOURCE_KOXX3/common_files/src/defines.h
+          grep -q '#define G30_DASH_APPCOMPAT_DIAG_V1 1' SOURCE_KOXX3/common_files/src/defines.h
           sha256sum SOURCE_KOXX3/common_files/src/mc_tasks.c | grep -q '^1c3f61ad12855960ddf25ea96730328bdfaa4d8653d6f7ec9fe89d2114518c98'
           sha256sum SOURCE_KOXX3/common_files/MotorControl/MCSDK/MCLib/F1xx/Src/r3_2_f1xx_pwm_curr_fdbk.c | grep -q '^14ccd029244f230d5632f18c6c278aa3021976ede8a4513939af068456eee276'
           sha256sum SOURCE_KOXX3/common_files/src/task_pwr.c | grep -q '^9fb70e29f7d9cc754c05f4fc439d555822c34097347b25e54aff7beb084f6cad'
           ! grep -q 'G30_DASH_APPCOMPAT_V1' SOURCE_KOXX3/common_files/src/mc_tasks.c
           ! grep -q 'G30_DASH_APPCOMPAT_V1' SOURCE_KOXX3/common_files/MotorControl/MCSDK/MCLib/F1xx/Src/r3_2_f1xx_pwm_curr_fdbk.c
-          printf 'MOTOR_FASTPATH_HASH_EXACT=PASS\nBUTTON_HASH_EXACT=PASS\nAPPCOMPAT_READ_ONLY=PASS\n' > OUTPUT/POST_BUILD_INVARIANTS.txt
+          printf 'MOTOR_FASTPATH_HASH_EXACT=PASS\nBUTTON_HASH_EXACT=PASS\nAPPCOMPAT_READ_ONLY=PASS\nAPPCOMPAT_DIAG_V1=PASS\n' > OUTPUT/POST_BUILD_INVARIANTS.txt
 
       - name: Upload APPCOMPAT DIAG V1
         uses: actions/upload-artifact@v4
@@ -120,8 +128,10 @@ jobs:
             OUTPUT/validation.log
             OUTPUT/build.log
             OUTPUT/PARENT_PROVENANCE.txt
-            OUTPUT/APPCOMPAT_V1_STATIC_TESTS.txt\n            OUTPUT/APPCOMPAT_DIAG_V1_STATIC_TESTS.txt
+            OUTPUT/APPCOMPAT_V1_STATIC_TESTS.txt
+            OUTPUT/APPCOMPAT_DIAG_V1_STATIC_TESTS.txt
             OUTPUT/POST_BUILD_INVARIANTS.txt
             OUTPUT/SOURCE_KOXX3_SESC_DRV126_P6500_H14_SHUD4BMS_APPCOMPAT_DIAG_V1_EXACT.tgz
-            ci/sesc_dash_appcompat_v1.patch\n            ci/sesc_dash_appcompat_diag_v1.patch
+            ci/sesc_dash_appcompat_v1.patch
+            ci/sesc_dash_appcompat_diag_v1.patch
             ci/test_sesc_dash_appcompat_v1.py
