@@ -463,7 +463,7 @@ jobs:
             'drv126_final_svpwm':'g30_drv126_final_svpwm' in mc and 'const int32_t per=4000,lim=3920' in mc,
             'drv126_final_stock_sector':'pHdl->Sector=(uint8_t)(sec-1u);' in mc and 'g30_drv126_order3' not in mc,
             'drv126_final_fw_telemetry':'FOCVars[M1].Vqd=Vqd;' in mc and 'FOCVars[M1].Iqd=Iqd;' in mc and 'FW_DataProcess(pFW[M1],Vqd,Iqd);' in mc,
-            'drv126_final_preload':'g30_drv126_final_preload(drv_vq,drv_vd);' in vs,
+            'drv126_final_preload':'g30_drv126_final_preload(initial.vq_counts,initial.vd_counts);' in vs and 'g30_drv126_final_preload(0,0);' in vs,
             'drv126_final_reset':'g30_drv126_final_reset();' in vs and 'if(bMotor==M1) g30_drv126_final_reset();' in mc,
             'motorpath_diag':'strcmp(argv[0], "g30_motorpath")' in te and 'MP dtcomp enabled=' in te and 'MP cpu last=' in te and 'MP sample ccr4=' in te and 'g30_motorpath_reset' in te,
             'dtcomp_stays_off':'DTTest = 0' in Path('SOURCE_KOXX3/common_files/src/mc_config.c').read_text() and 'DTTest = 0u' in Path('SOURCE_KOXX3/common_files/MotorControl/MCSDK/MCLib/F1xx/Src/r3_2_f1xx_pwm_curr_fdbk.c').read_text(),
