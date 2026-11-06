@@ -5,15 +5,19 @@ de=(root/"common_files/src/defines.h").read_text()
 vs=(root/"common_files/src/VescToSTM.c").read_text()
 mc=(root/"common_files/src/mc_tasks.c").read_text()
 te=(root/"common_files/src/terminal.c").read_text()
+pr=(root/"common_files/inc/product.h").read_text()
+led=(root/"common_files/src/task_LED.c").read_text()
 pwm=(root/"common_files/MotorControl/MCSDK/MCLib/F1xx/Src/r3_2_f1xx_pwm_curr_fdbk.c").read_text()
 fo=(root/"common_files/src/g30_fo76_shadow.c").read_text()
 vc=(root/"common_files/src/VescCommand.c").read_text()
 assert 'uint8_t send_buffer[PACKET_SIZE(96)];' in vc
 assert 'uint8_t send_buffer[PACKET_SIZE(60)];' not in vc
-assert 3 + len('SESC-DRV126-POWERCORE6500-VBUS-FUSION-LIVE-SHADOW-V1S') + 1 + 12 + 1 + 1 + 1 + 4 <= 96
+assert 3 + len('SESC-DRV126-POWERCORE6500-FAULTGUARD-V1') + 1 + 12 + 1 + 1 + 1 + 4 <= 96
 
-assert 'SESC-DRV126-POWERCORE6500-VBUS-FUSION-LIVE-SHADOW-V1S' in de
+assert 'SESC-DRV126-POWERCORE6500-FAULTGUARD-V1' in de
 assert '#define G30_VBUS_LIVE_SHADOW_GATE 1' in de
+assert '#define G30_FAULTGUARD_V1 1' in de
+assert '#define AUTO_RESET_FAULT\t\t\t\t\t\t\t\t\t\t\t\t\t 0' in pr or '#define AUTO_RESET_FAULT' in pr and pr.split('AUTO_RESET_FAULT',1)[1].lstrip().startswith('0')
 assert 'G30_BMS_BATTERY_SAFE_POWERLOCK' not in de
 assert 'G30_BMS_BATTERY_SAFE_POWERLOCK' in pwm  # dormant guarded code still present
 
@@ -45,3 +49,14 @@ print('LIVE_SHADOW_FUSION_FAIL_COAST=PASS')
 print('LIVE_SHADOW_FO76_OBSERVER_WIRED=PASS')
 
 print('LIVE_SHADOW_FW_VERSION_BOUNDS=PASS')
+
+assert 'strcmp(argv[0], "g30_faultguard")' in te
+assert 'auto_reset=0' in te
+assert 'hFaultNow' in te and 'hFaultOccurred' in te
+assert 'last_fault_time = 0xFFFFFFFFu' in led
+assert 'if(f & MC_BREAK_IN)' in vs
+assert 'if(f & MC_FOC_DURATION)' in vs
+print('FAULTGUARD_AUTO_RESET_DISABLED=PASS')
+print('FAULTGUARD_RAW_MCSDK_FAULTS=PASS')
+print('FAULTGUARD_ONE_SHOT_FAULT_PRINT=PASS')
+print('FAULTGUARD_FOC_DURATION_SURFACED=PASS')
