@@ -218,7 +218,7 @@ static void g30_bms_drain_dma(void){
     uint16_t left; uint8_t wr;
     if(!g30_bms || !g30_bms->dma_started || !huart3.hdmarx) return;
     left=(uint16_t)huart3.hdmarx->Instance->CNDTR;
-    wr=(uint8_t)(G30_BMS_RX_N-((left<=G30_BMS_RX_N)?left:G30_BMS_RX_N));
+    wr=(uint8_t)((G30_BMS_RX_N-((left<=G30_BMS_RX_N)?left:G30_BMS_RX_N)) % G30_BMS_RX_N);
     while(g30_bms->rd!=wr){
         uint8_t b=g30_bms->rx[g30_bms->rd];
         g30_bms->raw_count++;
