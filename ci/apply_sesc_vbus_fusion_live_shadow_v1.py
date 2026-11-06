@@ -7,7 +7,7 @@ p=root/"common_files/src/defines.h"
 s=p.read_text()
 old='''#define HW_NAME "SESC-DRV126-POWERCORE6500-VBUS-FUSION-WIRED-LOCKED-V2"
 #define G30_BMS_BATTERY_SAFE_POWERLOCK 1'''
-new='''#define HW_NAME "SESC-DRV126-POWERCORE6500-FAULTGUARD-V1"
+new='''#define HW_NAME "SESC-DRV126-POWERCORE6500-FAULTGUARD-V1A"
 #define G30_VBUS_LIVE_SHADOW_GATE 1
 #define G30_FAULTGUARD_V1 1'''
 assert old in s
@@ -239,6 +239,29 @@ block=r'''    }else if (strcmp(argv[0], "g30_faultguard") == 0){
           (unsigned long)pMCI[M1]->pFOCVars->cycles_max,
           (unsigned long)(CPU_CLOCK/PWM_FREQUENCY),
           (unsigned long)(pMCI[M1]->pFOCVars->cycles_max*PWM_FREQUENCY*100u/CPU_CLOCK));
+        return;
+    }else if (strcmp(argv[0], "g30_faultguard_ack") == 0){
+        uint16_t fn=pMCI[M1]->pSTM->hFaultNow;
+        State_t st=STM_GetState(pMCI[M1]->pSTM);
+        uint8_t pwm_off=(uint8_t)PWM_Handle_M1._Super.PWM_off;
+        uint8_t moe=(uint8_t)((TIM1->BDTR&TIM_BDTR_MOE)?1u:0u);
+        if(fn!=0u || st!=FAULT_OVER || !pwm_off || moe){
+            commands_printf(phandle,
+              "FAULTGUARD_ACK DENIED now=0x%04x state=%u pwm_off=%u moe=%u",
+              (unsigned)fn,(unsigned)st,(unsigned)pwm_off,(unsigned)moe);
+            return;
+        }
+        VescToSTM_set_current(0.0f,0.0f);
+        VescToSTM_pwm_stop();
+        if(!MCI_FaultAcknowledged(pMCI[M1])){
+            commands_printf(phandle,"FAULTGUARD_ACK FAILED");
+            return;
+        }
+        VescToSTM_pwm_stop();
+        commands_printf(phandle,"FAULTGUARD_ACK OK state=%u pwm_off=%u moe=%u",
+          (unsigned)STM_GetState(pMCI[M1]->pSTM),
+          (unsigned)PWM_Handle_M1._Super.PWM_off,
+          (unsigned)((TIM1->BDTR&TIM_BDTR_MOE)?1u:0u));
         return;
 '''
 x=x.replace(marker,block+marker,1)
