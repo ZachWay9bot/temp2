@@ -7,10 +7,11 @@ p=root/"common_files/src/defines.h"
 s=p.read_text()
 old='''#define HW_NAME "SESC-DRV126-POWERCORE6500-VBUS-FUSION-WIRED-LOCKED-V2"
 #define G30_BMS_BATTERY_SAFE_POWERLOCK 1'''
-new='''#define HW_NAME "SESC-DRV126-POWERCORE6500-FAULTGUARD-V1B"
+new='''#define HW_NAME "SESC-DRV126-POWERCORE6500-FAULTGUARD-V1C"
 #define G30_VBUS_LIVE_SHADOW_GATE 1
 #define G30_FAULTGUARD_V1 1
-#define G30_FAULTGUARD_V1B 1'''
+#define G30_FAULTGUARD_V1B 1
+#define G30_FAULTGUARD_V1C 1'''
 assert old in s
 p.write_text(s.replace(old,new,1))
 
@@ -281,3 +282,151 @@ x=x.replace(marker,block+marker,1)
 p.write_text(x)
 
 print("FAULTGUARD V1B applied: latched faults, safe ACK to RUN+PWM_OFF, no re-calibration, no auto restart")
+
+
+# FAULTGUARD V1C: identify MC_FOC_DURATION source and debounce only a single isolated miss.
+# Persistent/repeated timing misses still hard-fault on the second consecutive bad cycle.
+p=root/"common_files/MotorControl/MCSDK/MCLib/F1xx/Inc/r3_2_f1xx_pwm_curr_fdbk.h"
+x=p.read_text()
+marker='''void * R3_2_BRK_IRQHandler( PWMC_R3_2_Handle_t * pHdl );'''
+assert marker in x
+diag='''extern volatile uint32_t g30_focdur_ch4_count;
+extern volatile uint32_t g30_focdur_swerr_count;
+extern volatile uint32_t g30_focdur_total_count;
+extern volatile uint16_t g30_focdur_last_tim_cnt;
+extern volatile uint16_t g30_focdur_last_ccer;
+extern volatile uint16_t g30_focdur_last_ccr4;
+extern volatile uint8_t  g30_focdur_last_sector;
+
+'''
+x=x.replace(marker,diag+marker,1)
+p.write_text(x)
+
+p=root/"common_files/MotorControl/MCSDK/MCLib/F1xx/Src/r3_2_f1xx_pwm_curr_fdbk.c"
+x=p.read_text()
+inc='#include "r3_2_f1xx_pwm_curr_fdbk.h"'
+assert inc in x
+x=x.replace(inc,inc+'''
+volatile uint32_t g30_focdur_ch4_count=0u;
+volatile uint32_t g30_focdur_swerr_count=0u;
+volatile uint32_t g30_focdur_total_count=0u;
+volatile uint16_t g30_focdur_last_tim_cnt=0u;
+volatile uint16_t g30_focdur_last_ccer=0u;
+volatile uint16_t g30_focdur_last_ccr4=0u;
+volatile uint8_t  g30_focdur_last_sector=0u;
+''',1)
+
+old='''  if ( LL_TIM_CC_IsEnabledChannel(TIMx, LL_TIM_CHANNEL_CH4))
+  {
+    hAux = MC_FOC_DURATION;
+  }
+  else
+  {
+    hAux = MC_NO_ERROR;
+  }
+  if ( pHandle->_Super.SWerror == 1u )
+  {
+    hAux = MC_FOC_DURATION;
+    pHandle->_Super.SWerror = 0u;
+  }
+  return hAux;'''
+new='''  {
+    uint8_t late_ch4 = LL_TIM_CC_IsEnabledChannel(TIMx, LL_TIM_CHANNEL_CH4) ? 1u : 0u;
+    uint8_t swerr = (pHandle->_Super.SWerror == 1u) ? 1u : 0u;
+    hAux = (late_ch4 || swerr) ? MC_FOC_DURATION : MC_NO_ERROR;
+    if (hAux == MC_FOC_DURATION)
+    {
+      g30_focdur_total_count++;
+      if(late_ch4) g30_focdur_ch4_count++;
+      if(swerr) g30_focdur_swerr_count++;
+      g30_focdur_last_tim_cnt=(uint16_t)TIMx->CNT;
+      g30_focdur_last_ccer=(uint16_t)TIMx->CCER;
+      g30_focdur_last_ccr4=(uint16_t)TIMx->CCR4;
+      g30_focdur_last_sector=pHandle->_Super.Sector;
+    }
+    if (swerr) pHandle->_Super.SWerror = 0u;
+  }
+  return hAux;'''
+assert old in x
+x=x.replace(old,new,1)
+p.write_text(x)
+
+p=root/"common_files/src/mc_tasks.c"
+x=p.read_text()
+marker='''__weak uint8_t TSK_HighFrequencyTask(void)
+{
+'''
+assert marker in x
+x=x.replace(marker,'''static volatile uint8_t g30_focdur_consecutive=0u;
+static volatile uint32_t g30_focdur_debounced_single=0u;
+static volatile uint32_t g30_focdur_hardfault_count=0u;
+
+__weak uint8_t TSK_HighFrequencyTask(void)
+{
+''',1)
+old='''	if(hFOCreturn == MC_FOC_DURATION){
+		STM_FaultProcessing(&STM[M1], MC_FOC_DURATION, 0);
+	}
+	else
+	{
+'''
+new='''	if(hFOCreturn == MC_FOC_DURATION){
+#ifdef G30_FAULTGUARD_V1C
+		if(g30_focdur_consecutive < 255u) g30_focdur_consecutive++;
+		if(g30_focdur_consecutive >= 2u){
+			g30_focdur_hardfault_count++;
+			STM_FaultProcessing(&STM[M1], MC_FOC_DURATION, 0);
+		}else{
+			g30_focdur_debounced_single++;
+		}
+#else
+		STM_FaultProcessing(&STM[M1], MC_FOC_DURATION, 0);
+#endif
+	}
+	else
+	{
+#ifdef G30_FAULTGUARD_V1C
+		g30_focdur_consecutive=0u;
+#endif
+'''
+assert old in x
+x=x.replace(old,new,1)
+p.write_text(x)
+
+p=root/"common_files/src/terminal.c"
+x=p.read_text()
+marker='''        commands_printf(phandle,
+          "FAULTGUARD foc_cycles last=%lu max=%lu budget=%lu load_max_pct=%lu",'''
+assert marker in x
+insert='''        commands_printf(phandle,
+          "FAULTGUARD focdur total=%lu ch4=%lu swerr=%lu consec=%u single_ignored=%lu hard=%lu timcnt=%u ccer=0x%04x ccr4=%u sector=%u",
+          (unsigned long)g30_focdur_total_count,
+          (unsigned long)g30_focdur_ch4_count,
+          (unsigned long)g30_focdur_swerr_count,
+          (unsigned)g30_focdur_consecutive,
+          (unsigned long)g30_focdur_debounced_single,
+          (unsigned long)g30_focdur_hardfault_count,
+          (unsigned)g30_focdur_last_tim_cnt,
+          (unsigned)g30_focdur_last_ccer,
+          (unsigned)g30_focdur_last_ccr4,
+          (unsigned)g30_focdur_last_sector);
+'''
+x=x.replace(marker,insert+marker,1)
+
+# terminal needs the debounce counters visible from mc_tasks.c
+x=x.replace('''#include "VescToSTM.h"''','''#include "VescToSTM.h"
+#include "r3_2_f1xx_pwm_curr_fdbk.h"
+extern volatile uint8_t g30_focdur_consecutive;
+extern volatile uint32_t g30_focdur_debounced_single;
+extern volatile uint32_t g30_focdur_hardfault_count;''',1)
+p.write_text(x)
+
+# Remove static storage so terminal externs resolve.
+p=root/"common_files/src/mc_tasks.c"
+x=p.read_text()
+x=x.replace('static volatile uint8_t g30_focdur_consecutive=0u;','volatile uint8_t g30_focdur_consecutive=0u;',1)
+x=x.replace('static volatile uint32_t g30_focdur_debounced_single=0u;','volatile uint32_t g30_focdur_debounced_single=0u;',1)
+x=x.replace('static volatile uint32_t g30_focdur_hardfault_count=0u;','volatile uint32_t g30_focdur_hardfault_count=0u;',1)
+p.write_text(x)
+
+print("FAULTGUARD V1C applied: FOC-duration cause telemetry + one-cycle debounce, hard trip on 2 consecutive misses")
