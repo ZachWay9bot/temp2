@@ -142,18 +142,19 @@ block=r'''    }else if (strcmp(argv[0], "g30_vbus_fusion_sim") == 0){
           g30_vbus_fusion_result_t r=g30_vbus_fusion_eval(
             sc[i][0],sc[i][1],sc[i][2],(uint16_t)sc[i][3],(uint16_t)sc[i][4],sc[i][5],(uint8_t)sc[i][6]);
           commands_printf(phandle,
-            "VBFUS_SIM i=%u pa1=%lu bms10=%lu cellsum=%lu age=%lu present=%lu valid=%u src=%s fused=%lu low=%lu high=%lu sl_ok=%u series_match=%u",
-            i,(unsigned long)r.pa1_mv,(unsigned long)r.bms_pack_mv,
-            (unsigned long)r.bms_cell_sum_mv,(unsigned long)r.bms_age_ms,
-            (unsigned long)sc[i][6],(unsigned)r.bms_valid,
-            g30_vbus_fusion_source_name(r.source),
+            "VBFUS_SIM i=%u pa1=%lu src=%s fused=%lu sl_ok=%u",
+            i,(unsigned long)r.pa1_mv,g30_vbus_fusion_source_name(r.source),
             (unsigned long)((r.source==G30_VBUS_SRC_PA1)?r.pa1_mv:r.est_mv),
-            (unsigned long)r.low_mv,(unsigned long)r.high_mv,
-            (unsigned)r.sensorless_ok,(unsigned)r.series_match);
+            (unsigned)r.sensorless_ok);
+          commands_printf(phandle,
+            "VBFUS_BMS i=%u bms10=%lu sum=%lu age=%lu valid=%u low=%lu high=%lu match=%u",
+            i,(unsigned long)r.bms_pack_mv,(unsigned long)r.bms_cell_sum_mv,
+            (unsigned long)r.bms_age_ms,(unsigned)r.bms_valid,
+            (unsigned long)r.low_mv,(unsigned long)r.high_mv,(unsigned)r.series_match);
         }
-        commands_printf(phandle,
-          "VBFUS_SIM policy pa1_trust_max=%u bms_max_age=%u ratio=10S_plus_4S_identical_cells observer_connected=0 powerstage_locked=1",
+        commands_printf(phandle,"VBFUS_POLICY trust=%u age=%u ratio=14/10",
           (unsigned)G30_VBUS_PA1_TRUST_MAX_MV,(unsigned)G30_VBUS_BMS_MAX_AGE_MS);
+        commands_printf(phandle,"VBFUS_WIRING observer_connected=0 powerstage_locked=1");
         return;
 '''
 s=s.replace(marker,block+marker,1)
@@ -161,4 +162,4 @@ p.write_text(s)
 
 print("VBUS FUSION SIM V1 applied: pure fusion evaluator + terminal scenarios; observer remains disconnected; powerstage lock retained")
 
-# CI trigger after included-implementation fix
+# CI trigger after 128-byte-safe terminal output fix
