@@ -7,8 +7,12 @@ mc=(root/"common_files/src/mc_tasks.c").read_text()
 te=(root/"common_files/src/terminal.c").read_text()
 pwm=(root/"common_files/MotorControl/MCSDK/MCLib/F1xx/Src/r3_2_f1xx_pwm_curr_fdbk.c").read_text()
 fo=(root/"common_files/src/g30_fo76_shadow.c").read_text()
+vc=(root/"common_files/src/VescCommand.c").read_text()
+assert 'uint8_t send_buffer[PACKET_SIZE(96)];' in vc
+assert 'uint8_t send_buffer[PACKET_SIZE(60)];' not in vc
+assert 3 + len('SESC-DRV126-POWERCORE6500-VBUS-FUSION-LIVE-SHADOW-V1S') + 1 + 12 + 1 + 1 + 1 + 4 <= 96
 
-assert 'SESC-DRV126-POWERCORE6500-VBUS-FUSION-LIVE-SHADOW-V1' in de
+assert 'SESC-DRV126-POWERCORE6500-VBUS-FUSION-LIVE-SHADOW-V1S' in de
 assert '#define G30_VBUS_LIVE_SHADOW_GATE 1' in de
 assert 'G30_BMS_BATTERY_SAFE_POWERLOCK' not in de
 assert 'G30_BMS_BATTERY_SAFE_POWERLOCK' in pwm  # dormant guarded code still present
@@ -39,3 +43,5 @@ print('LIVE_SHADOW_SPEED_3000_ERPM_CLAMP=PASS')
 print('LIVE_SHADOW_VOLTAGE_VECTOR_CLAMP=PASS')
 print('LIVE_SHADOW_FUSION_FAIL_COAST=PASS')
 print('LIVE_SHADOW_FO76_OBSERVER_WIRED=PASS')
+
+print('LIVE_SHADOW_FW_VERSION_BOUNDS=PASS')
