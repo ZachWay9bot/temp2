@@ -60,6 +60,7 @@ for x in ['out[0]=0x5Au','out[1]=0xA5u','out[3]=0x20u','out[4]=0x22u','out[5]=0x
 assert 'g30_bms->cmd!=0x04u' in L
 assert 'HAL_UART_Receive_DMA(&huart3' in L
 assert 'HAL_UART_Transmit(&huart3' in L
+assert '% G30_BMS_RX_N' in L
 segment=L[L.index('#ifdef G30_SHUD4_BMS_V1'):L.index('#endif',L.index('int16_t g30_bms_stock_current'))+6]
 assert 'out[5]=0x03u' not in segment
 assert 'g30_bms_service_10ms();' in L
