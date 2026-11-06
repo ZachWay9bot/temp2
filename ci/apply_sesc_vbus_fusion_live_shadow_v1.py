@@ -7,10 +7,11 @@ p=root/"common_files/src/defines.h"
 s=p.read_text()
 old='''#define HW_NAME "SESC-DRV126-POWERCORE6500-VBUS-FUSION-WIRED-LOCKED-V2"
 #define G30_BMS_BATTERY_SAFE_POWERLOCK 1'''
-new='''#define HW_NAME "SESC-DRV126-POWERCORE6500-FAULTGUARD-V1B"
+new='''#define HW_NAME "SESC-DRV126-POWERCORE6500-FAULTGUARD-V1C"
 #define G30_VBUS_LIVE_SHADOW_GATE 1
 #define G30_FAULTGUARD_V1 1
-#define G30_FAULTGUARD_V1B 1'''
+#define G30_FAULTGUARD_V1B 1
+#define G30_FAULTGUARD_V1C_DIAG 1'''
 assert old in s
 p.write_text(s.replace(old,new,1))
 
@@ -281,3 +282,101 @@ x=x.replace(marker,block+marker,1)
 p.write_text(x)
 
 print("FAULTGUARD V1B applied: latched faults, safe ACK to RUN+PWM_OFF, no re-calibration, no auto restart")
+
+
+# V1C diagnostic: latch the exact R3_2 reason when MC_FOC_DURATION is returned.
+# Stores occur only on the already-failing path; normal FOC timing is unchanged.
+p=root/"common_files/MotorControl/MCSDK/MCLib/F1xx/Src/r3_2_f1xx_pwm_curr_fdbk.c"
+x=p.read_text()
+anchor='''#include "r3_2_f1xx_pwm_curr_fdbk.h"'''
+assert anchor in x
+x=x.replace(anchor,anchor+'''
+#ifdef G30_FAULTGUARD_V1C_DIAG
+volatile uint32_t g30_focdur_ch4_count=0u;
+volatile uint32_t g30_focdur_swerr_count=0u;
+volatile uint16_t g30_focdur_tim_cnt=0u;
+volatile uint16_t g30_focdur_tim_sr=0u;
+volatile uint16_t g30_focdur_tim_ccer=0u;
+volatile uint16_t g30_focdur_tim_ccr4=0u;
+volatile uint16_t g30_focdur_swerr_latched=0u;
+#endif''',1)
+old='''  if ( LL_TIM_CC_IsEnabledChannel(TIMx, LL_TIM_CHANNEL_CH4))
+  {
+    hAux = MC_FOC_DURATION;
+  }
+  else
+  {
+    hAux = MC_NO_ERROR;
+  }
+  if ( pHandle->_Super.SWerror == 1u )
+  {
+    hAux = MC_FOC_DURATION;
+    pHandle->_Super.SWerror = 0u;
+  }'''
+new='''  if ( LL_TIM_CC_IsEnabledChannel(TIMx, LL_TIM_CHANNEL_CH4))
+  {
+    hAux = MC_FOC_DURATION;
+#ifdef G30_FAULTGUARD_V1C_DIAG
+    g30_focdur_ch4_count++;
+    g30_focdur_tim_cnt=(uint16_t)TIMx->CNT;
+    g30_focdur_tim_sr=(uint16_t)TIMx->SR;
+    g30_focdur_tim_ccer=(uint16_t)TIMx->CCER;
+    g30_focdur_tim_ccr4=(uint16_t)TIMx->CCR4;
+#endif
+  }
+  else
+  {
+    hAux = MC_NO_ERROR;
+  }
+  if ( pHandle->_Super.SWerror == 1u )
+  {
+    hAux = MC_FOC_DURATION;
+#ifdef G30_FAULTGUARD_V1C_DIAG
+    g30_focdur_swerr_count++;
+    g30_focdur_swerr_latched=1u;
+    g30_focdur_tim_cnt=(uint16_t)TIMx->CNT;
+    g30_focdur_tim_sr=(uint16_t)TIMx->SR;
+    g30_focdur_tim_ccer=(uint16_t)TIMx->CCER;
+    g30_focdur_tim_ccr4=(uint16_t)TIMx->CCR4;
+#endif
+    pHandle->_Super.SWerror = 0u;
+  }'''
+assert old in x
+x=x.replace(old,new,1)
+p.write_text(x)
+
+p=root/"common_files/src/terminal.c"
+x=p.read_text()
+marker='''    }else if (strcmp(argv[0], "g30_faultguard_ack") == 0){'''
+assert marker in x
+decl='''#ifdef G30_FAULTGUARD_V1C_DIAG
+extern volatile uint32_t g30_focdur_ch4_count;
+extern volatile uint32_t g30_focdur_swerr_count;
+extern volatile uint16_t g30_focdur_tim_cnt;
+extern volatile uint16_t g30_focdur_tim_sr;
+extern volatile uint16_t g30_focdur_tim_ccer;
+extern volatile uint16_t g30_focdur_tim_ccr4;
+extern volatile uint16_t g30_focdur_swerr_latched;
+#endif
+'''
+# Insert declarations before terminal processing function area, using first existing include terminator location.
+incpos=x.find('\n\n', x.find('#include'))
+assert incpos>0
+x=x[:incpos+2]+decl+x[incpos+2:]
+block='''    }else if (strcmp(argv[0], "g30_focdur_diag") == 0){
+#ifdef G30_FAULTGUARD_V1C_DIAG
+        commands_printf(phandle,
+          "FOCDUR ch4=%lu swerr=%lu swlat=%u CNT=%u SR=0x%04x CCER=0x%04x CCR4=%u",
+          (unsigned long)g30_focdur_ch4_count,(unsigned long)g30_focdur_swerr_count,
+          (unsigned)g30_focdur_swerr_latched,(unsigned)g30_focdur_tim_cnt,
+          (unsigned)g30_focdur_tim_sr,(unsigned)g30_focdur_tim_ccer,
+          (unsigned)g30_focdur_tim_ccr4);
+#else
+        commands_printf(phandle,"FOCDUR diag unavailable");
+#endif
+        return;
+'''
+x=x.replace(marker,block+marker,1)
+p.write_text(x)
+
+print("FAULTGUARD V1C: exact MC_FOC_DURATION cause latch added")
