@@ -45,7 +45,7 @@ jobs:
           set -euo pipefail
           python3 ci/apply_sesc_vbus_fusion_sim_v1.py
           python3 ci/test_sesc_vbus_fusion_sim_v1.py | tee OUTPUT/VBUS_FUSION_SIM_V1_STATIC_TESTS.txt
-          cc -std=c11 -Wall -Wextra -Werror              -I SOURCE_KOXX3/common_files/src              SOURCE_KOXX3/common_files/src/g30_vbus_fusion.c              ci/test_g30_vbus_fusion.c              -o /tmp/vbfus_test
+          cc -std=c11 -Wall -Wextra -Werror -I SOURCE_KOXX3/common_files/src ci/test_g30_vbus_fusion.c -o /tmp/vbfus_test
           /tmp/vbfus_test | tee OUTPUT/VBUS_FUSION_SIM_V1_HOST_TESTS.txt
 
       - name: Install ARM GNU GCC 13.2.1
