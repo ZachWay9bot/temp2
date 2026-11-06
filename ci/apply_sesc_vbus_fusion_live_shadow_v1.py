@@ -290,13 +290,10 @@ p=root/"common_files/MotorControl/MCSDK/MCLib/F1xx/Inc/r3_2_f1xx_pwm_curr_fdbk.h
 x=p.read_text()
 marker='''void * R3_2_BRK_IRQHandler( PWMC_R3_2_Handle_t * pHdl );'''
 assert marker in x
-diag='''extern volatile uint32_t g30_focdur_ch4_count;
-extern volatile uint32_t g30_focdur_swerr_count;
-extern volatile uint32_t g30_focdur_total_count;
+diag='''extern volatile uint16_t g30_focdur_total_count;
 extern volatile uint16_t g30_focdur_last_tim_cnt;
-extern volatile uint16_t g30_focdur_last_ccer;
 extern volatile uint16_t g30_focdur_last_ccr4;
-extern volatile uint8_t  g30_focdur_last_sector;
+extern volatile uint8_t  g30_focdur_last_reason; /* bit0=CH4 late, bit1=SWerror */
 
 '''
 x=x.replace(marker,diag+marker,1)
@@ -307,13 +304,10 @@ x=p.read_text()
 inc='#include "r3_2_f1xx_pwm_curr_fdbk.h"'
 assert inc in x
 x=x.replace(inc,inc+'''
-volatile uint32_t g30_focdur_ch4_count=0u;
-volatile uint32_t g30_focdur_swerr_count=0u;
-volatile uint32_t g30_focdur_total_count=0u;
+volatile uint16_t g30_focdur_total_count=0u;
 volatile uint16_t g30_focdur_last_tim_cnt=0u;
-volatile uint16_t g30_focdur_last_ccer=0u;
 volatile uint16_t g30_focdur_last_ccr4=0u;
-volatile uint8_t  g30_focdur_last_sector=0u;
+volatile uint8_t  g30_focdur_last_reason=0u;
 ''',1)
 
 old='''  if ( LL_TIM_CC_IsEnabledChannel(TIMx, LL_TIM_CHANNEL_CH4))
@@ -336,13 +330,10 @@ new='''  {
     hAux = (late_ch4 || swerr) ? MC_FOC_DURATION : MC_NO_ERROR;
     if (hAux == MC_FOC_DURATION)
     {
-      g30_focdur_total_count++;
-      if(late_ch4) g30_focdur_ch4_count++;
-      if(swerr) g30_focdur_swerr_count++;
+      if(g30_focdur_total_count < 65535u) g30_focdur_total_count++;
+      g30_focdur_last_reason=(uint8_t)((late_ch4?1u:0u) | (swerr?2u:0u));
       g30_focdur_last_tim_cnt=(uint16_t)TIMx->CNT;
-      g30_focdur_last_ccer=(uint16_t)TIMx->CCER;
       g30_focdur_last_ccr4=(uint16_t)TIMx->CCR4;
-      g30_focdur_last_sector=pHandle->_Super.Sector;
     }
     if (swerr) pHandle->_Super.SWerror = 0u;
   }
@@ -399,17 +390,14 @@ marker='''        commands_printf(phandle,
           "FAULTGUARD foc_cycles last=%lu max=%lu budget=%lu load_max_pct=%lu",'''
 assert marker in x
 insert='''        commands_printf(phandle,
-          "FAULTGUARD focdur total=%lu ch4=%lu swerr=%lu consec=%u single_ignored=%lu hard=%lu timcnt=%u ccer=0x%04x ccr4=%u sector=%u",
-          (unsigned long)g30_focdur_total_count,
-          (unsigned long)g30_focdur_ch4_count,
-          (unsigned long)g30_focdur_swerr_count,
+          "FAULTGUARD focdur total=%u reason=0x%02x consec=%u single_ignored=%u hard=%u timcnt=%u ccr4=%u",
+          (unsigned)g30_focdur_total_count,
+          (unsigned)g30_focdur_last_reason,
           (unsigned)g30_focdur_consecutive,
-          (unsigned long)g30_focdur_debounced_single,
-          (unsigned long)g30_focdur_hardfault_count,
+          (unsigned)g30_focdur_debounced_single,
+          (unsigned)g30_focdur_hardfault_count,
           (unsigned)g30_focdur_last_tim_cnt,
-          (unsigned)g30_focdur_last_ccer,
-          (unsigned)g30_focdur_last_ccr4,
-          (unsigned)g30_focdur_last_sector);
+          (unsigned)g30_focdur_last_ccr4);
 '''
 x=x.replace(marker,insert+marker,1)
 
@@ -417,8 +405,8 @@ x=x.replace(marker,insert+marker,1)
 x=x.replace('''#include "VescToSTM.h"''','''#include "VescToSTM.h"
 #include "r3_2_f1xx_pwm_curr_fdbk.h"
 extern volatile uint8_t g30_focdur_consecutive;
-extern volatile uint32_t g30_focdur_debounced_single;
-extern volatile uint32_t g30_focdur_hardfault_count;''',1)
+extern volatile uint16_t g30_focdur_debounced_single;
+extern volatile uint16_t g30_focdur_hardfault_count;''',1)
 p.write_text(x)
 
 # Remove static storage so terminal externs resolve.
