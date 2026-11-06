@@ -1,0 +1,69 @@
+--- SOURCE_KOXX3/common_files/src/VescToSTM.c
++++ SOURCE_KOXX3/common_files/src/VescToSTM.c
+@@ -452,6 +452,16 @@
+     }
+ 
+     g30_r3i_diag_t ps=g30_r3i_get_diag();
++#ifdef G30_VESC_SAFETYCORE_V1
++    /* Release owns fault acknowledgement even while passive BEMF acquisition
++     * is armed. Keeping this before the mode-1 early return prevents a fault
++     * that occurs while coasting from becoming impossible to acknowledge. */
++    if(pMCI[M1] && pMCI[M1]->pSTM &&
++       pMCI[M1]->pSTM->hFaultNow==MC_NO_FAULTS &&
++       STM_GetState(pMCI[M1]->pSTM)==FAULT_OVER){
++        (void)MCI_FaultAcknowledged(pMCI[M1]);
++    }
++#endif
+     if(ps.mode==1u){
+         /* VESC Tool repeats zero commands while the key is released. Do not
+          * reset passive BEMF acquisition on every packet. */
+@@ -463,16 +473,6 @@
+     VescToSTM_set_open_loop(false,0,0);
+     VescToSTM_set_current(0.0f,0.0f);
+     SpeednTorqCtrlM1.PISpeed->wIntegralTerm=0;
+-#ifdef G30_VESC_SAFETYCORE_V1
+-    /* VESC-style release latch: only a zero/coast command may acknowledge an
+-     * already-cleared fault. This does not energize PWM; a fresh non-zero
+-     * command must start the motor again. */
+-    if(pMCI[M1] && pMCI[M1]->pSTM &&
+-       pMCI[M1]->pSTM->hFaultNow==MC_NO_FAULTS &&
+-       STM_GetState(pMCI[M1]->pSTM)==FAULT_OVER){
+-        (void)MCI_FaultAcknowledged(pMCI[M1]);
+-    }
+-#endif
+     /* Only Sensorless stays armed while coasting. Hall mode must remain
+      * completely disconnected from the pushstart/observer state machine. */
+     g30_r3i_request_arm(VescToSTM_g30_sensorless_selected() ? 1u : 0u);
+@@ -566,7 +566,11 @@
+     uint16_t lambda=g30_fo76_model_lambda_uwb();
+     int16_t speed=g30_fo76_control_speed_dpp();
+     g30_vbus_fusion_result_t vfr=g30_vbus_fusion_runtime_result();
++#ifdef G30_VESC_SAFETYCORE_V1
++    if(!vfr.sensorless_ok || vfr.source!=G30_VBUS_SRC_PA1 || vfr.pa1_mv>45000u) return;
++#else
+     if(!vfr.sensorless_ok) return;
++#endif
+     uint32_t fused_mv=(vfr.source==G30_VBUS_SRC_PA1)?vfr.pa1_mv:vfr.est_mv;
+     uint16_t bus_mv=(uint16_t)(fused_mv>65535u?65535u:fused_mv);
+     g30_r3i_preload_result_t initial=g30_r3i_preload_calculate(speed,lambda,bus_mv);
+--- SOURCE_KOXX3/common_files/src/mc_tasks.c
++++ SOURCE_KOXX3/common_files/src/mc_tasks.c
+@@ -1420,9 +1420,15 @@
+ 	  uint16_t voltage_fault = RVBS_CalcAvVbus(pBusSensorM1);
+ #ifdef G30P
+       if(VescToSTM_g30_sensorless_selected()){
+-          g30_r3i_tick((uint8_t)PWM_Handle_M1._Super.PWM_off,
+-                       (uint16_t)HALL_M1.MeasuredElAngle,
+-                       HALL_M1._Super.hElSpeedDpp);
++#ifdef G30_VESC_SAFETYCORE_V1
++          const uint32_t g30_pa1_trust_counts=(uint32_t)(45.0f*BATTERY_VOLTAGE_GAIN+0.5f);
++          if((uint32_t)pBusSensorM1->_Super.AvBusVoltage_d<=g30_pa1_trust_counts)
++#endif
++          {
++              g30_r3i_tick((uint8_t)PWM_Handle_M1._Super.PWM_off,
++                           (uint16_t)HALL_M1.MeasuredElAngle,
++                           HALL_M1._Super.hElSpeedDpp);
++          }
+       }
+ #endif
+ 	  if(voltage_fault==MC_UNDER_VOLT){
