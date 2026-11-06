@@ -93,3 +93,67 @@ for target in sorted(known_targets):
 },indent=2),encoding="utf-8")
 print("\n".join(report[:120]))
 print(f"REPORT={OUT/'DRV126_BMS_STATIC_AUDIT.txt'}")
+
+
+# Robust halfword-aligned BL scan. Linear disassembly can lose sync when it crosses
+# literal pools, so inspect every possible Thumb halfword independently.
+all_bl=[]
+for off in range(0,len(data)-4,2):
+    addr=BASE+off
+    one=list(md.disasm(data[off:off+4],addr,count=1))
+    if not one: continue
+    i=one[0]
+    if i.mnemonic not in ("bl","blx"): continue
+    m=re.match(r"#?(0x[0-9a-fA-F]+|[0-9]+)$",i.op_str.strip())
+    if not m: continue
+    try:t=int(m.group(1),0)
+    except: continue
+    all_bl.append((addr,t,fmt(i)))
+
+report.append("\n=== ROBUST HALFWORD BL XREFS TO PACKET BUILDER 08005288 ===")
+x5288=[x for x in all_bl if x[1]==0x08005288]
+for x in x5288: report.append(x[2])
+report.append(f"xrefs_to_08005288={len(x5288)}")
+
+def targeted(start,end):
+    # Decode starting at every halfword and retain valid instruction starts.
+    out={}
+    for off in range(max(0,start-BASE), min(len(data)-2,end-BASE),2):
+        a=BASE+off
+        one=list(md.disasm(data[off:off+8],a,count=1))
+        if one: out[a]=one[0]
+    return [out[a] for a in sorted(out)]
+
+for a,b,label in [(0x080041B0,0x08004230,"KNOWN_41E8"),
+                  (0x08001B80,0x08001BD0,"KNOWN_1BAA"),
+                  (0x08005280,0x08005480,"BUILDER_5288")]:
+    report.append(f"\n=== TARGETED {label} {a:08X}..{b:08X} ===")
+    report += [fmt(i) for i in targeted(a,b)]
+
+report.append("\n=== ALL LIKELY ESC20->BMS22 PACKET BUILDER CALLS ===")
+# For each builder xref, decode 0x30 bytes immediately before the call on halfword boundaries.
+for site,target,_ in x5288:
+    report.append(f"\n-- builder call {site:08X} --")
+    report += [fmt(i) for i in targeted(site-0x30,site+6)]
+
+report.append("\n=== STOCK-GENERATED BMS WRITE CHECK ===")
+# ABI verified at 0x08001BBC: r0=src, r1=dst, r2=payloadLen, r3=cmd,
+# stack[0]=arg, stack[4]=payload ptr, stack[8]=channel/context.
+# A stock-generated BMS WRITE would therefore require a builder call with
+# r0=0x20,r1=0x22 and r3=0x02 immediately before BL 0x08005288.
+write_candidates=[]
+for site,target,_ in x5288:
+    ctx=targeted(site-0x40,site+2)
+    textctx="\n".join(fmt(i) for i in ctx)
+    has20=any(i.mnemonic.startswith("mov") and i.op_str.replace(" ","") in ("r0,#0x20","r0,#32") for i in ctx)
+    has22=any(i.mnemonic.startswith("mov") and i.op_str.replace(" ","") in ("r1,#0x22","r1,#34") for i in ctx)
+    cmd2=any(i.mnemonic.startswith("mov") and i.op_str.replace(" ","") in ("r3,#2","r3,#0x2") for i in ctx)
+    if has20 and has22 and cmd2:
+        write_candidates.append(site)
+        report.append(f"WRITE_CANDIDATE {site:08X}\n{textctx}")
+report.append(f"stock_generated_bms_write_candidates={len(write_candidates)}")
+report.append(f"stock_generated_bms_packet_builder_calls={len(x5288)}")
+if len(x5288)==1 and not write_candidates:
+    report.append("CONCLUSION_STATIC: only one direct stock-generated call to packet builder 0x08005288; it is READ cmd=0x01 to BMS 0x22, arg=0x30, payloadLen=1, payload[0]=0x0C. No direct stock-generated BMS WRITE call found.")
+
+(OUT/"DRV126_BMS_STATIC_AUDIT.txt").write_text("\n".join(report),encoding="utf-8")
