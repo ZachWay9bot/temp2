@@ -160,3 +160,5 @@ s=s.replace(marker,block+marker,1)
 p.write_text(s)
 
 print("VBUS FUSION SIM V1 applied: pure fusion evaluator + terminal scenarios; observer remains disconnected; powerstage lock retained")
+
+# CI trigger after included-implementation fix
