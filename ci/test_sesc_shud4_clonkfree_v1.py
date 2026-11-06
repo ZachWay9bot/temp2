@@ -26,7 +26,7 @@ assert '#define G30_SHUD4_COAST_HOLD_ERPM 500' in V
 print('IDENTITY_AND_SHUD_THRESHOLD=PASS')
 
 # Coast hold must only preserve an already-running Hall bridge.
-fn=V[V.index('static bool g30_shud4_coast_hold_allowed'):V.index('bool VescToSTM_g30_hall_direction_allowed')]
+fn=V[V.index('static bool g30_shud4_coast_hold_allowed(void){'):V.index('bool VescToSTM_g30_hall_direction_allowed')]
 for x in [
     'VescToSTM_g30_hall_selected()',
     'PWM_Handle_M1._Super.PWM_off',
