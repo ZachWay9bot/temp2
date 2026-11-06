@@ -27,19 +27,17 @@
  #endif
      uint16_t version;
      uint8_t gas, brake, init_result, rx_result, tx_result;
-@@ -233,9 +237,21 @@
- static void send_status(dash_link_state *d) {
- #ifndef G30_DASH_APPCOMPAT_V1
+@@ -229,7 +233,7 @@
      UART_HandleTypeDef *u=d->port->uart;
  #endif
      uint8_t status[6]={m365_to_display.mode,0,0,0,0,0};
 -    uint8_t tx[15];
 +    uint8_t tx[24];
      float level=VescToSTM_get_battery_level(0);
+     float speed=fabsf(VescToSTM_get_speed()*3.6f);
      if(!isfinite(level)||level<0.0f) level=0.0f;
-     if(level>1.0f) level=1.0f;
-@@ -244,6 +260,18 @@
-     status[4]=(uint8_t)lroundf(fabsf(VescToSTM_get_speed()*3.6f));
+@@ -241,6 +245,17 @@
+     status[4]=(uint8_t)(speed+0.5f);
      status[5]=(uint8_t)(pMCI[M1]->pSTM->hFaultOccurred&0xFFu);
      unsigned len=g30_dash_status_frame(status,tx);
 +#ifdef G30_DASH_APPCOMPAT_V2
@@ -56,7 +54,7 @@
      d->tx_calls++;
  #ifdef G30_DASH_APPCOMPAT_V1
      HAL_StatusTypeDef result=g30_dash_tx_stocklike(d,tx,(uint16_t)len);
-@@ -282,6 +310,15 @@
+@@ -283,6 +298,15 @@
              if(result<0) d->bad++;
              if(result==1) {
                  d->valid++;
@@ -72,7 +70,7 @@
  #ifdef G30_DASH_APPCOMPAT_V1
                  if(!app_pending) app_pending=g30_dash_queue_app_read(d,app_tx,&app_tx_len);
  #endif
-@@ -354,6 +391,16 @@
+@@ -354,6 +378,13 @@
      commands_printf(phandle,"APPCOMPAT reads=%lu replies=%lu bmsReads=%lu ignored=%lu txByteTimeout=%lu",
          (unsigned long)d->app_reads,(unsigned long)d->app_replies,(unsigned long)d->bms_reads,
          (unsigned long)d->app_ignored,(unsigned long)d->tx_byte_timeouts);
