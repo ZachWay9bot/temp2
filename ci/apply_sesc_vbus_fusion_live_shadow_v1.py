@@ -239,7 +239,7 @@ block=r'''    }else if (strcmp(argv[0], "g30_faultguard") == 0){
           (unsigned long)pMCI[M1]->pFOCVars->cycles_last,
           (unsigned long)pMCI[M1]->pFOCVars->cycles_max,
           (unsigned long)(CPU_CLOCK/PWM_FREQUENCY),
-          (unsigned long)(pMCI[M1]->pFOCVars->cycles_max*PWM_FREQUENCY*100u/CPU_CLOCK));
+          (unsigned long)(pMCI[M1]->pFOCVars->cycles_max*100u/(CPU_CLOCK/PWM_FREQUENCY)));
         return;
     }else if (strcmp(argv[0], "g30_faultguard_ack") == 0){
         uint16_t fn=pMCI[M1]->pSTM->hFaultNow;
