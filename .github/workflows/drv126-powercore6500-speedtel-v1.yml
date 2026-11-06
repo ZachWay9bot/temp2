@@ -308,10 +308,6 @@ jobs:
           python3 ci/apply_sesc_speedtel_v1.py
           grep -q 'SESC-DRV126-POWERCORE6500-SPEEDTEL-V1' SOURCE_KOXX3/common_files/src/defines.h
           python3 ci/test_sesc_speedtel_v1.py | tee OUTPUT/SPEEDTEL_V1_STATIC_TESTS.txt
-          patch -d SOURCE_KOXX3 -p1 --dry-run < ci/POWERCORE6500_14S_VBUSFIX_V1.patch
-          patch -d SOURCE_KOXX3 -p1 < ci/POWERCORE6500_14S_VBUSFIX_V1.patch
-          grep -q 'SESC-DRV126-POWERCORE6500-14S-VBUSFIX-V1' SOURCE_KOXX3/common_files/src/defines.h
-          python3 ci/test_sesc_14s_vbusfix_v1.py | tee OUTPUT/14S_VBUSFIX_STATIC_MODEL.txt
           grep -q '#define G30_DRV126_CURRENT_RAISING_COEFF_MA 6500' SOURCE_KOXX3/common_files/src/mc_tasks.c
           grep -q '#define G30_DRV126_CURRENT_RAISING_STEP_MC 2435' SOURCE_KOXX3/common_files/src/mc_tasks.c
           grep -q 'g30_drv126_final_power_step' SOURCE_KOXX3/common_files/src/mc_tasks.c
@@ -394,6 +390,13 @@ jobs:
           ASAN_OPTIONS=detect_leaks=0 /tmp/r3i23_startup_ramp_test | tee OUTPUT/R3I23_STARTUP_RAMP_HOST_TESTS.txt
           cc -std=c11 -Wall -Wextra -Werror -fsanitize=address,undefined -fno-omit-frame-pointer ci/test_r3i21_button.c -o /tmp/r3i21_button_test
           for c in single150 single950 double_long2 double_bounce2 long verylong bounce; do ASAN_OPTIONS=detect_leaks=0 /tmp/r3i21_button_test "$c"; done | tee OUTPUT/POWER_BUTTON_HOST_TESTS.txt
+
+          # Apply 14S VBUSFIX only after every inherited/frozen regression and
+          # exact-source hash gate has validated the SPEEDTEL reference state.
+          patch -d SOURCE_KOXX3 -p1 --dry-run < ci/POWERCORE6500_14S_VBUSFIX_V1.patch
+          patch -d SOURCE_KOXX3 -p1 < ci/POWERCORE6500_14S_VBUSFIX_V1.patch
+          grep -q 'SESC-DRV126-POWERCORE6500-14S-VBUSFIX-V1' SOURCE_KOXX3/common_files/src/defines.h
+          python3 ci/test_sesc_14s_vbusfix_v1.py | tee OUTPUT/14S_VBUSFIX_STATIC_MODEL.txt
 
       - name: Install ARM GNU GCC 13.2.1
         shell: bash
