@@ -1,0 +1,130 @@
+name: SESC PowerCore6500 VBUS FUSION LIVE SHADOW V1
+
+on:
+  push:
+    branches:
+      - vbus-fusion-live-shadow-v1-20261106
+    paths:
+      - 'ci/apply_sesc_vbus_fusion_live_shadow_v1.py'
+      - 'ci/test_sesc_vbus_fusion_live_shadow_v1.py'
+      - '.github/workflows/vbus-fusion-live-shadow-v1.yml'
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Restore exact hardware-validated VBUS FUSION WIRED LOCKED V2 source
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh api repos/${GITHUB_REPOSITORY}/actions/artifacts/13507228414/zip > /tmp/parent.zip
+          mkdir -p /tmp/parent
+          unzip -q /tmp/parent.zip -d /tmp/parent
+          test -f /tmp/parent/OUTPUT/SOURCE_KOXX3_SESC_DRV126_POWERCORE6500_VBUS_FUSION_WIRED_LOCKED_V2_EXACT.tgz
+          tar -xzf /tmp/parent/OUTPUT/SOURCE_KOXX3_SESC_DRV126_POWERCORE6500_VBUS_FUSION_WIRED_LOCKED_V2_EXACT.tgz
+          grep -q 'SESC-DRV126-POWERCORE6500-VBUS-FUSION-WIRED-LOCKED-V2' SOURCE_KOXX3/common_files/src/defines.h
+          base64 -d ci/r3_payload.tgz.b64 > /tmp/r3_payload.tgz
+          mkdir -p /tmp/r3payload tools OUTPUT
+          tar -xzf /tmp/r3_payload.tgz -C /tmp/r3payload
+          cp /tmp/r3payload/build_native.py tools/
+          cp /tmp/r3payload/validate_image.py tools/
+          printf '%s\n' \
+            'parent_run=42230497620' \
+            'parent_artifact=13507228414' \
+            'parent_build=SESC-DRV126-POWERCORE6500-VBUS-FUSION-WIRED-LOCKED-V2' \
+            'parent_bin_sha256=53a047d82bdb456d8a22850075576ff7fe6a01b6bdef6548d9cd670e704dacb4' \
+            > OUTPUT/PARENT_PROVENANCE.txt
+
+      - name: Apply live-shadow gate and run static/host tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 ci/apply_sesc_vbus_fusion_live_shadow_v1.py
+          python3 ci/test_sesc_vbus_fusion_live_shadow_v1.py | tee OUTPUT/VBUS_FUSION_LIVE_SHADOW_V1_STATIC_TESTS.txt
+          cc -std=c11 -Wall -Wextra -Werror -I SOURCE_KOXX3/common_files/src ci/test_g30_vbus_fusion.c -o /tmp/vbfus_test
+          /tmp/vbfus_test | tee OUTPUT/VBUS_FUSION_LIVE_SHADOW_V1_POLICY_TESTS.txt
+
+      - name: Install ARM GNU GCC 13.2.1
+        shell: bash
+        run: |
+          set -euo pipefail
+          URL=https://github.com/xpack-dev-tools/arm-none-eabi-gcc-xpack/releases/download/v13.2.1-1.1
+          FILE=xpack-arm-none-eabi-gcc-13.2.1-1.1-linux-x64.tar.gz
+          curl -fL "$URL/$FILE" -o "/tmp/$FILE"
+          curl -fL "$URL/$FILE.sha" -o "/tmp/$FILE.sha"
+          cd /tmp
+          sha256sum -c "$FILE.sha"
+          tar -xzf "$FILE"
+          echo "/tmp/xpack-arm-none-eabi-gcc-13.2.1-1.1/bin" >> "$GITHUB_PATH"
+
+      - name: Compile and validate live-shadow build
+        shell: bash
+        run: |
+          set -euo pipefail
+          sed -i 's/FO76_SHADOW_R3/SESC_DRV126_POWERCORE6500_VBUS_FUSION_LIVE_SHADOW_V1/g' tools/build_native.py tools/validate_image.py
+          sed -i 's/G30D-FO76-SHADOW-R3/SESC-DRV126-POWERCORE6500-VBUS-FUSION-LIVE-SHADOW-V1/g' tools/validate_image.py
+          python3 tools/build_native.py | tee OUTPUT/build.log
+          python3 tools/validate_image.py | tee OUTPUT/validation.log
+          BIN=OUTPUT/SmartESC_v2_G30D_SESC_DRV126_POWERCORE6500_VBUS_FUSION_LIVE_SHADOW_V1_STLINK_APP_0x08001000.bin
+          ELF=OUTPUT/SmartESC_v2_G30D_SESC_DRV126_POWERCORE6500_VBUS_FUSION_LIVE_SHADOW_V1.elf
+          test -f "$BIN"
+          test -f "$ELF"
+          sha256sum "$BIN" | tee OUTPUT/SHA256_BIN.txt
+          arm-none-eabi-size "$ELF" | tee OUTPUT/SIZE.txt
+          python3 - <<'PY'
+          from pathlib import Path
+          parts=Path('OUTPUT/SIZE.txt').read_text().splitlines()[-1].split()
+          text,data,bss=map(int,parts[:3])
+          flash=text+data; ram=data+bss
+          assert flash <= 118784,(flash,118784)
+          assert ram <= 20480,(ram,20480)
+          Path('OUTPUT/MEMORY_GATE.txt').write_text(f'FLASH={flash}/118784\nRAM={ram}/20480\nPASS\n')
+          print(f'FLASH={flash}/118784 RAM={ram}/20480 PASS')
+          PY
+          arm-none-eabi-nm -S --size-sort "$ELF" | tail -40 > OUTPUT/LARGEST_SYMBOLS.txt
+          tar --exclude='SOURCE_KOXX3/.git' -czf OUTPUT/SOURCE_KOXX3_SESC_DRV126_POWERCORE6500_VBUS_FUSION_LIVE_SHADOW_V1_EXACT.tgz SOURCE_KOXX3
+
+      - name: Post-build invariants
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -q 'SESC-DRV126-POWERCORE6500-VBUS-FUSION-LIVE-SHADOW-V1' SOURCE_KOXX3/common_files/src/defines.h
+          ! grep -q '#define G30_BMS_BATTERY_SAFE_POWERLOCK 1' SOURCE_KOXX3/common_files/src/defines.h\n          grep -q '#define G30_VBUS_LIVE_SHADOW_GATE 1' SOURCE_KOXX3/common_files/src/defines.h
+          grep -q 'hall_forced=1 takeover=0 phase_limit_mA=5000 speed_limit_erpm=3000' SOURCE_KOXX3/common_files/src/terminal.c
+          grep -q 'g30_vbus_fusion_runtime_mv()' SOURCE_KOXX3/common_files/src/mc_tasks.c
+          grep -q 'g30_vbus_fusion_runtime_result();' SOURCE_KOXX3/common_files/src/VescToSTM.c
+          printf 'POST_BUILD_INVARIANTS=PASS\n' > OUTPUT/POST_BUILD_INVARIANTS.txt
+
+      - name: Upload live-shadow build
+        uses: actions/upload-artifact@v4
+        with:
+          name: G30D_SESC_DRV126_POWERCORE6500_VBUS_FUSION_LIVE_SHADOW_V1_COMPILED
+          retention-days: 30
+          if-no-files-found: error
+          path: |
+            OUTPUT/SmartESC_v2_G30D_SESC_DRV126_POWERCORE6500_VBUS_FUSION_LIVE_SHADOW_V1_STLINK_APP_0x08001000.bin
+            OUTPUT/SmartESC_v2_G30D_SESC_DRV126_POWERCORE6500_VBUS_FUSION_LIVE_SHADOW_V1.hex
+            OUTPUT/SmartESC_v2_G30D_SESC_DRV126_POWERCORE6500_VBUS_FUSION_LIVE_SHADOW_V1.elf
+            OUTPUT/SmartESC_v2_G30D_SESC_DRV126_POWERCORE6500_VBUS_FUSION_LIVE_SHADOW_V1.map
+            OUTPUT/SHA256_BIN.txt
+            OUTPUT/SIZE.txt
+            OUTPUT/MEMORY_GATE.txt
+            OUTPUT/LARGEST_SYMBOLS.txt
+            OUTPUT/validation.log
+            OUTPUT/build.log
+            OUTPUT/PARENT_PROVENANCE.txt
+            OUTPUT/VBUS_FUSION_LIVE_SHADOW_V1_STATIC_TESTS.txt
+            OUTPUT/VBUS_FUSION_LIVE_SHADOW_V1_POLICY_TESTS.txt
+            OUTPUT/POST_BUILD_INVARIANTS.txt
+            OUTPUT/SOURCE_KOXX3_SESC_DRV126_POWERCORE6500_VBUS_FUSION_LIVE_SHADOW_V1_EXACT.tgz
+            ci/apply_sesc_vbus_fusion_live_shadow_v1.py
+            ci/test_sesc_vbus_fusion_live_shadow_v1.py
+            ci/test_g30_vbus_fusion.c
