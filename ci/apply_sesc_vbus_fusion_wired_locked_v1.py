@@ -217,6 +217,8 @@ wired=r'''    }else if (strcmp(argv[0], "g30_vbus_fusion_wired") == 0){
         return;
 '''
 s=s.replace(marker,wired+marker,1)
+s=s.replace("VBFUS_WIRING observer_connected=0 powerstage_locked=1",
+            "VBFUS_SIM_WIRING runtime_observer_connected=1 sim_only=1 powerstage_locked=1")
 p.write_text(s)
 
 p=root/"common_files/src/mc_tasks.c"
