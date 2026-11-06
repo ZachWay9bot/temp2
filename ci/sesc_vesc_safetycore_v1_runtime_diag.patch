@@ -1,0 +1,16 @@
+--- SOURCE_KOXX3/common_files/src/terminal.c
++++ SOURCE_KOXX3/common_files/src/terminal.c
+@@ -134,8 +134,11 @@
+         g30_vbus_fusion_result_t r=g30_vbus_fusion_runtime_result();
+         uint32_t fused=(r.source==G30_VBUS_SRC_PA1)?r.pa1_mv:
+                        (r.source==G30_VBUS_SRC_BMS_EST)?r.est_mv:0u;
+-        commands_printf(phandle,"SAFETYCORE mode=%s phase_cmd_mA=5000 abs_trip_mA=10000 speed_erpm=3000 auto_rearm=0",
+-          VescToSTM_g30_hall_selected()?"HALL":"SENSORLESS");
++        commands_printf(phandle,"SAFETYCORE mode=%s phase_cmd_mA=5000 abs_trip_mA=10000 speed_erpm=3000 auto_rearm=0 oc_raw=%d oc_cycles=%lu oc_flag=%u",
++          VescToSTM_g30_hall_selected()?"HALL":"SENSORLESS",
++          (int)PWM_Handle_M1._Super.OverCurrent,
++          (unsigned long)PWM_Handle_M1._Super.OverCurrentCycles,
++          (unsigned)PWM_Handle_M1.OverCurrentFlag);
+         commands_printf(phandle,"SAFETYCORE vbus_src=%s fused=%lu sensorless_vbus_ok=%u pwm_off=%u moe=%u",
+           g30_vbus_fusion_source_name(r.source),(unsigned long)fused,
+           (unsigned)(r.sensorless_ok && r.source==G30_VBUS_SRC_PA1),
