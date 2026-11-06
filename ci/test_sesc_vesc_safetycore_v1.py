@@ -151,3 +151,5 @@ print('SAFETYCORE_V2_NO_LIVE_SNAPBACK=PASS')
 print('SAFETYCORE_V2_FAST_COAST=PASS')
 print('SAFETYCORE_V2_POWER_LIMITS_UNCHANGED=PASS')
 print('SAFETYCORE_V2_SCENARIO_MATRIX=8/8 PASS')
+
+# CI retrigger: SafetyCore V2 hybrid workflow present on branch.
