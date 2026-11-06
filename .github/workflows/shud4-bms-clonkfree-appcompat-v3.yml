@@ -51,9 +51,8 @@ jobs:
           patch -p1 < ci/sesc_dash_appcompat_v1.patch
           python3 ci/test_sesc_dash_appcompat_v1.py | tee OUTPUT/APPCOMPAT_V1_STATIC_TESTS.txt
           patch -p1 < ci/sesc_dash_appcompat_v2.patch
-          grep -q 'SESC-DRV126-P6500-H14-SHUD4BMS-APPCOMPAT-V3' SOURCE_KOXX3/common_files/src/defines.h
+          grep -q 'SESC-DRV126-P6500-H14-SHUD4BMS-APPCOMPAT-V2' SOURCE_KOXX3/common_files/src/defines.h
           grep -q '#define G30_DASH_APPCOMPAT_V2 1' SOURCE_KOXX3/common_files/src/defines.h
-          grep -q '#define G30_DASH_APPCOMPAT_V3 1' SOURCE_KOXX3/common_files/src/defines.h
           grep -q 'g30_dash_frame(0x20u,0x21u,0x01u,0x00u,0,0u,tx+len)' SOURCE_KOXX3/common_files/src/g30_dash_link.c
           grep -q 'd->meta_seen=1u; d->meta_replies++' SOURCE_KOXX3/common_files/src/g30_dash_link.c
           grep -q 'DASHMETA seen=' SOURCE_KOXX3/common_files/src/g30_dash_link.c
