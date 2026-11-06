@@ -291,15 +291,13 @@ x=p.read_text()
 anchor='''#include "r3_2_f1xx_pwm_curr_fdbk.h"'''
 assert anchor in x
 x=x.replace(anchor,anchor+'''
-#ifdef G30_FAULTGUARD_V1C_DIAG
 volatile uint32_t g30_focdur_ch4_count=0u;
 volatile uint32_t g30_focdur_swerr_count=0u;
 volatile uint16_t g30_focdur_tim_cnt=0u;
 volatile uint16_t g30_focdur_tim_sr=0u;
 volatile uint16_t g30_focdur_tim_ccer=0u;
 volatile uint16_t g30_focdur_tim_ccr4=0u;
-volatile uint16_t g30_focdur_swerr_latched=0u;
-#endif''',1)
+volatile uint16_t g30_focdur_swerr_latched=0u;''',1)
 old='''  if ( LL_TIM_CC_IsEnabledChannel(TIMx, LL_TIM_CHANNEL_CH4))
   {
     hAux = MC_FOC_DURATION;
@@ -316,13 +314,11 @@ old='''  if ( LL_TIM_CC_IsEnabledChannel(TIMx, LL_TIM_CHANNEL_CH4))
 new='''  if ( LL_TIM_CC_IsEnabledChannel(TIMx, LL_TIM_CHANNEL_CH4))
   {
     hAux = MC_FOC_DURATION;
-#ifdef G30_FAULTGUARD_V1C_DIAG
     g30_focdur_ch4_count++;
     g30_focdur_tim_cnt=(uint16_t)TIMx->CNT;
     g30_focdur_tim_sr=(uint16_t)TIMx->SR;
     g30_focdur_tim_ccer=(uint16_t)TIMx->CCER;
     g30_focdur_tim_ccr4=(uint16_t)TIMx->CCR4;
-#endif
   }
   else
   {
@@ -331,14 +327,12 @@ new='''  if ( LL_TIM_CC_IsEnabledChannel(TIMx, LL_TIM_CHANNEL_CH4))
   if ( pHandle->_Super.SWerror == 1u )
   {
     hAux = MC_FOC_DURATION;
-#ifdef G30_FAULTGUARD_V1C_DIAG
     g30_focdur_swerr_count++;
     g30_focdur_swerr_latched=1u;
     g30_focdur_tim_cnt=(uint16_t)TIMx->CNT;
     g30_focdur_tim_sr=(uint16_t)TIMx->SR;
     g30_focdur_tim_ccer=(uint16_t)TIMx->CCER;
     g30_focdur_tim_ccr4=(uint16_t)TIMx->CCR4;
-#endif
     pHandle->_Super.SWerror = 0u;
   }'''
 assert old in x
