@@ -78,3 +78,6 @@ assert 'VescToSTM_pwm_start();' not in ack
 assert 'ready=RUN' in ack
 print('FAULTGUARD_V1B_RUN_PWM_OFF_RECOVERY=PASS')
 print('FAULTGUARD_V1B_NO_RECALIBRATION_STATE_MACHINE_ENTRY=PASS')
+
+assert 'cycles_max*100u/(CPU_CLOCK/PWM_FREQUENCY)' in te
+print('FAULTGUARD_V1B_FOC_LOAD_DIAG_NO_OVERFLOW=PASS')
