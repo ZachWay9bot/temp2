@@ -1,0 +1,88 @@
+--- a/SOURCE_KOXX3/common_files/src/defines.h
++++ b/SOURCE_KOXX3/common_files/src/defines.h
+@@ -2,11 +2,12 @@
+ #define DEFINES_H_
+ 
+ #ifdef G30P
+-#define HW_NAME "SESC-DRV126-P6500-H14-SHUD4BMS-APPCOMPAT-V1"
++#define HW_NAME "SESC-DRV126-P6500-H14-SHUD4BMS-APPCOMPAT-V2"
+ #define G30_HALL14S_V1 1
+ #define G30_SHUD4_BMS_V1 1
+ #define G30_SHUD4_CLONKFREE_V1 1
+ #define G30_DASH_APPCOMPAT_V1 1
++#define G30_DASH_APPCOMPAT_V2 1
+ #define G30_POWERPATH_RESTORE_V1 1
+ #else
+ #define HW_NAME "40"
+--- a/SOURCE_KOXX3/common_files/src/g30_dash_link.c
++++ b/SOURCE_KOXX3/common_files/src/g30_dash_link.c
+@@ -22,6 +22,10 @@
+     uint32_t tx_calls, tx_ok, tx_fail, rx_errors;
+ #ifdef G30_DASH_APPCOMPAT_V1
+     uint32_t app_reads, app_replies, app_ignored, bms_reads, tx_byte_timeouts;
++#ifdef G30_DASH_APPCOMPAT_V2
++    uint32_t meta_queries, meta_replies, meta_query_ms;
++    uint8_t meta_seen, meta_query_sent, meta_len, meta[13];
++#endif
+ #endif
+     uint16_t version;
+     uint8_t gas, brake, init_result, rx_result, tx_result;
+@@ -233,9 +237,21 @@
+ static void send_status(dash_link_state *d) {
+ #ifndef G30_DASH_APPCOMPAT_V1
+     UART_HandleTypeDef *u=d->port->uart;
+ #endif
+     uint8_t status[6]={m365_to_display.mode,0,0,0,0,0};
+-    uint8_t tx[15];
++    uint8_t tx[24];
+     float level=VescToSTM_get_battery_level(0);
+     if(!isfinite(level)||level<0.0f) level=0.0f;
+     if(level>1.0f) level=1.0f;
+@@ -244,6 +260,18 @@
+     status[4]=(uint8_t)lroundf(fabsf(VescToSTM_get_speed()*3.6f));
+     status[5]=(uint8_t)(pMCI[M1]->pSTM->hFaultOccurred&0xFFu);
+     unsigned len=g30_dash_status_frame(status,tx);
++#ifdef G30_DASH_APPCOMPAT_V2
++    /* Hardware-proven EBiCS r5/r6 bootstrap: DRV asks BLE117 for its native
++     * metadata during the CMD64 exchange. Advertising/GATT can work without
++     * this while the dashboard/ESC registration session is not yet ready.
++     * Retry once per second until 21->20 CMD04/ARG00 metadata is received. */
++    uint32_t now=HAL_GetTick();
++    if(!d->meta_seen && (!d->meta_query_sent || (uint32_t)(now-d->meta_query_ms)>=1000u)){
++        unsigned q=g30_dash_frame(0x20u,0x21u,0x01u,0x00u,0,0u,tx+len);
++        if(q){len+=q;d->meta_query_sent=1u;d->meta_query_ms=now;d->meta_queries++;}
++    }
++#endif
+     d->tx_calls++;
+ #ifdef G30_DASH_APPCOMPAT_V1
+     HAL_StatusTypeDef result=g30_dash_tx_stocklike(d,tx,(uint16_t)len);
+@@ -282,6 +310,15 @@
+             if(result<0) d->bad++;
+             if(result==1) {
+                 d->valid++;
++#ifdef G30_DASH_APPCOMPAT_V2
++                if(d->parser.src==0x21u && d->parser.dst==0x20u &&
++                   d->parser.cmd==0x04u && d->parser.arg==0u &&
++                   d->parser.len>0u && d->parser.len<=13u){
++                    d->meta_len=d->parser.len;
++                    memcpy(d->meta,d->parser.payload,d->meta_len);
++                    d->meta_seen=1u; d->meta_replies++;
++                }
++#endif
+ #ifdef G30_DASH_APPCOMPAT_V1
+                 if(!app_pending) app_pending=g30_dash_queue_app_read(d,app_tx,&app_tx_len);
+ #endif
+@@ -354,6 +391,16 @@
+     commands_printf(phandle,"APPCOMPAT reads=%lu replies=%lu bmsReads=%lu ignored=%lu txByteTimeout=%lu",
+         (unsigned long)d->app_reads,(unsigned long)d->app_replies,(unsigned long)d->bms_reads,
+         (unsigned long)d->app_ignored,(unsigned long)d->tx_byte_timeouts);
++#ifdef G30_DASH_APPCOMPAT_V2
++    commands_printf(phandle,"DASHMETA seen=%u queries=%lu replies=%lu len=%u",
++        d->meta_seen,(unsigned long)d->meta_queries,(unsigned long)d->meta_replies,d->meta_len);
++    commands_printf(phandle,"DASHMETA data=%02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X",
++        d->meta[0],d->meta[1],d->meta[2],d->meta[3],d->meta[4],d->meta[5],d->meta[6],
++        d->meta[7],d->meta[8],d->meta[9],d->meta[10],d->meta[11],d->meta[12]);
++#endif
+ #endif
+     UART_HandleTypeDef *u=d->port->uart;
+     commands_printf(phandle,"USART2 SR=%04lx CR1=%04lx CR3=%04lx CNDTR=%lu rxErr=%lu stackFree=%u heap=%u",
