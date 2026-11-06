@@ -40,6 +40,7 @@ assert 'OverCurrentCycles = 0' in safecf
 assert '#ifdef G30P\n#define AUTO_RESET_FAULT 0' in pr
 assert '#ifndef G30_VESC_SAFETYCORE_V1' in mc and 'VescToSTM_pwm_start();' in mc
 assert 'strcmp(argv[0], "g30_safetycore")' in te
+assert 'oc_cycles=%lu' in te and 'OverCurrentCycles' in te and 'OverCurrentFlag' in te
 
 def allowed(mode, pa1_v, fault_now, released):
     if fault_now: return False
