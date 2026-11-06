@@ -1,0 +1,118 @@
+--- a/SOURCE_KOXX3/common_files/src/defines.h
++++ b/SOURCE_KOXX3/common_files/src/defines.h
+@@ -2,11 +2,12 @@
+ #define DEFINES_H_
+ 
+ #ifdef G30P
+-#define HW_NAME "SESC-DRV126-P6500-H14-SHUD4BMS-APPCOMPAT-V1"
++#define HW_NAME "SESC-DRV126-P6500-H14-SHUD4BMS-APPCOMPAT-DIAG-V1"
+ #define G30_HALL14S_V1 1
+ #define G30_SHUD4_BMS_V1 1
+ #define G30_SHUD4_CLONKFREE_V1 1
+ #define G30_DASH_APPCOMPAT_V1 1
++#define G30_DASH_APPCOMPAT_DIAG_V1 1
+ #define G30_POWERPATH_RESTORE_V1 1
+ #else
+ #define HW_NAME "40"
+--- a/SOURCE_KOXX3/common_files/src/g30_dash_link.c
++++ b/SOURCE_KOXX3/common_files/src/g30_dash_link.c
+@@ -22,6 +22,12 @@
+     uint32_t tx_calls, tx_ok, tx_fail, rx_errors;
+ #ifdef G30_DASH_APPCOMPAT_V1
+     uint32_t app_reads, app_replies, app_ignored, bms_reads, tx_byte_timeouts;
++#ifdef G30_DASH_APPCOMPAT_DIAG_V1
++    uint8_t last_app_src, last_app_dst, last_app_cmd, last_app_arg, last_app_len, last_app_ask;
++    uint8_t last_reply_src, last_reply_dst, last_reply_cmd, last_reply_arg, last_reply_len;
++    uint8_t last_reply_data[16];
++    uint8_t last_reply_data_len, last_serial_source; /* 1=stock/config flash, 2=fallback */
++#endif
+ #endif
+     uint16_t version;
+     uint8_t gas, brake, init_result, rx_result, tx_result;
+@@ -147,20 +153,21 @@
+ static bool g30_dash_serial_char(uint8_t c){
+     return (c>='0'&&c<='9') || (c>='A'&&c<='Z');
+ }
+-static void g30_dash_get_serial(uint8_t out[14]){
++static uint8_t g30_dash_get_serial(uint8_t out[14]){
+     const uint8_t *begin=(const uint8_t*)0x0801C000u;
+     const uint8_t *end=(const uint8_t*)0x0801E000u;
+     for(const uint8_t *q=begin;q+14u<=end;q++){
+         if(q[0]!='N'||q[1]!='4'||q[2]!='G') continue;
+         uint8_t ok=1u;
+         for(unsigned i=0;i<14u;i++) if(!g30_dash_serial_char(q[i])){ok=0u;break;}
+-        if(ok){memcpy(out,q,14u);return;}
++        if(ok){memcpy(out,q,14u);return 1u;}
+     }
+     /* After a historical mass erase the stock identity page may be blank.
+      * Keep a syntactically valid, stable non-secret fallback. BLE117 returns
+      * the same 14 bytes in 5B and the app echoes them in 5D. */
+     static const uint8_t fallback[14]={'N','4','G','S','E','S','C','0','0','0','0','0','0','0'};
+     memcpy(out,fallback,14u);
++    return 2u;
+ }
+ static void g30_put_u16(uint8_t *p,uint16_t v){p[0]=(uint8_t)v;p[1]=(uint8_t)(v>>8);}
+ static void g30_put_u32(uint8_t *p,uint32_t v){p[0]=(uint8_t)v;p[1]=(uint8_t)(v>>8);p[2]=(uint8_t)(v>>16);p[3]=(uint8_t)(v>>24);}
+@@ -171,10 +178,16 @@
+ extern uint8_t g30_bms_stock_copy_serial(uint8_t *out,uint8_t maxlen);
+ #endif
+ 
+-static uint8_t g30_dash_read_esc(uint8_t reg,uint8_t ask,uint8_t *out){
++static uint8_t g30_dash_read_esc(dash_link_state *d,uint8_t reg,uint8_t ask,uint8_t *out){
+     memset(out,0,ask);
+     switch(reg){
+-    case 0x10u: { uint8_t serial[14]; g30_dash_get_serial(serial); memcpy(out,serial,ask<14u?ask:14u); } break;
++    case 0x10u: { uint8_t serial[14]; uint8_t src=g30_dash_get_serial(serial); memcpy(out,serial,ask<14u?ask:14u);
++#ifdef G30_DASH_APPCOMPAT_DIAG_V1
++        d->last_serial_source=src;
++#else
++        (void)d; (void)src;
++#endif
++        } break;
+     case 0x1Au: if(ask>=2u){out[0]=0x20u;out[1]=0x04u;} break; /* empirical stock app value */
+     case 0x29u: if(ask>=4u) g30_put_u32(out,VescToSTM_get_odometer()); break; /* metres = 0.001 km */
+     case 0xB0u: if(ask>=2u) g30_put_u16(out,(uint16_t)(pMCI[M1]->pSTM->hFaultOccurred&0xFFFFu)); break;
+@@ -216,10 +229,22 @@
+     uint8_t ask=p->payload[0];
+     if(!ask || ask>G30_DASH_MAX_PAYLOAD){d->app_ignored++;return false;}
+     uint8_t data[G30_DASH_MAX_PAYLOAD];
+-    if(p->dst==0x20u){g30_dash_read_esc(p->arg,ask,data);d->app_reads++;}
++#ifdef G30_DASH_APPCOMPAT_DIAG_V1
++    d->last_app_src=p->src; d->last_app_dst=p->dst; d->last_app_cmd=p->cmd;
++    d->last_app_arg=p->arg; d->last_app_len=p->len; d->last_app_ask=ask;
++#endif
++    if(p->dst==0x20u){g30_dash_read_esc(d,p->arg,ask,data);d->app_reads++;}
+     else if(p->dst==0x22u){g30_dash_read_bms(p->arg,ask,data);d->bms_reads++;}
+     else return false;
+     *outlen=(uint16_t)g30_dash_frame(p->dst,p->src,0x04u,p->arg,data,ask,out);
++#ifdef G30_DASH_APPCOMPAT_DIAG_V1
++    if(*outlen){
++        d->last_reply_src=p->dst; d->last_reply_dst=p->src; d->last_reply_cmd=0x04u;
++        d->last_reply_arg=p->arg; d->last_reply_len=ask;
++        d->last_reply_data_len=ask<sizeof(d->last_reply_data)?ask:(uint8_t)sizeof(d->last_reply_data);
++        memcpy(d->last_reply_data,data,d->last_reply_data_len);
++    }
++#endif
+     return *outlen!=0u;
+ }
+ #endif
+@@ -354,6 +379,19 @@
+     commands_printf(phandle,"APPCOMPAT reads=%lu replies=%lu bmsReads=%lu ignored=%lu txByteTimeout=%lu",
+         (unsigned long)d->app_reads,(unsigned long)d->app_replies,(unsigned long)d->bms_reads,
+         (unsigned long)d->app_ignored,(unsigned long)d->tx_byte_timeouts);
++#ifdef G30_DASH_APPCOMPAT_DIAG_V1
++    commands_printf(phandle,"APPDIAG req=%02X>%02X cmd=%02X arg=%02X len=%u ask=%u",
++        d->last_app_src,d->last_app_dst,d->last_app_cmd,d->last_app_arg,d->last_app_len,d->last_app_ask);
++    commands_printf(phandle,"APPDIAG reply=%02X>%02X cmd=%02X arg=%02X len=%u serialSource=%s",
++        d->last_reply_src,d->last_reply_dst,d->last_reply_cmd,d->last_reply_arg,d->last_reply_len,
++        d->last_serial_source==1u?"STOCK_CONFIG":(d->last_serial_source==2u?"FALLBACK":"N/A"));
++    commands_printf(phandle,"APPDIAG dataLen=%u data=%02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X",
++        d->last_reply_data_len,
++        d->last_reply_data[0],d->last_reply_data[1],d->last_reply_data[2],d->last_reply_data[3],
++        d->last_reply_data[4],d->last_reply_data[5],d->last_reply_data[6],d->last_reply_data[7],
++        d->last_reply_data[8],d->last_reply_data[9],d->last_reply_data[10],d->last_reply_data[11],
++        d->last_reply_data[12],d->last_reply_data[13],d->last_reply_data[14],d->last_reply_data[15]);
++#endif
+ #endif
+     UART_HandleTypeDef *u=d->port->uart;
+     commands_printf(phandle,"USART2 SR=%04lx CR1=%04lx CR3=%04lx CNDTR=%lu rxErr=%lu stackFree=%u heap=%u",
