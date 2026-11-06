@@ -1,0 +1,140 @@
+name: SESC HALL14S SHUD4+BMS V1
+
+on:
+  push:
+    branches:
+      - hall14s-shud4-bms-v1-20261106
+    paths:
+      - 'ci/apply_sesc_shud4_bms_v1.py'
+      - 'ci/test_sesc_shud4_bms_v1.py'
+      - '.github/workflows/shud4-bms-v1.yml'
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Restore exact hardware-passed POWERPATH source
+        env:
+          GH_TOKEN: \${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh api repos/\${GITHUB_REPOSITORY}/actions/artifacts/13528555020/zip > /tmp/parent.zip
+          mkdir -p /tmp/parent
+          unzip -q /tmp/parent.zip -d /tmp/parent
+          test -f /tmp/parent/OUTPUT/SOURCE_KOXX3_SESC_DRV126_POWERCORE6500_POWERPATH_RESTORE_V1_EXACT.tgz
+          tar -xzf /tmp/parent/OUTPUT/SOURCE_KOXX3_SESC_DRV126_POWERCORE6500_POWERPATH_RESTORE_V1_EXACT.tgz
+          grep -q 'SESC-DRV126-POWERCORE6500-POWERPATH-RESTORE-V1' SOURCE_KOXX3/common_files/src/defines.h
+          base64 -d ci/r3_payload.tgz.b64 > /tmp/r3_payload.tgz
+          mkdir -p /tmp/r3payload tools OUTPUT
+          tar -xzf /tmp/r3_payload.tgz -C /tmp/r3payload
+          cp /tmp/r3payload/build_native.py tools/
+          cp /tmp/r3payload/validate_image.py tools/
+          printf '%s\n' \
+            'powerpath_parent_run=42267144640' \
+            'powerpath_parent_artifact=13528555020' \
+            'powerpath_bin_sha256=d0bbc8f5144dfa8771fd14f91db3b7e3eecde0add6634a26f70ed57afc6762b6' \
+            'hall14s_freeze=SESC-HALL14S-V1-FORWARD-HW-PASS-2026-11-06' \
+            'hall14s_bin_sha256=4e201a45e655a1ab26b6aedcb55218fe49a38531a7dc870ed5d64e1156627baf' \
+            'hall14s_14s_forward_hardware_acceptance=PASS' \
+            > OUTPUT/PARENT_PROVENANCE.txt
+
+      - name: Reconstruct proven HALL14S V1
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 ci/apply_sesc_hall14s_v1.py
+          python3 ci/test_sesc_hall14s_v1.py | tee OUTPUT/HALL14S_V1_STATIC_TESTS.txt
+
+      - name: Apply SHUD4 performance values and stock BMS heartbeat
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 ci/apply_sesc_shud4_bms_v1.py
+          python3 ci/test_sesc_shud4_bms_v1.py | tee OUTPUT/SHUD4_BMS_V1_STATIC_TESTS.txt
+
+      - name: Install ARM GNU GCC 13.2.1
+        shell: bash
+        run: |
+          set -euo pipefail
+          URL=https://github.com/xpack-dev-tools/arm-none-eabi-gcc-xpack/releases/download/v13.2.1-1.1
+          FILE=xpack-arm-none-eabi-gcc-13.2.1-1.1-linux-x64.tar.gz
+          curl -fL "$URL/$FILE" -o "/tmp/$FILE"
+          curl -fL "$URL/$FILE.sha" -o "/tmp/$FILE.sha"
+          cd /tmp
+          sha256sum -c "$FILE.sha"
+          tar -xzf "$FILE"
+          echo "/tmp/xpack-arm-none-eabi-gcc-13.2.1-1.1/bin" >> "$GITHUB_PATH"
+
+      - name: Compile and validate SHUD4+BMS V1
+        shell: bash
+        run: |
+          set -euo pipefail
+          sed -i 's/FO76_SHADOW_R3/SESC_DRV126_P6500_HALL14S_SHUD4BMS_V1/g' tools/build_native.py tools/validate_image.py
+          sed -i 's/G30D-FO76-SHADOW-R3/SESC-DRV126-P6500-HALL14S-SHUD4BMS-V1/g' tools/validate_image.py
+          python3 tools/build_native.py | tee OUTPUT/build.log
+          python3 tools/validate_image.py | tee OUTPUT/validation.log
+          BIN=OUTPUT/SmartESC_v2_G30D_SESC_DRV126_P6500_HALL14S_SHUD4BMS_V1_STLINK_APP_0x08001000.bin
+          ELF=OUTPUT/SmartESC_v2_G30D_SESC_DRV126_P6500_HALL14S_SHUD4BMS_V1.elf
+          test -f "$BIN"
+          test -f "$ELF"
+          sha256sum "$BIN" | tee OUTPUT/SHA256_BIN.txt
+          arm-none-eabi-size "$ELF" | tee OUTPUT/SIZE.txt
+          python3 - <<'PY'
+          from pathlib import Path
+          parts=Path('OUTPUT/SIZE.txt').read_text().splitlines()[-1].split()
+          text,data,bss=map(int,parts[:3])
+          flash=text+data; ram=data+bss
+          assert flash <= 118784,(flash,118784)
+          assert ram <= 20480,(ram,20480)
+          Path('OUTPUT/MEMORY_GATE.txt').write_text(f'FLASH={flash}/118784\nRAM={ram}/20480\nPASS\n')
+          print(f'FLASH={flash}/118784 RAM={ram}/20480 PASS')
+          PY
+          arm-none-eabi-nm -S --size-sort "$ELF" | tail -50 > OUTPUT/LARGEST_SYMBOLS.txt
+          tar --exclude='SOURCE_KOXX3/.git' -czf OUTPUT/SOURCE_KOXX3_SESC_DRV126_P6500_HALL14S_SHUD4BMS_V1_EXACT.tgz SOURCE_KOXX3
+
+      - name: Post-build invariants
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -q 'SESC-DRV126-P6500-HALL14S-SHUD4BMS-V1' SOURCE_KOXX3/common_files/src/defines.h
+          grep -q '#define G30_SHUD4_BMS_V1 1' SOURCE_KOXX3/common_files/src/defines.h
+          grep -q '#define G30_DRV126_CURRENT_RAISING_COEFF_MA 6500' SOURCE_KOXX3/common_files/src/mc_tasks.c
+          sha256sum SOURCE_KOXX3/common_files/src/mc_tasks.c | grep -q '^1c3f61ad12855960ddf25ea96730328bdfaa4d8653d6f7ec9fe89d2114518c98'
+          sha256sum SOURCE_KOXX3/common_files/MotorControl/MCSDK/MCLib/F1xx/Src/r3_2_f1xx_pwm_curr_fdbk.c | grep -q '^14ccd029244f230d5632f18c6c278aa3021976ede8a4513939af068456eee276'
+          ! grep -qi 'g30_bms' SOURCE_KOXX3/common_files/src/mc_tasks.c
+          ! grep -qi 'g30_bms' SOURCE_KOXX3/common_files/MotorControl/MCSDK/MCLib/F1xx/Src/r3_2_f1xx_pwm_curr_fdbk.c
+          printf 'FASTPATH_HASH_EXACT=PASS\nBMS_OUTSIDE_FOC_PWM=PASS\n' > OUTPUT/POST_BUILD_INVARIANTS.txt
+
+      - name: Upload SHUD4+BMS V1
+        uses: actions/upload-artifact@v4
+        with:
+          name: G30D_SESC_DRV126_P6500_HALL14S_SHUD4BMS_V1_COMPILED
+          retention-days: 30
+          if-no-files-found: error
+          path: |
+            OUTPUT/SmartESC_v2_G30D_SESC_DRV126_P6500_HALL14S_SHUD4BMS_V1_STLINK_APP_0x08001000.bin
+            OUTPUT/SmartESC_v2_G30D_SESC_DRV126_P6500_HALL14S_SHUD4BMS_V1.hex
+            OUTPUT/SmartESC_v2_G30D_SESC_DRV126_P6500_HALL14S_SHUD4BMS_V1.elf
+            OUTPUT/SmartESC_v2_G30D_SESC_DRV126_P6500_HALL14S_SHUD4BMS_V1.map
+            OUTPUT/SHA256_BIN.txt
+            OUTPUT/SIZE.txt
+            OUTPUT/MEMORY_GATE.txt
+            OUTPUT/LARGEST_SYMBOLS.txt
+            OUTPUT/validation.log
+            OUTPUT/build.log
+            OUTPUT/PARENT_PROVENANCE.txt
+            OUTPUT/HALL14S_V1_STATIC_TESTS.txt
+            OUTPUT/SHUD4_BMS_V1_STATIC_TESTS.txt
+            OUTPUT/POST_BUILD_INVARIANTS.txt
+            OUTPUT/SOURCE_KOXX3_SESC_DRV126_P6500_HALL14S_SHUD4BMS_V1_EXACT.tgz
+            ci/apply_sesc_hall14s_v1.py
+            ci/test_sesc_hall14s_v1.py
+            ci/apply_sesc_shud4_bms_v1.py
+            ci/test_sesc_shud4_bms_v1.py
