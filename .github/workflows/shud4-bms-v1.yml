@@ -21,11 +21,11 @@ jobs:
 
       - name: Restore exact hardware-passed POWERPATH source
         env:
-          GH_TOKEN: \${{ github.token }}
+          GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
           set -euo pipefail
-          gh api repos/\${GITHUB_REPOSITORY}/actions/artifacts/13528555020/zip > /tmp/parent.zip
+          gh api repos/${GITHUB_REPOSITORY}/actions/artifacts/13528555020/zip > /tmp/parent.zip
           mkdir -p /tmp/parent
           unzip -q /tmp/parent.zip -d /tmp/parent
           test -f /tmp/parent/OUTPUT/SOURCE_KOXX3_SESC_DRV126_POWERCORE6500_POWERPATH_RESTORE_V1_EXACT.tgz
