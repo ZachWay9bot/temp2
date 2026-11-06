@@ -7,9 +7,10 @@ p=root/"common_files/src/defines.h"
 s=p.read_text()
 old='''#define HW_NAME "SESC-DRV126-POWERCORE6500-VBUS-FUSION-WIRED-LOCKED-V2"
 #define G30_BMS_BATTERY_SAFE_POWERLOCK 1'''
-new='''#define HW_NAME "SESC-DRV126-POWERCORE6500-FAULTGUARD-V1A"
+new='''#define HW_NAME "SESC-DRV126-POWERCORE6500-FAULTGUARD-V1B"
 #define G30_VBUS_LIVE_SHADOW_GATE 1
-#define G30_FAULTGUARD_V1 1'''
+#define G30_FAULTGUARD_V1 1
+#define G30_FAULTGUARD_V1B 1'''
 assert old in s
 p.write_text(s.replace(old,new,1))
 
@@ -252,13 +253,25 @@ block=r'''    }else if (strcmp(argv[0], "g30_faultguard") == 0){
             return;
         }
         VescToSTM_set_current(0.0f,0.0f);
+        MCI_ExecSpeedRamp(pMCI[M1],0,0);
         VescToSTM_pwm_stop();
         if(!MCI_FaultAcknowledged(pMCI[M1])){
             commands_printf(phandle,"FAULTGUARD_ACK FAILED");
             return;
         }
+        /*
+         * POWERCORE/G30 coast-ready state is RUN with the bridge disabled.
+         * The legacy auto-recovery path already used direct RUN assignment,
+         * but then immediately re-enabled PWM. FAULTGUARD V1B deliberately
+         * omits that re-enable so the next torque request can use the proven
+         * G30 start path without re-entering MCSDK current-offset calibration.
+         */
+        STM[M1].bState = RUN;
+        pMCI[M1]->pFOCVars->cycles_max = 0u;
+        VescToSTM_set_current(0.0f,0.0f);
+        MCI_ExecSpeedRamp(pMCI[M1],0,0);
         VescToSTM_pwm_stop();
-        commands_printf(phandle,"FAULTGUARD_ACK OK state=%u pwm_off=%u moe=%u",
+        commands_printf(phandle,"FAULTGUARD_ACK OK state=%u pwm_off=%u moe=%u ready=RUN",
           (unsigned)STM_GetState(pMCI[M1]->pSTM),
           (unsigned)PWM_Handle_M1._Super.PWM_off,
           (unsigned)((TIM1->BDTR&TIM_BDTR_MOE)?1u:0u));
@@ -267,4 +280,4 @@ block=r'''    }else if (strcmp(argv[0], "g30_faultguard") == 0){
 x=x.replace(marker,block+marker,1)
 p.write_text(x)
 
-print("FAULTGUARD V1 applied: latched faults, one-shot fault print, raw fault terminal, diagnostic VESC mapping")
+print("FAULTGUARD V1B applied: latched faults, safe ACK to RUN+PWM_OFF, no re-calibration, no auto restart")
