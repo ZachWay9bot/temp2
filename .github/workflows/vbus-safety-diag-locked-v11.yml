@@ -97,6 +97,7 @@ jobs:
         run: |
           set -euo pipefail
           ELF=OUTPUT/SmartESC_v2_G30D_SESC_DRV126_POWERCORE6500_SAFETY_DIAG_LOCKED_V11.elf
+          test -s OUTPUT/SOURCE_KOXX3_SESC_DRV126_POWERCORE6500_SAFETY_DIAG_LOCKED_V11_EXACT.tgz
           arm-none-eabi-objdump -d --disassemble=R3_2_TurnOnLowSides "$ELF" > OUTPUT/DISASM_LOW_SIDES.txt
           arm-none-eabi-objdump -d --disassemble=R3_2_SwitchOnPWM "$ELF" > OUTPUT/DISASM_SWITCH_ON.txt
           cat OUTPUT/DISASM_LOW_SIDES.txt
@@ -155,7 +156,7 @@ jobs:
             OUTPUT/POST_BUILD_INVARIANTS.txt
             OUTPUT/DISASM_LOW_SIDES.txt
             OUTPUT/DISASM_SWITCH_ON.txt
-            OUTPUT/SOURCE_KOXX3_SESC_DRV126_POWERCORE6500_VBUS_FUSION_LIVE_SHADOW_V1_EXACT.tgz
+            OUTPUT/SOURCE_KOXX3_SESC_DRV126_POWERCORE6500_SAFETY_DIAG_LOCKED_V11_EXACT.tgz
             ci/apply_sesc_vbus_safety_diag_locked_v11.py
             ci/test_sesc_vbus_safety_diag_locked_v11.py
             ci/test_g30_vbus_fusion.c
