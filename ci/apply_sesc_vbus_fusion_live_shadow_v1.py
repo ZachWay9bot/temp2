@@ -217,29 +217,8 @@ assert old in x
 x=x.replace(old,new,1)
 p.write_text(x)
 
-# Surface MCSDK timing faults through the normal VESC fault byte too.
-# Diagnostic only; fault generation and motor loop are unchanged.
-p=root/"common_files/src/VescToSTM.c"
-x=p.read_text()
-a=x.index('mc_fault_code VescToSTM_get_fault(void) {')
-b=x.index('\n\n}',a)+3
-old=x[a:b]
-new='''mc_fault_code VescToSTM_get_fault(void) {
-	uint16_t f=pMCI[M1]->pSTM->hFaultOccurred;
-	if(f & MC_BREAK_IN)    return FAULT_CODE_ABS_OVER_CURRENT;
-	if(f & MC_OVER_VOLT)   return FAULT_CODE_OVER_VOLTAGE;
-	if(f & MC_UNDER_VOLT)  return FAULT_CODE_UNDER_VOLTAGE;
-	if(f & MC_OVER_TEMP)   return FAULT_CODE_OVER_TEMP_FET;
-#ifdef MC_FOC_DURATION
-	if(f & MC_FOC_DURATION) return FAULT_CODE_DRV;
-#endif
-#ifdef MC_SPEED_FDBK
-	if(f & MC_SPEED_FDBK)   return FAULT_CODE_DRV;
-#endif
-	return FAULT_CODE_NONE;
-}'''
-x=x[:a]+new+x[b:]
-p.write_text(x)
+# Parent POWERCORE source already maps any unknown nonzero MCSDK fault (including MC_FOC_DURATION)
+# to FAULT_CODE_DRV while preserving raw hFaultNow/hFaultOccurred for g30_status.
 
 # Minimal raw MCSDK fault snapshot. Host queries this only while motor is coasted.
 p=root/"common_files/src/terminal.c"
