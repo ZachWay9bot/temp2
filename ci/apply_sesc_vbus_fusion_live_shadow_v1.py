@@ -1,0 +1,177 @@
+#!/usr/bin/env python3
+from pathlib import Path
+root=Path("SOURCE_KOXX3")
+
+# Identity + unlock only for the deliberately hard-clamped live-shadow gate.
+p=root/"common_files/src/defines.h"
+s=p.read_text()
+old='''#define HW_NAME "SESC-DRV126-POWERCORE6500-VBUS-FUSION-WIRED-LOCKED-V2"
+#define G30_BMS_BATTERY_SAFE_POWERLOCK 1'''
+new='''#define HW_NAME "SESC-DRV126-POWERCORE6500-VBUS-FUSION-LIVE-SHADOW-V1"
+#define G30_VBUS_LIVE_SHADOW_GATE 1'''
+assert old in s
+p.write_text(s.replace(old,new,1))
+
+# Force Hall control in this gate. Sensorless takeover is impossible by build.
+p=root/"common_files/src/VescToSTM.c"
+s=p.read_text()
+old='''bool VescToSTM_g30_sensorless_selected(void){
+    return mc_conf.foc_sensor_mode == FOC_SENSOR_MODE_SENSORLESS;
+}
+
+bool VescToSTM_g30_hall_selected(void){
+    return mc_conf.foc_sensor_mode == FOC_SENSOR_MODE_HALL;
+}'''
+new='''bool VescToSTM_g30_sensorless_selected(void){
+#ifdef G30_VBUS_LIVE_SHADOW_GATE
+    return false;
+#else
+    return mc_conf.foc_sensor_mode == FOC_SENSOR_MODE_SENSORLESS;
+#endif
+}
+
+bool VescToSTM_g30_hall_selected(void){
+#ifdef G30_VBUS_LIVE_SHADOW_GATE
+    return true;
+#else
+    return mc_conf.foc_sensor_mode == FOC_SENSOR_MODE_HALL;
+#endif
+}'''
+assert old in s
+s=s.replace(old,new,1)
+
+# Hard speed clamp regardless of dashboard/VESC/terminal command source.
+needle='''void VescToSTM_set_speed(int32_t erpm){
+#ifdef G30P
+'''
+assert needle in s
+s=s.replace(needle,'''void VescToSTM_set_speed(int32_t erpm){
+#ifdef G30P
+#ifdef G30_VBUS_LIVE_SHADOW_GATE
+    if(erpm>3000) erpm=3000;
+    if(erpm< -3000) erpm=-3000;
+#endif
+''',1)
+p.write_text(s)
+
+# Hard phase-current and voltage-vector clamps inside the actual DRV126 loop.
+p=root/"common_files/src/mc_tasks.c"
+s=p.read_text()
+old='''  int32_t pos=(int32_t)SpeednTorqCtrlM1.MaxPositiveTorque;
+  int32_t neg=(int32_t)SpeednTorqCtrlM1.MinNegativeTorque;
+  if(pos<0)pos=0;
+  if(neg>0)neg=0;
+  int32_t qtarget=g30_drv126_final_clamp32((int32_t)qref_mc,neg,pos);
+  int32_t phase_lim=pos;
+  if(-neg>phase_lim)phase_lim=-neg;
+  int32_t dmc=g30_drv126_final_clamp32((int32_t)dref_mc,-phase_lim,phase_lim);
+'''
+new='''  int32_t pos=(int32_t)SpeednTorqCtrlM1.MaxPositiveTorque;
+  int32_t neg=(int32_t)SpeednTorqCtrlM1.MinNegativeTorque;
+  if(pos<0)pos=0;
+  if(neg>0)neg=0;
+#ifdef G30_VBUS_LIVE_SHADOW_GATE
+  /* Absolute gate clamp: 5 A phase, regardless of loaded mc_conf. */
+  const int32_t gate_phase_lim=(int32_t)(5.0f*CURRENT_FACTOR_A+0.5f);
+  if(pos>gate_phase_lim) pos=gate_phase_lim;
+  if(neg< -gate_phase_lim) neg=-gate_phase_lim;
+#endif
+  int32_t qtarget=g30_drv126_final_clamp32((int32_t)qref_mc,neg,pos);
+  int32_t phase_lim=pos;
+  if(-neg>phase_lim)phase_lim=-neg;
+  int32_t dmc=g30_drv126_final_clamp32((int32_t)dref_mc,-phase_lim,phase_lim);
+#ifdef G30_VBUS_LIVE_SHADOW_GATE
+  dmc=0; /* no field weakening / d-axis excitation in the gate */
+#endif
+'''
+assert old in s
+s=s.replace(old,new,1)
+
+old2='''  g30_drv126_final_vd=g30_drv126_final_pi(dref,id,&g30_drv126_final_d_acc,
+                                          8500019,10376);
+
+  int16_t va,vb;'''
+new2='''  g30_drv126_final_vd=g30_drv126_final_pi(dref,id,&g30_drv126_final_d_acc,
+                                          8500019,10376);
+#ifdef G30_VBUS_LIVE_SHADOW_GATE
+  /* Roughly 25% of full q-axis voltage. The current clamp remains primary. */
+  g30_drv126_final_vq=(int16_t)g30_drv126_final_clamp32(g30_drv126_final_vq,-8192,8192);
+  g30_drv126_final_vd=0;
+#endif
+
+  int16_t va,vb;'''
+assert old2 in s
+s=s.replace(old2,new2,1)
+
+# At >45 V, a lost/stale BMS fusion immediately coasts the gate.
+needle='''    uint8_t hall_guard=(uint8_t)VescToSTM_g30_hall_selected();
+
+    hCodeError=g30_drv126_final_power_step'''
+assert needle in s
+s=s.replace(needle,'''    uint8_t hall_guard=(uint8_t)VescToSTM_g30_hall_selected();
+#ifdef G30_VBUS_LIVE_SHADOW_GATE
+    if(!g30_vbus_fusion_runtime_sensorless_ok()){
+      PWMC_SwitchOffPWM(pwmcHandle[M1]);
+      return MC_NO_ERROR;
+    }
+#endif
+
+    hCodeError=g30_drv126_final_power_step''',1)
+
+# Observer runs as shadow even though Hall remains the only control source.
+old3='''    if(VescToSTM_g30_sensorless_selected()){
+      /* FO76 observes the voltage actually present during this current sample:
+       * the previous DRV126 PWM vector. This preserves the frozen 16-kHz
+       * observer model while the DRV126 current controller runs at 4 kHz. */
+      g30_fo76_shadow_step(Iab.a,Iab.b,HALL_M1._Super.hElAngle,
+                           g30_vbus_fusion_runtime_mv(),
+                           g30_old_ca,g30_old_cb,g30_old_cc,
+                           PWM_Handle_M1.Half_PWMPeriod,
+                           (uint16_t)DEAD_TIME_COUNTS,
+                           HALL_M1._Super.hElSpeedDpp,
+                           (uint8_t)!PWM_Handle_M1._Super.PWM_off);
+    }'''
+new3='''#ifdef G30_VBUS_LIVE_SHADOW_GATE
+    g30_fo76_request_takeover(0u);
+    g30_fo76_shadow_step(Iab.a,Iab.b,HALL_M1._Super.hElAngle,
+                         g30_vbus_fusion_runtime_mv(),
+                         g30_old_ca,g30_old_cb,g30_old_cc,
+                         PWM_Handle_M1.Half_PWMPeriod,
+                         (uint16_t)DEAD_TIME_COUNTS,
+                         HALL_M1._Super.hElSpeedDpp,
+                         (uint8_t)!PWM_Handle_M1._Super.PWM_off);
+#else
+    if(VescToSTM_g30_sensorless_selected()){
+      g30_fo76_shadow_step(Iab.a,Iab.b,HALL_M1._Super.hElAngle,
+                           g30_vbus_fusion_runtime_mv(),
+                           g30_old_ca,g30_old_cb,g30_old_cc,
+                           PWM_Handle_M1.Half_PWMPeriod,
+                           (uint16_t)DEAD_TIME_COUNTS,
+                           HALL_M1._Super.hElSpeedDpp,
+                           (uint8_t)!PWM_Handle_M1._Super.PWM_off);
+    }
+#endif'''
+assert old3 in s
+s=s.replace(old3,new3,1)
+p.write_text(s)
+
+# Terminal identity/status for the host gate.
+p=root/"common_files/src/terminal.c"
+s=p.read_text()
+marker='''    }else if (strcmp(argv[0], "g30_vbus_fusion_wired") == 0){'''
+assert marker in s
+block=r'''    }else if (strcmp(argv[0], "g30_live_shadow_gate") == 0){
+        g30_vbus_fusion_result_t r=g30_vbus_fusion_runtime_result();
+        uint32_t fused=(r.source==G30_VBUS_SRC_PA1)?r.pa1_mv:
+                       (r.source==G30_VBUS_SRC_BMS_EST)?r.est_mv:0u;
+        commands_printf(phandle,"LIVE_SHADOW gate=1 hall_forced=1 takeover=0 phase_limit_mA=5000 speed_limit_erpm=3000");
+        commands_printf(phandle,"LIVE_SHADOW fusion_src=%s fused=%lu sl_ok=%u pwm_off=%u moe=%u",
+          g30_vbus_fusion_source_name(r.source),(unsigned long)fused,
+          (unsigned)r.sensorless_ok,(unsigned)PWM_Handle_M1._Super.PWM_off,
+          (unsigned)((TIM1->BDTR&TIM_BDTR_MOE)?1u:0u));
+        return;
+'''
+s=s.replace(marker,block+marker,1)
+p.write_text(s)
+
+print("VBUS FUSION LIVE SHADOW V1 applied: Hall-only control, FO76 shadow, 5A/3000erpm/25pct-voltage hard gate")
