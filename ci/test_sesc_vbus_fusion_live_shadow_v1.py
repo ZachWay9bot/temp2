@@ -12,9 +12,9 @@ fo=(root/"common_files/src/g30_fo76_shadow.c").read_text()
 vc=(root/"common_files/src/VescCommand.c").read_text()
 assert 'uint8_t send_buffer[PACKET_SIZE(96)];' in vc
 assert 'uint8_t send_buffer[PACKET_SIZE(60)];' not in vc
-assert 3 + len('SESC-DRV126-POWERCORE6500-FAULTGUARD-V1') + 1 + 12 + 1 + 1 + 1 + 4 <= 96
+assert 3 + len('SESC-DRV126-POWERCORE6500-FAULTGUARD-V1A') + 1 + 12 + 1 + 1 + 1 + 4 <= 96
 
-assert 'SESC-DRV126-POWERCORE6500-FAULTGUARD-V1' in de
+assert 'SESC-DRV126-POWERCORE6500-FAULTGUARD-V1A' in de
 assert '#define G30_VBUS_LIVE_SHADOW_GATE 1' in de
 assert '#define G30_FAULTGUARD_V1 1' in de
 assert '#define AUTO_RESET_FAULT\t\t\t\t\t\t\t\t\t\t\t\t\t 0' in pr or '#define AUTO_RESET_FAULT' in pr and pr.split('AUTO_RESET_FAULT',1)[1].lstrip().startswith('0')
@@ -60,3 +60,10 @@ print('FAULTGUARD_AUTO_RESET_DISABLED=PASS')
 print('FAULTGUARD_RAW_MCSDK_FAULTS=PASS')
 print('FAULTGUARD_ONE_SHOT_FAULT_PRINT=PASS')
 print('FAULTGUARD_UNKNOWN_MCSDK_FAULT_SURFACED_AS_DRV=PASS')
+
+assert 'strcmp(argv[0], "g30_faultguard_ack")' in te
+assert 'FAULTGUARD_ACK DENIED' in te
+assert 'MCI_FaultAcknowledged' in te
+assert 'st!=FAULT_OVER' in te
+assert '!pwm_off || moe' in te
+print('FAULTGUARD_SAFE_ACK=PASS')
