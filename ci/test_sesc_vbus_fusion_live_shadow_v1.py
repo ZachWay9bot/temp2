@@ -12,11 +12,12 @@ fo=(root/"common_files/src/g30_fo76_shadow.c").read_text()
 vc=(root/"common_files/src/VescCommand.c").read_text()
 assert 'uint8_t send_buffer[PACKET_SIZE(96)];' in vc
 assert 'uint8_t send_buffer[PACKET_SIZE(60)];' not in vc
-assert 3 + len('SESC-DRV126-POWERCORE6500-FAULTGUARD-V1A') + 1 + 12 + 1 + 1 + 1 + 4 <= 96
+assert 3 + len('SESC-DRV126-POWERCORE6500-FAULTGUARD-V1B') + 1 + 12 + 1 + 1 + 1 + 4 <= 96
 
-assert 'SESC-DRV126-POWERCORE6500-FAULTGUARD-V1A' in de
+assert 'SESC-DRV126-POWERCORE6500-FAULTGUARD-V1B' in de
 assert '#define G30_VBUS_LIVE_SHADOW_GATE 1' in de
 assert '#define G30_FAULTGUARD_V1 1' in de
+assert '#define G30_FAULTGUARD_V1B 1' in de
 assert '#define AUTO_RESET_FAULT\t\t\t\t\t\t\t\t\t\t\t\t\t 0' in pr or '#define AUTO_RESET_FAULT' in pr and pr.split('AUTO_RESET_FAULT',1)[1].lstrip().startswith('0')
 assert 'G30_BMS_BATTERY_SAFE_POWERLOCK' not in de
 assert 'G30_BMS_BATTERY_SAFE_POWERLOCK' in pwm  # dormant guarded code still present
@@ -67,3 +68,13 @@ assert 'MCI_FaultAcknowledged' in te
 assert 'st!=FAULT_OVER' in te
 assert '!pwm_off || moe' in te
 print('FAULTGUARD_SAFE_ACK=PASS')
+
+ack=te.split('strcmp(argv[0], "g30_faultguard_ack")',1)[1].split('}else if',1)[0]
+assert 'STM[M1].bState = RUN;' in ack
+assert 'pMCI[M1]->pFOCVars->cycles_max = 0u;' in ack
+assert 'MCI_ExecSpeedRamp(pMCI[M1],0,0);' in ack
+assert 'VescToSTM_pwm_stop();' in ack
+assert 'VescToSTM_pwm_start();' not in ack
+assert 'ready=RUN' in ack
+print('FAULTGUARD_V1B_RUN_PWM_OFF_RECOVERY=PASS')
+print('FAULTGUARD_V1B_NO_RECALIBRATION_STATE_MACHINE_ENTRY=PASS')
