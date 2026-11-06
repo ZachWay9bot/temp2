@@ -84,12 +84,13 @@ assert 'cycles_max*100u/(CPU_CLOCK/PWM_FREQUENCY)' in te
 print('FAULTGUARD_V1B_FOC_LOAD_DIAG_NO_OVERFLOW=PASS')
 
 assert 'g30_focdur_total_count' in pwm
-assert 'g30_focdur_ch4_count' in pwm
-assert 'g30_focdur_swerr_count' in pwm
+assert 'g30_focdur_last_reason' in pwm
+assert 'bit0=CH4 late, bit1=SWerror' in (root/'common_files/MotorControl/MCSDK/MCLib/F1xx/Inc/r3_2_f1xx_pwm_curr_fdbk.h').read_text()
 assert 'g30_focdur_consecutive >= 2u' in mc
 assert 'g30_focdur_debounced_single++' in mc
 assert 'g30_focdur_hardfault_count++' in mc
 assert 'FAULTGUARD focdur total=' in te
 print('FAULTGUARD_V1C_FOCDUR_CAUSE_TELEMETRY=PASS')
+print('FAULTGUARD_V1C_RAM_LEAN_DIAG=PASS')
 print('FAULTGUARD_V1C_SINGLE_MISS_DEBOUNCE=PASS')
 print('FAULTGUARD_V1C_REPEAT_MISS_HARD_TRIP=PASS')
