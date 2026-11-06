@@ -3,7 +3,7 @@ from pathlib import Path
 root=Path("SOURCE_KOXX3")
 de=(root/"common_files/src/defines.h").read_text()
 te=(root/"common_files/src/terminal.c").read_text()
-fu=(root/"common_files/src/g30_vbus_fusion.c").read_text()
+fu=(root/"common_files/src/g30_vbus_fusion_impl.inc").read_text()
 fh=(root/"common_files/src/g30_vbus_fusion.h").read_text()
 fo=(root/"common_files/src/g30_fo76_shadow.c").read_text()
 vs=(root/"common_files/src/VescToSTM.c").read_text()
