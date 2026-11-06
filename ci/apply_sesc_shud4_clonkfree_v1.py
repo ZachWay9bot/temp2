@@ -12,6 +12,15 @@ p.write_text(s.replace(old,new,1))
 
 p=root/'common_files/src/VescToSTM.c'
 s=p.read_text()
+proto_old='''volatile bool pwm_force; //State of PWM force on
+'''
+proto_new='''volatile bool pwm_force; //State of PWM force on
+#ifdef G30_SHUD4_CLONKFREE_V1
+static bool g30_shud4_coast_hold_allowed(void);
+#endif
+'''
+assert proto_old in s
+s=s.replace(proto_old,proto_new,1)
 
 # Add exact SHUD no-KERS coast-hold threshold. The SHUD/stock hall-rate scale
 # is ~313 units/kmh and the reconstructed CFW changes the passive release gate
