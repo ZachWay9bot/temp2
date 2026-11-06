@@ -54,9 +54,9 @@ assert 'strcmp(argv[0], "g30_faultguard")' in te
 assert 'auto_reset=0' in te
 assert 'hFaultNow' in te and 'hFaultOccurred' in te
 assert 'last_fault_time = 0xFFFFFFFFu' in led
-assert 'if(f & MC_BREAK_IN)' in vs
-assert 'if(f & MC_FOC_DURATION)' in vs
+assert 'faults & MC_BREAK_IN' in vs
+assert 'return faults ? FAULT_CODE_DRV : FAULT_CODE_NONE;' in vs
 print('FAULTGUARD_AUTO_RESET_DISABLED=PASS')
 print('FAULTGUARD_RAW_MCSDK_FAULTS=PASS')
 print('FAULTGUARD_ONE_SHOT_FAULT_PRINT=PASS')
-print('FAULTGUARD_FOC_DURATION_SURFACED=PASS')
+print('FAULTGUARD_UNKNOWN_MCSDK_FAULT_SURFACED_AS_DRV=PASS')
