@@ -12,12 +12,13 @@ fo=(root/"common_files/src/g30_fo76_shadow.c").read_text()
 vc=(root/"common_files/src/VescCommand.c").read_text()
 assert 'uint8_t send_buffer[PACKET_SIZE(96)];' in vc
 assert 'uint8_t send_buffer[PACKET_SIZE(60)];' not in vc
-assert 3 + len('SESC-DRV126-POWERCORE6500-FAULTGUARD-V1B') + 1 + 12 + 1 + 1 + 1 + 4 <= 96
+assert 3 + len('SESC-DRV126-POWERCORE6500-FAULTGUARD-V1C') + 1 + 12 + 1 + 1 + 1 + 4 <= 96
 
-assert 'SESC-DRV126-POWERCORE6500-FAULTGUARD-V1B' in de
+assert 'SESC-DRV126-POWERCORE6500-FAULTGUARD-V1C' in de
 assert '#define G30_VBUS_LIVE_SHADOW_GATE 1' in de
 assert '#define G30_FAULTGUARD_V1 1' in de
 assert '#define G30_FAULTGUARD_V1B 1' in de
+assert '#define G30_FAULTGUARD_V1C 1' in de
 assert '#define AUTO_RESET_FAULT\t\t\t\t\t\t\t\t\t\t\t\t\t 0' in pr or '#define AUTO_RESET_FAULT' in pr and pr.split('AUTO_RESET_FAULT',1)[1].lstrip().startswith('0')
 assert 'G30_BMS_BATTERY_SAFE_POWERLOCK' not in de
 assert 'G30_BMS_BATTERY_SAFE_POWERLOCK' in pwm  # dormant guarded code still present
@@ -81,3 +82,14 @@ print('FAULTGUARD_V1B_NO_RECALIBRATION_STATE_MACHINE_ENTRY=PASS')
 
 assert 'cycles_max*100u/(CPU_CLOCK/PWM_FREQUENCY)' in te
 print('FAULTGUARD_V1B_FOC_LOAD_DIAG_NO_OVERFLOW=PASS')
+
+assert 'g30_focdur_total_count' in pwm
+assert 'g30_focdur_ch4_count' in pwm
+assert 'g30_focdur_swerr_count' in pwm
+assert 'g30_focdur_consecutive >= 2u' in mc
+assert 'g30_focdur_debounced_single++' in mc
+assert 'g30_focdur_hardfault_count++' in mc
+assert 'FAULTGUARD focdur total=' in te
+print('FAULTGUARD_V1C_FOCDUR_CAUSE_TELEMETRY=PASS')
+print('FAULTGUARD_V1C_SINGLE_MISS_DEBOUNCE=PASS')
+print('FAULTGUARD_V1C_REPEAT_MISS_HARD_TRIP=PASS')
