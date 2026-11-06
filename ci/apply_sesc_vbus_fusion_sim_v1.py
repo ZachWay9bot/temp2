@@ -112,7 +112,7 @@ g30_vbus_fusion_result_t g30_vbus_fusion_eval(uint32_t pa1_mv,
 }
 '''
 (root/"common_files/src/g30_vbus_fusion.h").write_text(h)
-(root/"common_files/src/g30_vbus_fusion.c").write_text(c)
+(root/"common_files/src/g30_vbus_fusion_impl.inc").write_text(c)
 
 p=root/"common_files/src/terminal.c"
 s=p.read_text()
