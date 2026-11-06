@@ -1,0 +1,272 @@
+--- a/SOURCE_KOXX3/common_files/src/defines.h
++++ b/SOURCE_KOXX3/common_files/src/defines.h
+@@ -2,10 +2,11 @@
+ #define DEFINES_H_
+ 
+ #ifdef G30P
+-#define HW_NAME "SESC-DRV126-P6500-H14-SHUD4BMS-CLONKFREE-V1"
++#define HW_NAME "SESC-DRV126-P6500-H14-SHUD4BMS-APPCOMPAT-V1"
+ #define G30_HALL14S_V1 1
+ #define G30_SHUD4_BMS_V1 1
+ #define G30_SHUD4_CLONKFREE_V1 1
++#define G30_DASH_APPCOMPAT_V1 1
+ #define G30_POWERPATH_RESTORE_V1 1
+ #else
+ #define HW_NAME "40"
+--- a/SOURCE_KOXX3/common_files/src/g30_dash_proto.h
++++ b/SOURCE_KOXX3/common_files/src/g30_dash_proto.h
+@@ -45,6 +45,18 @@
+     if(p->src!=0x21u || p->dst!=0x20u || p->arg!=0u || p->len<3u) return 0;
+     return p->cmd==0x64u?64u:(p->cmd==0x65u?65u:0u);
+ }
++static inline unsigned g30_dash_frame(uint8_t src,uint8_t dst,uint8_t cmd,uint8_t arg,
++        const uint8_t *payload,uint8_t len,uint8_t *out) {
++    uint16_t sum=0;
++    if(len>G30_DASH_MAX_PAYLOAD) return 0u;
++    out[0]=0x5Au; out[1]=0xA5u; out[2]=len; out[3]=src; out[4]=dst;
++    out[5]=cmd; out[6]=arg;
++    if(len && payload) memcpy(out+7,payload,len);
++    for(unsigned i=2;i<(unsigned)(7u+len);i++) sum=(uint16_t)(sum+out[i]);
++    sum^=0xFFFFu;
++    out[7u+len]=(uint8_t)sum; out[8u+len]=(uint8_t)(sum>>8);
++    return (unsigned)(9u+len);
++}
+ static inline unsigned g30_dash_status_frame(const uint8_t status[6], uint8_t out[15]) {
+     out[0]=0x5A;out[1]=0xA5;out[2]=6;out[3]=0x20;out[4]=0x21;out[5]=0x64;out[6]=0;
+     memcpy(out+7,status,6);
+--- a/SOURCE_KOXX3/common_files/src/task_LED.c
++++ b/SOURCE_KOXX3/common_files/src/task_LED.c
+@@ -224,6 +224,20 @@
+ int16_t g30_bms_stock_current(void){ return g30_bms?g30_bms->current:0; }
+ uint8_t g30_bms_stock_live_len(void){ return g30_bms?g30_bms->live_len:0u; }
+ uint8_t g30_bms_stock_serial_len(void){ return g30_bms?g30_bms->serial_len:0u; }
++#ifdef G30_DASH_APPCOMPAT_V1
++uint16_t g30_bms_stock_remaining(void){ return g30_bms?g30_bms->remaining:0u; }
++uint16_t g30_bms_stock_temp_pair(void){
++    if(!g30_bms || g30_bms->live_len<12u) return 0u;
++    return (uint16_t)g30_bms->parse_data[10] | ((uint16_t)g30_bms->parse_data[11]<<8);
++}
++uint8_t g30_bms_stock_copy_serial(uint8_t *out,uint8_t maxlen){
++    uint8_t n;
++    if(!g30_bms || !out) return 0u;
++    n=g30_bms->serial_len; if(n>maxlen) n=maxlen;
++    if(n) memcpy(out,g30_bms->serial,n);
++    return n;
++}
++#endif
+ #endif
+ 
+ void prv_LED_blink(uint32_t speed){
+--- a/SOURCE_KOXX3/common_files/src/g30_dash_link.c
++++ b/SOURCE_KOXX3/common_files/src/g30_dash_link.c
+@@ -20,6 +20,9 @@
+     uint8_t rx[128];
+     uint32_t bytes, valid, bad, cmd64, cmd65;
+     uint32_t tx_calls, tx_ok, tx_fail, rx_errors;
++#ifdef G30_DASH_APPCOMPAT_V1
++    uint32_t app_reads, app_replies, app_ignored, bms_reads, tx_byte_timeouts;
++#endif
+     uint16_t version;
+     uint8_t gas, brake, init_result, rx_result, tx_result;
+     uint8_t input_seen;
+@@ -102,8 +105,129 @@
+     return (128u-d->port->uart->hdmarx->Instance->CNDTR)&127u;
+ }
+ 
++#ifdef G30_DASH_APPCOMPAT_V1
++/* r5 hardware-proven dashboard TX behavior: PA2 is actively driven as AF
++ * push-pull for each byte, then immediately released as AF open-drain with RX
++ * re-enabled after TC. This mirrors stock DRV126's physical Yellowwire service
++ * and leaves USART1/IoT and USART3/BMS completely untouched. */
++static inline void g30_dash_pa2_crl(uint32_t nibble){
++    uint32_t crl=GPIOA->CRL;
++    crl=(crl & ~(0xFu<<8)) | ((nibble&0xFu)<<8);
++    GPIOA->CRL=crl;
++}
++static HAL_StatusTypeDef g30_dash_tx_stocklike(dash_link_state *d,const uint8_t *buf,uint16_t len){
++    UART_HandleTypeDef *u=d->port->uart;
++    if(!buf || !len || u->Instance!=USART2) return HAL_ERROR;
++    for(uint16_t i=0;i<len;i++){
++        uint32_t start=HAL_GetTick();
++        /* AF push-pull, 50 MHz: CRL nibble 0xB on PA2. */
++        g30_dash_pa2_crl(0xBu);
++        MODIFY_REG(u->Instance->CR1,USART_CR1_TE|USART_CR1_RE,USART_CR1_TE);
++        while((u->Instance->SR & USART_SR_TXE)==0u){
++            if((uint32_t)(HAL_GetTick()-start)>2u) goto fail;
++        }
++        (void)u->Instance->SR;
++        u->Instance->DR=buf[i];
++        start=HAL_GetTick();
++        while((u->Instance->SR & USART_SR_TC)==0u){
++            if((uint32_t)(HAL_GetTick()-start)>2u) goto fail;
++        }
++        /* Stock releases the single wire after every byte. */
++        g30_dash_pa2_crl(0xFu);
++        MODIFY_REG(u->Instance->CR1,USART_CR1_TE|USART_CR1_RE,USART_CR1_RE);
++    }
++    return HAL_OK;
++fail:
++    d->tx_byte_timeouts++;
++    g30_dash_pa2_crl(0xFu);
++    MODIFY_REG(u->Instance->CR1,USART_CR1_TE|USART_CR1_RE,USART_CR1_RE);
++    return HAL_TIMEOUT;
++}
++
++static bool g30_dash_serial_char(uint8_t c){
++    return (c>='0'&&c<='9') || (c>='A'&&c<='Z');
++}
++static void g30_dash_get_serial(uint8_t out[14]){
++    const uint8_t *begin=(const uint8_t*)0x0801C000u;
++    const uint8_t *end=(const uint8_t*)0x0801E000u;
++    for(const uint8_t *q=begin;q+14u<=end;q++){
++        if(q[0]!='N'||q[1]!='4'||q[2]!='G') continue;
++        uint8_t ok=1u;
++        for(unsigned i=0;i<14u;i++) if(!g30_dash_serial_char(q[i])){ok=0u;break;}
++        if(ok){memcpy(out,q,14u);return;}
++    }
++    /* After a historical mass erase the stock identity page may be blank.
++     * Keep a syntactically valid, stable non-secret fallback. BLE117 returns
++     * the same 14 bytes in 5B and the app echoes them in 5D. */
++    static const uint8_t fallback[14]={'N','4','G','S','E','S','C','0','0','0','0','0','0','0'};
++    memcpy(out,fallback,14u);
++}
++static void g30_put_u16(uint8_t *p,uint16_t v){p[0]=(uint8_t)v;p[1]=(uint8_t)(v>>8);}
++static void g30_put_u32(uint8_t *p,uint32_t v){p[0]=(uint8_t)v;p[1]=(uint8_t)(v>>8);p[2]=(uint8_t)(v>>16);p[3]=(uint8_t)(v>>24);}
++
++#ifdef G30_SHUD4_BMS_V1
++extern uint16_t g30_bms_stock_remaining(void),g30_bms_stock_soc(void),g30_bms_stock_pack10(void),g30_bms_stock_temp_pair(void);
++extern int16_t g30_bms_stock_current(void);
++extern uint8_t g30_bms_stock_copy_serial(uint8_t *out,uint8_t maxlen);
++#endif
++
++static uint8_t g30_dash_read_esc(uint8_t reg,uint8_t ask,uint8_t *out){
++    memset(out,0,ask);
++    switch(reg){
++    case 0x10u: { uint8_t serial[14]; g30_dash_get_serial(serial); memcpy(out,serial,ask<14u?ask:14u); } break;
++    case 0x1Au: if(ask>=2u){out[0]=0x20u;out[1]=0x04u;} break; /* empirical stock app value */
++    case 0x29u: if(ask>=4u) g30_put_u32(out,VescToSTM_get_odometer()); break; /* metres = 0.001 km */
++    case 0xB0u: if(ask>=2u) g30_put_u16(out,(uint16_t)(pMCI[M1]->pSTM->hFaultOccurred&0xFFFFu)); break;
++    case 0xB4u: if(ask>=2u){float l=VescToSTM_get_battery_level(0);if(!isfinite(l)||l<0)l=0;if(l>1)l=1;g30_put_u16(out,(uint16_t)(l*100.0f+0.5f));} break;
++    case 0xB5u: if(ask>=2u){float k=fabsf(VescToSTM_get_speed()*3.6f);if(!isfinite(k)||k<0)k=0;if(k>6553.5f)k=6553.5f;g30_put_u16(out,(uint16_t)(k*10.0f+0.5f));} break;
++    case 0xB7u: if(ask>=4u) g30_put_u32(out,VescToSTM_get_odometer()); break;
++    case 0xD0u: break; /* stock/unknown extension probe: zero-filled read */
++    default: break; /* readable but unknown: deterministic zero rather than timeout */
++    }
++    return ask;
++}
++
++static uint8_t g30_dash_read_bms(uint8_t reg,uint8_t ask,uint8_t *out){
++    memset(out,0,ask);
++#ifdef G30_SHUD4_BMS_V1
++    if(reg==0x10u){ (void)g30_bms_stock_copy_serial(out,ask); return ask; }
++    /* ScootBatt's proven request is 0x31, 12 bytes. Populate the contiguous
++     * stock fields from the already-running read-only 0x30 heartbeat cache. */
++    if(reg==0x31u){
++        if(ask>=2u) g30_put_u16(out+0,g30_bms_stock_remaining());
++        if(ask>=4u) g30_put_u16(out+2,g30_bms_stock_soc());
++        if(ask>=6u) g30_put_u16(out+4,(uint16_t)g30_bms_stock_current());
++        if(ask>=8u) g30_put_u16(out+6,g30_bms_stock_pack10());
++        if(ask>=10u) g30_put_u16(out+8,g30_bms_stock_temp_pair());
++        return ask;
++    }
++    if(reg==0x32u && ask>=2u) g30_put_u16(out,g30_bms_stock_soc());
++    else if(reg==0x33u && ask>=2u) g30_put_u16(out,(uint16_t)g30_bms_stock_current());
++    else if(reg==0x34u && ask>=2u) g30_put_u16(out,g30_bms_stock_pack10());
++    else if(reg==0x35u && ask>=2u) g30_put_u16(out,g30_bms_stock_temp_pair());
++#endif
++    return ask;
++}
++
++static bool g30_dash_queue_app_read(dash_link_state *d,uint8_t out[65],uint16_t *outlen){
++    const g30_dash_parser *p=&d->parser;
++    if((p->src<0x3Du||p->src>0x3Fu) || p->cmd!=0x01u) return false;
++    if(p->len!=1u && p->len!=4u){d->app_ignored++;return false;}
++    uint8_t ask=p->payload[0];
++    if(!ask || ask>G30_DASH_MAX_PAYLOAD){d->app_ignored++;return false;}
++    uint8_t data[G30_DASH_MAX_PAYLOAD];
++    if(p->dst==0x20u){g30_dash_read_esc(p->arg,ask,data);d->app_reads++;}
++    else if(p->dst==0x22u){g30_dash_read_bms(p->arg,ask,data);d->bms_reads++;}
++    else return false;
++    *outlen=(uint16_t)g30_dash_frame(p->dst,p->src,0x04u,p->arg,data,ask,out);
++    return *outlen!=0u;
++}
++#endif
++
+ static void send_status(dash_link_state *d) {
++#ifndef G30_DASH_APPCOMPAT_V1
+     UART_HandleTypeDef *u=d->port->uart;
++#endif
+     uint8_t status[6]={m365_to_display.mode,0,0,0,0,0};
+     uint8_t tx[15];
+     float level=VescToSTM_get_battery_level(0);
+@@ -118,15 +242,19 @@
+     status[5]=(uint8_t)(pMCI[M1]->pSTM->hFaultOccurred&0xFFu);
+     unsigned len=g30_dash_status_frame(status,tx);
+     d->tx_calls++;
++#ifdef G30_DASH_APPCOMPAT_V1
++    HAL_StatusTypeDef result=g30_dash_tx_stocklike(d,tx,(uint16_t)len);
++#else
+     /* No TX-DMA buffer lifetime or forced gState=READY. HAL blocking TX
+      * waits for UART_FLAG_TC: the final stop bit leaves before RX resumes.
+      * Interrupts, including the original FOC ISR, remain enabled. */
+     HAL_StatusTypeDef result=HAL_HalfDuplex_EnableTransmitter(u);
+     if(result==HAL_OK) result=HAL_UART_Transmit(u,tx,(uint16_t)len,5u);
++    /* Return to receive mode on both success and failure. */
++    if(HAL_HalfDuplex_EnableReceiver(u)!=HAL_OK) d->rx_errors++;
++#endif
+     d->tx_result=(uint8_t)result+1u;
+     if(result==HAL_OK) d->tx_ok++; else d->tx_fail++;
+-    /* Return to receive mode on both success and failure. */
+-    if(HAL_HalfDuplex_EnableReceiver(u)!=HAL_OK) d->rx_errors++;
+ }
+ 
+ static void dash_task(void *arg) {
+@@ -146,12 +274,18 @@
+     __HAL_DMA_DISABLE_IT(u->hdmarx,DMA_IT_HT|DMA_IT_TC);
+     for(;;) {
+         unsigned reply_pending=0;
++#ifdef G30_DASH_APPCOMPAT_V1
++        uint8_t app_tx[65]; uint16_t app_tx_len=0u; bool app_pending=false;
++#endif
+         while(rd!=rx_pos(d)) {
+             uint8_t b=d->rx[rd]; rd=(rd+1u)&127u; d->bytes++;
+             int result=g30_dash_feed(&d->parser,b,HAL_GetTick());
+             if(result<0) d->bad++;
+             if(result==1) {
+                 d->valid++;
++#ifdef G30_DASH_APPCOMPAT_V1
++                if(!app_pending) app_pending=g30_dash_queue_app_read(d,app_tx,&app_tx_len);
++#endif
+                 unsigned kind=g30_dash_input_kind(&d->parser);
+                 if(kind) {
+                     d->gas=d->parser.payload[1];d->brake=d->parser.payload[2];
+@@ -166,6 +300,17 @@
+             }
+         }
+         /* Do not switch away from RX in the middle of a newly arriving frame. */
++#ifdef G30_DASH_APPCOMPAT_V1
++        if(app_pending && d->parser.state==0u && rd==rx_pos(d)){
++            d->tx_calls++;
++            HAL_StatusTypeDef ar=g30_dash_tx_stocklike(d,app_tx,app_tx_len);
++            d->tx_result=(uint8_t)ar+1u;
++            if(ar==HAL_OK){d->tx_ok++;d->app_replies++;}else d->tx_fail++;
++            /* An app transaction has priority. Skipping one 100-ms status reply
++             * is safer than transmitting two back-to-back frames into BLE117. */
++            reply_pending=0u;
++        }
++#endif
+         if(reply_pending && d->parser.state==0u && rd==rx_pos(d)) send_status(d);
+         if(u->Instance->SR&(USART_SR_ORE|USART_SR_FE|USART_SR_NE|USART_SR_PE)) {
+             d->rx_errors++;
+@@ -205,6 +350,11 @@
+         (unsigned long)d->drive_commands,(unsigned long)d->coast_commands,
+         (unsigned long)d->remote_claims,
+         d->remote_claimed && (uint32_t)(HAL_GetTick()-d->last_remote_ms)<G30_DASH_R2_VESC_HOLD_MS);
++#ifdef G30_DASH_APPCOMPAT_V1
++    commands_printf(phandle,"APPCOMPAT reads=%lu replies=%lu bmsReads=%lu ignored=%lu txByteTimeout=%lu",
++        (unsigned long)d->app_reads,(unsigned long)d->app_replies,(unsigned long)d->bms_reads,
++        (unsigned long)d->app_ignored,(unsigned long)d->tx_byte_timeouts);
++#endif
+     UART_HandleTypeDef *u=d->port->uart;
+     commands_printf(phandle,"USART2 SR=%04lx CR1=%04lx CR3=%04lx CNDTR=%lu rxErr=%lu stackFree=%u heap=%u",
+         (unsigned long)u->Instance->SR,(unsigned long)u->Instance->CR1,(unsigned long)u->Instance->CR3,
