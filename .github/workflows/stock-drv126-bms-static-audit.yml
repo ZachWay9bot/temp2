@@ -1,0 +1,25 @@
+name: Stock DRV126 BMS static audit
+
+on:
+  push:
+    branches:
+      - sesc-bms-stock126-static-audit-20261106
+    paths:
+      - 'ci/audit_stock_drv126_bms.py'
+      - '.github/workflows/stock-drv126-bms-static-audit.yml'
+  workflow_dispatch:
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: pip install capstone==5.0.6
+      - run: python3 ci/audit_stock_drv126_bms.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: DRV126_BMS_STATIC_AUDIT
+          path: OUTPUT/
