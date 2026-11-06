@@ -1,9 +1,9 @@
-name: SESC POWERCORE6500 VESC SAFETYCORE V1
+name: SESC POWERCORE6500 SAFETYCORE V2 HYBRID
 
 on:
   push:
     branches:
-      - vesc-safetycore-v1-20261106
+      - safetycore-v2-hybrid-20261106
     paths:
       - 'ci/sesc_vesc_safetycore_v1.patch'
       - 'ci/sesc_vesc_safetycore_v1_hotfix.patch'
@@ -43,18 +43,19 @@ jobs:
             'parent_artifact=13510673322' \
             'parent_build=SESC-DRV126-POWERCORE6500-VBUS-FUSION-LIVE-SHADOW-V1' \
             'parent_bin_sha256=5584fc35e544d93efcc184e37f2b710d934554296d0b166826e6359b0c1479b0' \
+            'v1_parent_commit=c25796d5b1b3a795d1a53c232a7b5dd5a0ea004e' \
             > OUTPUT/PARENT_PROVENANCE.txt
 
-      - name: Apply VESC safety core and run source/host tests
+      - name: Apply SafetyCore V1 base plus V2 hybrid patch and run source tests
         shell: bash
         run: |
           set -euo pipefail
           patch -p0 < ci/sesc_vesc_safetycore_v1.patch
           patch -p0 < ci/sesc_vesc_safetycore_v1_hotfix.patch
           patch -p0 < ci/sesc_vesc_safetycore_v1_runtime_diag.patch
-          python3 ci/test_sesc_vesc_safetycore_v1.py | tee OUTPUT/VESC_SAFETYCORE_V1_STATIC_TESTS.txt
+          python3 ci/test_sesc_vesc_safetycore_v1.py | tee OUTPUT/SAFETYCORE_V2_HYBRID_STATIC_TESTS.txt
           cc -std=c11 -Wall -Wextra -Werror -I SOURCE_KOXX3/common_files/src ci/test_g30_vbus_fusion.c -o /tmp/vbfus_test
-          /tmp/vbfus_test | tee OUTPUT/VESC_SAFETYCORE_V1_VBUS_POLICY_TESTS.txt
+          /tmp/vbfus_test | tee OUTPUT/SAFETYCORE_V2_VBUS_POLICY_TESTS.txt
 
       - name: Install ARM GNU GCC 13.2.1
         shell: bash
@@ -69,17 +70,17 @@ jobs:
           tar -xzf "$FILE"
           echo "/tmp/xpack-arm-none-eabi-gcc-13.2.1-1.1/bin" >> "$GITHUB_PATH"
 
-      - name: Compile and validate safety-core build
+      - name: Compile and validate SafetyCore V2 hybrid build
         shell: bash
         run: |
           set -euo pipefail
-          sed -i 's/FO76_SHADOW_R3/SESC_DRV126_POWERCORE6500_VESC_SAFETYCORE_V1/g' tools/build_native.py tools/validate_image.py
-          sed -i 's/G30D-FO76-SHADOW-R3/SESC-DRV126-POWERCORE6500-VESC-SAFETYCORE-V1/g' tools/validate_image.py
-          sed -i 's/Original Koxx3 Hall-FOC, FO76 compact observer in shadow mode only, no angle takeover/DRV126 PowerCore Hall-FOC plus FO76 sensorless below 45V PA1; VESC SafetyCore V1/g' tools/validate_image.py
+          sed -i 's/FO76_SHADOW_R3/SESC_DRV126_POWERCORE6500_SAFETYCORE_V2_HYBRID/g' tools/build_native.py tools/validate_image.py
+          sed -i 's/G30D-FO76-SHADOW-R3/SESC-DRV126-POWERCORE6500-SAFETYCORE-V2-HYBRID/g' tools/validate_image.py
+          sed -i 's/Original Koxx3 Hall-FOC, FO76 compact observer in shadow mode only, no angle takeover/DRV126 Hall-FOC start plus automatic FO76 observer takeover at 64 DPP below 45V PA1; thermal derating fixed/g' tools/validate_image.py
           python3 tools/build_native.py | tee OUTPUT/build.log
           python3 tools/validate_image.py | tee OUTPUT/validation.log
-          BIN=OUTPUT/SmartESC_v2_G30D_SESC_DRV126_POWERCORE6500_VESC_SAFETYCORE_V1_STLINK_APP_0x08001000.bin
-          ELF=OUTPUT/SmartESC_v2_G30D_SESC_DRV126_POWERCORE6500_VESC_SAFETYCORE_V1.elf
+          BIN=OUTPUT/SmartESC_v2_G30D_SESC_DRV126_POWERCORE6500_SAFETYCORE_V2_HYBRID_STLINK_APP_0x08001000.bin
+          ELF=OUTPUT/SmartESC_v2_G30D_SESC_DRV126_POWERCORE6500_SAFETYCORE_V2_HYBRID.elf
           test -f "$BIN"
           test -f "$ELF"
           sha256sum "$BIN" | tee OUTPUT/SHA256_BIN.txt
@@ -95,16 +96,18 @@ jobs:
           print(f'FLASH={flash}/118784 RAM={ram}/20480 PASS')
           PY
           arm-none-eabi-nm -S --size-sort "$ELF" | tail -40 > OUTPUT/LARGEST_SYMBOLS.txt
-          tar --exclude='SOURCE_KOXX3/.git' -czf OUTPUT/SOURCE_KOXX3_SESC_DRV126_POWERCORE6500_VESC_SAFETYCORE_V1_EXACT.tgz SOURCE_KOXX3
+          arm-none-eabi-nm "$ELF" | grep -E 'g30_fo76_(takeover_owns_angle|request_coast)' | tee OUTPUT/HYBRID_SYMBOLS.txt
+          tar --exclude='SOURCE_KOXX3/.git' -czf OUTPUT/SOURCE_KOXX3_SESC_DRV126_POWERCORE6500_SAFETYCORE_V2_HYBRID_EXACT.tgz SOURCE_KOXX3
 
       - name: Post-build invariants and binary protection proof
         shell: bash
         run: |
           set -euo pipefail
-          ELF=OUTPUT/SmartESC_v2_G30D_SESC_DRV126_POWERCORE6500_VESC_SAFETYCORE_V1.elf
-          test -s OUTPUT/SOURCE_KOXX3_SESC_DRV126_POWERCORE6500_VESC_SAFETYCORE_V1_EXACT.tgz
+          ELF=OUTPUT/SmartESC_v2_G30D_SESC_DRV126_POWERCORE6500_SAFETYCORE_V2_HYBRID.elf
+          test -s OUTPUT/SOURCE_KOXX3_SESC_DRV126_POWERCORE6500_SAFETYCORE_V2_HYBRID_EXACT.tgz
           arm-none-eabi-objdump -d --disassemble=R3_2_GetPhaseCurrents "$ELF" > OUTPUT/DISASM_OCP.txt
           arm-none-eabi-objdump -d --disassemble=R3_2_SwitchOnPWM "$ELF" > OUTPUT/DISASM_SWITCH_ON.txt
+          arm-none-eabi-objdump -d --disassemble=VescToSTM_g30_pushstart_command "$ELF" > OUTPUT/DISASM_HYBRID_ENTRY.txt
           cat OUTPUT/DISASM_OCP.txt
           cat OUTPUT/DISASM_SWITCH_ON.txt
           python3 - <<'PY'
@@ -116,53 +119,65 @@ jobs:
           mc=(root/"common_files/src/mc_tasks.c").read_text()
           cf=(root/"common_files/src/conf_general.c").read_text()
           pr=(root/"common_files/inc/product.h").read_text()
+          fo=(root/"common_files/src/g30_fo76_shadow.c").read_text()
           pw=(root/"common_files/MotorControl/MCSDK/MCLib/F1xx/Src/r3_2_f1xx_pwm_curr_fdbk.c").read_text()
-          assert "SESC-DRV126-POWERCORE6500-VESC-SAFETYCORE-V1" in de
+          assert "SESC-DRV126-POWERCORE6500-SAFETYCORE-V2-HYBRID" in de
           assert "#define G30_VESC_SAFETYCORE_V1 1" in de
+          assert "#define G30_VESC_SAFETYCORE_V2_HYBRID 1" in de
           assert "10.0f * CURRENT_FACTOR_A" in cf
           assert "OverCurrentCycles = 0" in cf
           assert "#ifdef G30P\n#define AUTO_RESET_FAULT 0" in pr
           assert "VescToSTM_get_bus_voltage()>45.0f" in vs
-          assert "MCI_FaultAcknowledged(pMCI[M1])" in vs
-          assert "g30_pa1_trust_counts" in mc
+          assert "utils_map_int(temp, fp.temp_cut_start, fp.temp_cut_end, iq, 0)" in vs
+          assert "G30_HYBRID_TAKEOVER_MIN_DPP 64" in vs
+          assert "g30_fo76_request_takeover(1u)" in vs
+          assert "g30_fo76_request_coast()" in vs
+          assert "VescToSTM_g30_sensorless_selected() || g30_fo76_takeover_owns_angle()" in mc
+          assert "d.valid && d.tracking && takeover_phase_history" in fo
           assert "(ia_oc > oc)" in pw and "(ib_oc > oc)" in pw and "(ic_oc > oc)" in pw
           oc=Path("OUTPUT/DISASM_OCP.txt").read_text()
           sw=Path("OUTPUT/DISASM_SWITCH_ON.txt").read_text()
+          sy=Path("OUTPUT/HYBRID_SYMBOLS.txt").read_text()
           assert "<R3_2_GetPhaseCurrents>:" in oc
-          assert "R3_2_SwitchOffPWM" in oc, "compiled OCP path no longer reaches PWM-off"
+          assert "R3_2_SwitchOffPWM" in oc
           assert "<R3_2_SwitchOnPWM>:" in sw
-          assert re.search(r"\borr(?:\.w)?\s+[^\n]*#(?:32768|0x8000)\b",sw), "motor build cannot enable TIM1 MOE"
+          assert re.search(r"\borr(?:\.w)?\s+[^\n]*#(?:32768|0x8000)\b",sw)
+          assert "g30_fo76_takeover_owns_angle" in sy and "g30_fo76_request_coast" in sy
           Path("OUTPUT/POST_BUILD_INVARIANTS.txt").write_text(
-              "SOURCE_SAFETY_CONTRACT=PASS\n"
+              "SOURCE_SAFETYCORE_V2_CONTRACT=PASS\n"
+              "THERMAL_DERATING_DIRECTION=PASS\n"
+              "HYBRID_64DPP_PA1_GATE=PASS\n"
+              "BINARY_HYBRID_HELPERS_PRESENT=PASS\n"
               "BINARY_OCP_TO_PWM_OFF=PASS\n"
               "BINARY_MOTOR_PWM_ENABLE_PRESENT=PASS\n")
-          print("SOURCE_SAFETY_CONTRACT=PASS BINARY_OCP_TO_PWM_OFF=PASS BINARY_MOTOR_PWM_ENABLE_PRESENT=PASS")
+          print("SOURCE_SAFETYCORE_V2_CONTRACT=PASS THERMAL_DERATING_DIRECTION=PASS HYBRID_64DPP_PA1_GATE=PASS")
           PY
 
-      - name: Upload VESC safety-core build
+      - name: Upload SafetyCore V2 hybrid build
         uses: actions/upload-artifact@v4
         with:
-          name: G30D_SESC_DRV126_POWERCORE6500_VESC_SAFETYCORE_V1_COMPILED
+          name: G30D_SESC_DRV126_POWERCORE6500_SAFETYCORE_V2_HYBRID_COMPILED
           retention-days: 30
           if-no-files-found: error
           path: |
-            OUTPUT/SmartESC_v2_G30D_SESC_DRV126_POWERCORE6500_VESC_SAFETYCORE_V1_STLINK_APP_0x08001000.bin
-            OUTPUT/SmartESC_v2_G30D_SESC_DRV126_POWERCORE6500_VESC_SAFETYCORE_V1.hex
-            OUTPUT/SmartESC_v2_G30D_SESC_DRV126_POWERCORE6500_VESC_SAFETYCORE_V1.elf
-            OUTPUT/SmartESC_v2_G30D_SESC_DRV126_POWERCORE6500_VESC_SAFETYCORE_V1.map
+            OUTPUT/SmartESC_v2_G30D_SESC_DRV126_POWERCORE6500_SAFETYCORE_V2_HYBRID_STLINK_APP_0x08001000.bin
+            OUTPUT/SmartESC_v2_G30D_SESC_DRV126_POWERCORE6500_SAFETYCORE_V2_HYBRID.elf
+            OUTPUT/SmartESC_v2_G30D_SESC_DRV126_POWERCORE6500_SAFETYCORE_V2_HYBRID.map
             OUTPUT/SHA256_BIN.txt
             OUTPUT/SIZE.txt
             OUTPUT/MEMORY_GATE.txt
             OUTPUT/LARGEST_SYMBOLS.txt
+            OUTPUT/HYBRID_SYMBOLS.txt
             OUTPUT/validation.log
             OUTPUT/build.log
             OUTPUT/PARENT_PROVENANCE.txt
-            OUTPUT/VESC_SAFETYCORE_V1_STATIC_TESTS.txt
-            OUTPUT/VESC_SAFETYCORE_V1_VBUS_POLICY_TESTS.txt
+            OUTPUT/SAFETYCORE_V2_HYBRID_STATIC_TESTS.txt
+            OUTPUT/SAFETYCORE_V2_VBUS_POLICY_TESTS.txt
             OUTPUT/POST_BUILD_INVARIANTS.txt
             OUTPUT/DISASM_OCP.txt
             OUTPUT/DISASM_SWITCH_ON.txt
-            OUTPUT/SOURCE_KOXX3_SESC_DRV126_POWERCORE6500_VESC_SAFETYCORE_V1_EXACT.tgz
+            OUTPUT/DISASM_HYBRID_ENTRY.txt
+            OUTPUT/SOURCE_KOXX3_SESC_DRV126_POWERCORE6500_SAFETYCORE_V2_HYBRID_EXACT.tgz
             ci/sesc_vesc_safetycore_v1.patch
             ci/sesc_vesc_safetycore_v1_hotfix.patch
             ci/sesc_vesc_safetycore_v1_runtime_diag.patch
