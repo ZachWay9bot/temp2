@@ -1,0 +1,132 @@
+name: SESC PowerCore6500 POWERPATH RESTORE V1
+
+on:
+  push:
+    branches:
+      - powerpath-restore-v1-20261106
+    paths:
+      - 'ci/apply_sesc_powerpath_restore_v1.py'
+      - 'ci/test_sesc_powerpath_restore_v1.py'
+      - '.github/workflows/powerpath-restore-v1.yml'
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Restore exact hardware-confirmed POWERCORE6500 FINAL V1 source
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh api repos/${GITHUB_REPOSITORY}/actions/artifacts/13421975037/zip > /tmp/parent.zip
+          mkdir -p /tmp/parent
+          unzip -q /tmp/parent.zip -d /tmp/parent
+          test -f /tmp/parent/OUTPUT/SOURCE_KOXX3_SESC_DRV126_POWERCORE6500_FINAL_V1_EXACT.tgz
+          tar -xzf /tmp/parent/OUTPUT/SOURCE_KOXX3_SESC_DRV126_POWERCORE6500_FINAL_V1_EXACT.tgz
+          grep -q 'SESC-DRV126-POWERCORE6500-FINAL-V1' SOURCE_KOXX3/common_files/src/defines.h
+          base64 -d ci/r3_payload.tgz.b64 > /tmp/r3_payload.tgz
+          mkdir -p /tmp/r3payload tools OUTPUT
+          tar -xzf /tmp/r3_payload.tgz -C /tmp/r3payload
+          cp /tmp/r3payload/build_native.py tools/
+          cp /tmp/r3payload/validate_image.py tools/
+          printf '%s\n' \
+            'parent_run=42040326759' \
+            'parent_artifact=13421975037' \
+            'parent_build=SESC-DRV126-POWERCORE6500-FINAL-V1' \
+            'parent_source_commit=bb76be300f082f0ffded43d76a318db3aa2d669c' \
+            'parent_freeze_commit=6018bb4d02ffa457ac1ec41791614bc7fd5eeb05' \
+            'parent_bin_sha256=8ceb5348bb53c34b8992025d188d20ebbc2e14a355f92e405d4b309f0f108b80' \
+            > OUTPUT/PARENT_PROVENANCE.txt
+
+      - name: Apply minimal restore safety patch and verify exact motor path hashes
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 ci/apply_sesc_powerpath_restore_v1.py
+          python3 ci/test_sesc_powerpath_restore_v1.py | tee OUTPUT/POWERPATH_RESTORE_V1_STATIC_TESTS.txt
+
+      - name: Install ARM GNU GCC 13.2.1
+        shell: bash
+        run: |
+          set -euo pipefail
+          URL=https://github.com/xpack-dev-tools/arm-none-eabi-gcc-xpack/releases/download/v13.2.1-1.1
+          FILE=xpack-arm-none-eabi-gcc-13.2.1-1.1-linux-x64.tar.gz
+          curl -fL "$URL/$FILE" -o "/tmp/$FILE"
+          curl -fL "$URL/$FILE.sha" -o "/tmp/$FILE.sha"
+          cd /tmp
+          sha256sum -c "$FILE.sha"
+          tar -xzf "$FILE"
+          echo "/tmp/xpack-arm-none-eabi-gcc-13.2.1-1.1/bin" >> "$GITHUB_PATH"
+
+      - name: Compile and validate POWERPATH RESTORE V1
+        shell: bash
+        run: |
+          set -euo pipefail
+          sed -i 's/FO76_SHADOW_R3/SESC_DRV126_POWERCORE6500_POWERPATH_RESTORE_V1/g' tools/build_native.py tools/validate_image.py
+          sed -i 's/G30D-FO76-SHADOW-R3/SESC-DRV126-POWERCORE6500-POWERPATH-RESTORE-V1/g' tools/validate_image.py
+          python3 tools/build_native.py | tee OUTPUT/build.log
+          python3 tools/validate_image.py | tee OUTPUT/validation.log
+          BIN=OUTPUT/SmartESC_v2_G30D_SESC_DRV126_POWERCORE6500_POWERPATH_RESTORE_V1_STLINK_APP_0x08001000.bin
+          ELF=OUTPUT/SmartESC_v2_G30D_SESC_DRV126_POWERCORE6500_POWERPATH_RESTORE_V1.elf
+          test -f "$BIN"
+          test -f "$ELF"
+          sha256sum "$BIN" | tee OUTPUT/SHA256_BIN.txt
+          arm-none-eabi-size "$ELF" | tee OUTPUT/SIZE.txt
+          python3 - <<'PY'
+          from pathlib import Path
+          parts=Path('OUTPUT/SIZE.txt').read_text().splitlines()[-1].split()
+          text,data,bss=map(int,parts[:3])
+          flash=text+data; ram=data+bss
+          assert flash <= 118784,(flash,118784)
+          assert ram <= 20480,(ram,20480)
+          Path('OUTPUT/MEMORY_GATE.txt').write_text(f'FLASH={flash}/118784\nRAM={ram}/20480\nPASS\n')
+          print(f'FLASH={flash}/118784 RAM={ram}/20480 PASS')
+          PY
+          arm-none-eabi-nm -S --size-sort "$ELF" | tail -40 > OUTPUT/LARGEST_SYMBOLS.txt
+          tar --exclude='SOURCE_KOXX3/.git' -czf OUTPUT/SOURCE_KOXX3_SESC_DRV126_POWERCORE6500_POWERPATH_RESTORE_V1_EXACT.tgz SOURCE_KOXX3
+
+      - name: Post-build invariants
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -q 'SESC-DRV126-POWERCORE6500-POWERPATH-RESTORE-V1' SOURCE_KOXX3/common_files/src/defines.h
+          grep -q '#define G30_POWERPATH_RESTORE_V1 1' SOURCE_KOXX3/common_files/src/defines.h
+          ! grep -q 'G30_VBUS_LIVE_SHADOW_GATE' SOURCE_KOXX3/common_files/src/defines.h
+          ! grep -q 'G30_BMS_BATTERY_SAFE_POWERLOCK' SOURCE_KOXX3/common_files/src/defines.h
+          ! grep -q 'g30_bmsphy_hf_sample' SOURCE_KOXX3/common_files/src/mc_tasks.c
+          ! grep -q 'g30_vbus_fusion_runtime' SOURCE_KOXX3/common_files/src/mc_tasks.c
+          ! grep -q 'g30_bms_service_10ms' SOURCE_KOXX3/common_files/src/task_LED.c
+          grep -Eq '^#define AUTO_RESET_FAULT[[:space:]]+0' SOURCE_KOXX3/common_files/inc/product.h
+          grep -q 'strcmp(argv\[0\], "g30_faultguard_ack")' SOURCE_KOXX3/common_files/src/terminal.c
+          printf 'POST_BUILD_INVARIANTS=PASS\n' > OUTPUT/POST_BUILD_INVARIANTS.txt
+
+      - name: Upload POWERPATH RESTORE build
+        uses: actions/upload-artifact@v4
+        with:
+          name: G30D_SESC_DRV126_POWERCORE6500_POWERPATH_RESTORE_V1_COMPILED
+          retention-days: 30
+          if-no-files-found: error
+          path: |
+            OUTPUT/SmartESC_v2_G30D_SESC_DRV126_POWERCORE6500_POWERPATH_RESTORE_V1_STLINK_APP_0x08001000.bin
+            OUTPUT/SmartESC_v2_G30D_SESC_DRV126_POWERCORE6500_POWERPATH_RESTORE_V1.hex
+            OUTPUT/SmartESC_v2_G30D_SESC_DRV126_POWERCORE6500_POWERPATH_RESTORE_V1.elf
+            OUTPUT/SmartESC_v2_G30D_SESC_DRV126_POWERCORE6500_POWERPATH_RESTORE_V1.map
+            OUTPUT/SHA256_BIN.txt
+            OUTPUT/SIZE.txt
+            OUTPUT/MEMORY_GATE.txt
+            OUTPUT/LARGEST_SYMBOLS.txt
+            OUTPUT/validation.log
+            OUTPUT/build.log
+            OUTPUT/PARENT_PROVENANCE.txt
+            OUTPUT/POWERPATH_RESTORE_V1_STATIC_TESTS.txt
+            OUTPUT/POST_BUILD_INVARIANTS.txt
+            OUTPUT/SOURCE_KOXX3_SESC_DRV126_POWERCORE6500_POWERPATH_RESTORE_V1_EXACT.tgz
+            ci/apply_sesc_powerpath_restore_v1.py
+            ci/test_sesc_powerpath_restore_v1.py
