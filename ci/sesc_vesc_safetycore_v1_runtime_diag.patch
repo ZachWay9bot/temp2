@@ -14,3 +14,198 @@
          commands_printf(phandle,"SAFETYCORE vbus_src=%s fused=%lu sensorless_vbus_ok=%u pwm_off=%u moe=%u",
            g30_vbus_fusion_source_name(r.source),(unsigned long)fused,
            (unsigned)(r.sensorless_ok && r.source==G30_VBUS_SRC_PA1),
+
+--- SOURCE_KOXX3/common_files/src/defines.h
++++ SOURCE_KOXX3/common_files/src/defines.h
+@@ -2,8 +2,9 @@
+ #define DEFINES_H_
+ 
+ #ifdef G30P
+-#define HW_NAME "SESC-DRV126-POWERCORE6500-VESC-SAFETYCORE-V1"
++#define HW_NAME "SESC-DRV126-POWERCORE6500-SAFETYCORE-V2-HYBRID"
+ #define G30_VESC_SAFETYCORE_V1 1
++#define G30_VESC_SAFETYCORE_V2_HYBRID 1
+ #else
+ #define HW_NAME "40"
+ #endif
+--- SOURCE_KOXX3/common_files/src/VescToSTM.c
++++ SOURCE_KOXX3/common_files/src/VescToSTM.c
+@@ -88,12 +88,20 @@
+ void VescToSTM_set_temp_cut(float start, float end){
+ 	utils_truncate_number(&end, 0, 75); //cannot measure more than 75°C for now (Hardware?)
+ 	utils_truncate_number(&start, 0, 75); //cannot measure more than 75°C for now (Hardware?)
++	/* V2: VESC semantics are start<end in degC. The G30 temperature ADC is
++	 * inverse (hotter => smaller counts), so normalise before converting. */
++	if(end < start){ float t=start; start=end; end=t; }
+ 	TempSensorParamsM1.hOverTempThreshold      = VescToSTM_temp_to_int(end);
+ 	fp.temp_cut_end							   = VescToSTM_temp_to_int(end);
+ 	fp.temp_cut_start 						   = VescToSTM_temp_to_int(start);
+ 	TempSensorParamsM1.hOverTempDeactThreshold = VescToSTM_temp_to_int(end-OV_TEMPERATURE_HYSTERESIS_C);
+ }
+ 
++#ifdef G30P
++uint16_t VescToSTM_g30_temp_cut_start_raw(void){ return fp.temp_cut_start; }
++uint16_t VescToSTM_g30_temp_cut_end_raw(void){ return fp.temp_cut_end; }
++#endif
++
+ 
+ 
+ /**
+@@ -157,7 +165,14 @@
+ 	uint16_t temp = NTC_GetAvTemp_d(pMCT[M1]->pTemperatureSensor);
+ 	if(temp < fp.temp_cut_start){
+ 		app_adc_set_mode(M365_MODE_TEMP);
+-		iq = utils_map_int(temp, fp.temp_cut_start, fp.temp_cut_end, 0, iq);
++		/* V2 thermal fix: hotter means LOWER ADC counts. At temp_cut_start the
++		 * requested torque is still allowed; at/beyond temp_cut_end it is zero.
++		 * The old code mapped 0->iq and therefore increased torque with heat. */
++		if(temp <= fp.temp_cut_end || fp.temp_cut_end >= fp.temp_cut_start){
++			iq = 0;
++		}else{
++			iq = utils_map_int(temp, fp.temp_cut_start, fp.temp_cut_end, iq, 0);
++		}
+ 	}else{
+ 		app_adc_clear_mode(M365_MODE_TEMP);
+ 	}
+@@ -404,6 +419,36 @@
+     return HALL_M1.SensorIsReliable;
+ }
+ 
++#ifdef G30_VESC_SAFETYCORE_V2_HYBRID
++#define G30_HYBRID_TAKEOVER_MIN_DPP 64
++static void VescToSTM_g30_hybrid_supervisor(void){
++    if(!VescToSTM_g30_hall_selected()) return;
++    g30_vbus_fusion_result_t vfr=g30_vbus_fusion_runtime_result();
++    int16_t hdpp=HALL_M1._Super.hElSpeedDpp;
++    uint8_t vbus_ok=(uint8_t)(vfr.sensorless_ok &&
++        vfr.source==G30_VBUS_SRC_PA1 && vfr.pa1_mv<=45000u);
++
++    /* Once observer angle owns FOC, never snap live PWM back to Hall merely
++     * because the voltage trust window closes. Request the existing coast
++     * path instead; the 16-kHz and medium tasks remove PWM deterministically. */
++    if(g30_fo76_takeover_owns_angle()){
++        if(!vbus_ok) g30_fo76_request_coast();
++        return;
++    }
++
++    /* Physical forward on the validated G30 frame is negative DPP. Request
++     * takeover at the same 64-DPP threshold used by the proven push-start
++     * path (~3 km/h). FO76 itself still requires valid+tracking+phase agreement
++     * before it blends away from Hall. Reverse remains Hall-only for now. */
++    if(vbus_ok && VescToSTM_g30_hall_feedback_valid() &&
++       hdpp<=-(int16_t)G30_HYBRID_TAKEOVER_MIN_DPP){
++        g30_fo76_request_takeover(1u);
++    }else{
++        g30_fo76_request_takeover(0u);
++    }
++}
++#endif
++
+ bool VescToSTM_g30_hall_direction_allowed(int32_t requested){
+     /* HallDevV0.1: FWD and REV remain supported, but a request opposite to a
+      * clearly rotating wheel coasts first instead of applying counter-torque. */
+@@ -495,6 +540,9 @@
+         }else if(STM_GetState(&STM[M1])==RUN){
+             VescToSTM_pwm_start();
+         }
++#ifdef G30_VESC_SAFETYCORE_V2_HYBRID
++        VescToSTM_g30_hybrid_supervisor();
++#endif
+         return;
+     }
+ 
+--- SOURCE_KOXX3/common_files/src/VescToSTM.h
++++ SOURCE_KOXX3/common_files/src/VescToSTM.h
+@@ -54,6 +54,8 @@
+ bool VescToSTM_g30_hall_selected(void);
+ bool VescToSTM_g30_hall_feedback_valid(void);
+ bool VescToSTM_g30_hall_direction_allowed(int32_t requested);
++uint16_t VescToSTM_g30_temp_cut_start_raw(void);
++uint16_t VescToSTM_g30_temp_cut_end_raw(void);
+ void VescToSTM_g30_sensor_mode_sync(void);
+ #endif
+ void VescToSTM_pwm_start(void);
+--- SOURCE_KOXX3/common_files/src/g30_fo76_shadow.c
++++ SOURCE_KOXX3/common_files/src/g30_fo76_shadow.c
+@@ -93,6 +93,12 @@
+     return takeover_coast_request;
+ }
+ 
++uint8_t g30_fo76_takeover_owns_angle(void) {
++    return (uint8_t)(!sensorless_external &&
++        (takeover_state==G30_TK_BLEND || takeover_state==G30_TK_OBSERVER ||
++         (takeover_state==G30_TK_FALLBACK && takeover_coast_request)));
++}
++
+ static uint16_t hall_to_flux(int16_t hall);
+ static int32_t cos_q15(uint16_t phase);
+ static int32_t sin_phase_q15(uint16_t phase);
+@@ -226,6 +232,11 @@
+     takeover_fallbacks++;
+ }
+ 
++void g30_fo76_request_coast(void) {
++    if(g30_fo76_takeover_owns_angle() && !takeover_coast_request)
++        takeover_latch_coast(G30_TK_FB_INVALID);
++}
++
+ uint16_t g30_fo76_control_angle(int16_t hall_angle, int16_t hall_speed_dpp) {
+     uint16_t hall=(uint16_t)hall_angle;
+     takeover_last_hall_phase=hall;
+--- SOURCE_KOXX3/common_files/src/g30_fo76_shadow.h
++++ SOURCE_KOXX3/common_files/src/g30_fo76_shadow.h
+@@ -61,6 +61,9 @@
+ uint16_t g30_fo76_control_angle(int16_t hall_angle, int16_t hall_speed_dpp);
+ /* R3H: latched coast request after observer-only operation loses its run envelope. */
+ uint8_t g30_fo76_coast_requested(void);
++/* SafetyCore V2 hybrid supervisor helpers. */
++uint8_t g30_fo76_takeover_owns_angle(void);
++void g30_fo76_request_coast(void);
+ void g30_fo76_sensorless_seed(uint16_t control_phase, int16_t speed_dpp);
+ uint8_t g30_fo76_sensorless_active(void);
+ void g30_fo76_sensorless_clear(void);
+--- SOURCE_KOXX3/common_files/src/mc_tasks.c
++++ SOURCE_KOXX3/common_files/src/mc_tasks.c
+@@ -1265,7 +1265,7 @@
+ 
+ #ifdef G30P
+ #ifdef G30_VESC_SAFETYCORE_V1
+-  if(VescToSTM_g30_sensorless_selected() && g30_fo76_coast_requested()){
++  if(g30_fo76_coast_requested()){
+     PWMC_SwitchOffPWM(pwmcHandle[M1]);
+     return MC_NO_ERROR;
+   }
+@@ -1284,9 +1284,12 @@
+      * the G30 has a true >47 V measurement path, only unsaturated PA1 is an
+      * acceptable observer voltage source. Never use the 10S*1.4 estimate to
+      * authorize angle control. */
+-    if(VescToSTM_g30_sensorless_selected()){
++    if(VescToSTM_g30_sensorless_selected() || g30_fo76_takeover_owns_angle()){
+       const uint32_t g30_pa1_trust_counts=(uint32_t)(45.0f*BATTERY_VOLTAGE_GAIN+0.5f);
+       if((uint32_t)pBusSensorM1->_Super.AvBusVoltage_d>g30_pa1_trust_counts){
++#ifdef G30_VESC_SAFETYCORE_V2_HYBRID
++        if(g30_fo76_takeover_owns_angle()) g30_fo76_request_coast();
++#endif
+         PWMC_SwitchOffPWM(pwmcHandle[M1]);
+         return MC_NO_ERROR;
+       }
+--- SOURCE_KOXX3/common_files/src/terminal.c
++++ SOURCE_KOXX3/common_files/src/terminal.c
+@@ -144,6 +144,17 @@
+           (unsigned)(r.sensorless_ok && r.source==G30_VBUS_SRC_PA1),
+           (unsigned)PWM_Handle_M1._Super.PWM_off,
+           (unsigned)((TIM1->BDTR&TIM_BDTR_MOE)?1u:0u));
++#ifdef G30_VESC_SAFETYCORE_V2_HYBRID
++        {
++          g30_fo76_diag_t h=g30_fo76_get_diag();
++          uint16_t traw=NTC_GetAvTemp_d(pMCT[M1]->pTemperatureSensor);
++          commands_printf(phandle,"SAFETYCORE_V2 hybrid_auto=1 tk_dpp=64 hall_dpp=%d tk_req=%u tk_state=%u obs_valid=%u tracking=%u",
++            (int)HALL_M1._Super.hElSpeedDpp,(unsigned)h.takeover_requested,
++            (unsigned)h.takeover_state,(unsigned)h.valid,(unsigned)h.tracking);
++          commands_printf(phandle,"SAFETYCORE_V2 temp_raw=%u temp_start=%u temp_end=%u thermal_direction=HOTTER_IS_LOWER",
++            (unsigned)traw,(unsigned)VescToSTM_g30_temp_cut_start_raw(),(unsigned)VescToSTM_g30_temp_cut_end_raw());
++        }
++#endif
+         return;
+     }else if (strcmp(argv[0], "g30_vbus_fusion_wired") == 0){
+         g30_vbus_fusion_result_t r=g30_vbus_fusion_runtime_result();
