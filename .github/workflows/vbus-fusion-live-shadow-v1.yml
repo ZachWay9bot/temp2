@@ -1,9 +1,9 @@
-name: SESC PowerCore6500 FAULTGUARD V1B
+name: SESC PowerCore6500 FAULTGUARD V1C
 
 on:
   push:
     branches:
-      - faultguard-v1b-20261106
+      - faultguard-v1c-diag-20261106
     paths:
       - 'ci/apply_sesc_vbus_fusion_live_shadow_v1.py'
       - 'ci/test_sesc_vbus_fusion_live_shadow_v1.py'
@@ -69,12 +69,12 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          sed -i 's/FO76_SHADOW_R3/SESC_DRV126_POWERCORE6500_FAULTGUARD_V1B/g' tools/build_native.py tools/validate_image.py
-          sed -i 's/G30D-FO76-SHADOW-R3/SESC-DRV126-POWERCORE6500-FAULTGUARD-V1B/g' tools/validate_image.py
+          sed -i 's/FO76_SHADOW_R3/SESC_DRV126_POWERCORE6500_FAULTGUARD_V1C/g' tools/build_native.py tools/validate_image.py
+          sed -i 's/G30D-FO76-SHADOW-R3/SESC-DRV126-POWERCORE6500-FAULTGUARD-V1C/g' tools/validate_image.py
           python3 tools/build_native.py | tee OUTPUT/build.log
           python3 tools/validate_image.py | tee OUTPUT/validation.log
-          BIN=OUTPUT/SmartESC_v2_G30D_SESC_DRV126_POWERCORE6500_FAULTGUARD_V1B_STLINK_APP_0x08001000.bin
-          ELF=OUTPUT/SmartESC_v2_G30D_SESC_DRV126_POWERCORE6500_FAULTGUARD_V1B.elf
+          BIN=OUTPUT/SmartESC_v2_G30D_SESC_DRV126_POWERCORE6500_FAULTGUARD_V1C_STLINK_APP_0x08001000.bin
+          ELF=OUTPUT/SmartESC_v2_G30D_SESC_DRV126_POWERCORE6500_FAULTGUARD_V1C.elf
           test -f "$BIN"
           test -f "$ELF"
           sha256sum "$BIN" | tee OUTPUT/SHA256_BIN.txt
@@ -90,17 +90,18 @@ jobs:
           print(f'FLASH={flash}/118784 RAM={ram}/20480 PASS')
           PY
           arm-none-eabi-nm -S --size-sort "$ELF" | tail -40 > OUTPUT/LARGEST_SYMBOLS.txt
-          tar --exclude='SOURCE_KOXX3/.git' -czf OUTPUT/SOURCE_KOXX3_SESC_DRV126_POWERCORE6500_FAULTGUARD_V1B_EXACT.tgz SOURCE_KOXX3
+          tar --exclude='SOURCE_KOXX3/.git' -czf OUTPUT/SOURCE_KOXX3_SESC_DRV126_POWERCORE6500_FAULTGUARD_V1C_EXACT.tgz SOURCE_KOXX3
 
       - name: Post-build invariants
         shell: bash
         run: |
           set -euo pipefail
-          grep -q 'SESC-DRV126-POWERCORE6500-FAULTGUARD-V1B' SOURCE_KOXX3/common_files/src/defines.h
+          grep -q 'SESC-DRV126-POWERCORE6500-FAULTGUARD-V1C' SOURCE_KOXX3/common_files/src/defines.h
           ! grep -q '#define G30_BMS_BATTERY_SAFE_POWERLOCK 1' SOURCE_KOXX3/common_files/src/defines.h
           grep -q '#define G30_VBUS_LIVE_SHADOW_GATE 1' SOURCE_KOXX3/common_files/src/defines.h
           grep -q '#define G30_FAULTGUARD_V1 1' SOURCE_KOXX3/common_files/src/defines.h
           grep -q '#define G30_FAULTGUARD_V1B 1' SOURCE_KOXX3/common_files/src/defines.h
+          grep -q '#define G30_FAULTGUARD_V1C_DIAG 1' SOURCE_KOXX3/common_files/src/defines.h
           grep -Eq '^#define AUTO_RESET_FAULT[[:space:]]+0' SOURCE_KOXX3/common_files/inc/product.h
           grep -q 'strcmp(argv\[0\], "g30_faultguard")' SOURCE_KOXX3/common_files/src/terminal.c
           grep -q 'strcmp(argv\[0\], "g30_faultguard_ack")' SOURCE_KOXX3/common_files/src/terminal.c
@@ -113,14 +114,14 @@ jobs:
       - name: Upload FAULTGUARD build
         uses: actions/upload-artifact@v4
         with:
-          name: G30D_SESC_DRV126_POWERCORE6500_FAULTGUARD_V1B_COMPILED
+          name: G30D_SESC_DRV126_POWERCORE6500_FAULTGUARD_V1C_COMPILED
           retention-days: 30
           if-no-files-found: error
           path: |
-            OUTPUT/SmartESC_v2_G30D_SESC_DRV126_POWERCORE6500_FAULTGUARD_V1B_STLINK_APP_0x08001000.bin
-            OUTPUT/SmartESC_v2_G30D_SESC_DRV126_POWERCORE6500_FAULTGUARD_V1B.hex
-            OUTPUT/SmartESC_v2_G30D_SESC_DRV126_POWERCORE6500_FAULTGUARD_V1B.elf
-            OUTPUT/SmartESC_v2_G30D_SESC_DRV126_POWERCORE6500_FAULTGUARD_V1B.map
+            OUTPUT/SmartESC_v2_G30D_SESC_DRV126_POWERCORE6500_FAULTGUARD_V1C_STLINK_APP_0x08001000.bin
+            OUTPUT/SmartESC_v2_G30D_SESC_DRV126_POWERCORE6500_FAULTGUARD_V1C.hex
+            OUTPUT/SmartESC_v2_G30D_SESC_DRV126_POWERCORE6500_FAULTGUARD_V1C.elf
+            OUTPUT/SmartESC_v2_G30D_SESC_DRV126_POWERCORE6500_FAULTGUARD_V1C.map
             OUTPUT/SHA256_BIN.txt
             OUTPUT/SIZE.txt
             OUTPUT/MEMORY_GATE.txt
@@ -131,7 +132,7 @@ jobs:
             OUTPUT/VBUS_FUSION_LIVE_SHADOW_V1_STATIC_TESTS.txt
             OUTPUT/VBUS_FUSION_LIVE_SHADOW_V1_POLICY_TESTS.txt
             OUTPUT/POST_BUILD_INVARIANTS.txt
-            OUTPUT/SOURCE_KOXX3_SESC_DRV126_POWERCORE6500_FAULTGUARD_V1B_EXACT.tgz
+            OUTPUT/SOURCE_KOXX3_SESC_DRV126_POWERCORE6500_FAULTGUARD_V1C_EXACT.tgz
             ci/apply_sesc_vbus_fusion_live_shadow_v1.py
             ci/test_sesc_vbus_fusion_live_shadow_v1.py
             ci/test_g30_vbus_fusion.c
