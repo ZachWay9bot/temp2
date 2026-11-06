@@ -229,11 +229,7 @@ s=s.replace(inc_anchor,inc_anchor+'#include "g30_vbus_fusion.h"\n#include "g30_v
 
 # Runtime helper after global handles, before FOC hot path. The expensive 14/10
 # division is already precomputed in task_LED; hot path only reads cached data.
-insert_anchor='''MCT_Handle_t *pMCT[NBR_OF_MOTORS] = {&MCT[M1]};
-'''
-if insert_anchor not in s:
-    # actual formatting differs; use a stable nearby symbol after global section
-    insert_anchor='''MCT_Handle_t MCT[NBR_OF_MOTORS];
+insert_anchor='''RDivider_Handle_t *pBusSensorM1;
 '''
 assert insert_anchor in s
 runtime=r'''
