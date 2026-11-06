@@ -7,7 +7,7 @@ p=root/"common_files/src/defines.h"
 s=p.read_text()
 old='''#define HW_NAME "SESC-DRV126-POWERCORE6500-VBUS-FUSION-WIRED-LOCKED-V2"
 #define G30_BMS_BATTERY_SAFE_POWERLOCK 1'''
-new='''#define HW_NAME "SESC-DRV126-POWERCORE6500-VBUS-FUSION-LIVE-SHADOW-V1"
+new='''#define HW_NAME "SESC-DRV126-POWERCORE6500-VBUS-FUSION-LIVE-SHADOW-V1S"
 #define G30_VBUS_LIVE_SHADOW_GATE 1'''
 assert old in s
 p.write_text(s.replace(old,new,1))
@@ -175,3 +175,13 @@ s=s.replace(marker,block+marker,1)
 p.write_text(s)
 
 print("VBUS FUSION LIVE SHADOW V1 applied: Hall-only control, FO76 shadow, 5A/3000erpm/25pct-voltage hard gate")
+
+# Hotfix: long FW_VERSION name exceeded PACKET_SIZE(60) (reply needs ~75B).
+# Enlarged local stack buffer; this does not change motor control.
+p=root/"common_files/src/VescCommand.c"
+s=p.read_text()
+old='uint8_t send_buffer[PACKET_SIZE(60)];'
+assert s.count(old)==1, s.count(old)
+s=s.replace(old,'uint8_t send_buffer[PACKET_SIZE(96)];',1)
+p.write_text(s)
+print("FW_VERSION response stack buffer fixed: 96B payload capacity")
