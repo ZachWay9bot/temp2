@@ -76,6 +76,7 @@ assert 'vfr.source==G30_VBUS_SRC_PA1 && vfr.pa1_mv<=45000u' in vs
 assert 'g30_fo76_request_takeover(1u);' in vs
 assert 'Reverse remains Hall-only for now.' in vs
 assert 'VescToSTM_g30_hybrid_supervisor();' in vs
+assert 'if(g30_fo76_takeover_fallback_latched()) return;' in vs
 
 # FO76 still decides whether takeover is valid: request != permission.
 assert 'd.valid && d.tracking && takeover_phase_history' in fo
@@ -84,10 +85,17 @@ assert 'abs_phase16(pred_err)<G30_R3G_ENTRY_ERR_COUNTS' in fo
 
 # No live observer->Hall snapback if PA1 trust is lost after observer angle ownership.
 assert 'g30_fo76_takeover_owns_angle' in fh and 'g30_fo76_request_coast' in fh
+assert 'g30_fo76_takeover_observer_active' in fh
+assert 'g30_fo76_takeover_fallback_latched' in fh
 assert 'if(g30_fo76_takeover_owns_angle())' in vs
 assert 'if(!vbus_ok) g30_fo76_request_coast();' in vs
 assert 'VescToSTM_g30_sensorless_selected() || g30_fo76_takeover_owns_angle()' in mc
 assert 'if(g30_fo76_takeover_owns_angle()) g30_fo76_request_coast();' in mc
+
+# After completed hybrid takeover, observer owns speed PI as well as angle.
+assert 'VescToSTM_g30_hall_selected() && g30_fo76_takeover_observer_active()' in mc
+assert mc.count('g30_fo76_takeover_observer_active()') >= 2
+assert 'the observer now owns BOTH FOC angle and speed-PI feedback' in mc
 
 # Fast coast now protects standalone sensorless and Hall->observer hybrid.
 fast=mc[mc.index('#ifdef G30_VESC_SAFETYCORE_V1',mc.index('FOC_CurrControllerM1')):]
@@ -96,6 +104,7 @@ assert 'PWMC_SwitchOffPWM(pwmcHandle[M1]);' in fast
 
 # Runtime visibility and intentionally unchanged bench power envelope.
 assert 'SAFETYCORE_V2 hybrid_auto=1 tk_dpp=64' in te
+assert 'speed_src=%s fallback_latched=%u' in te
 assert 'thermal_direction=HOTTER_IS_LOWER' in te
 assert 'phase_cmd_mA=5000 abs_trip_mA=10000 speed_erpm=3000' in te
 assert '5.0f*CURRENT_FACTOR_A' in mc
@@ -120,10 +129,11 @@ def oc(a,b,c,lim=10.0): return abs(a)>lim or abs(b)>lim or abs(c)>lim
 for vals,exp in [((10.1,0,0),1),((0,-10.2,0),1),((0,0,15),1),((9.9,-9.9,0),0),((10,0,-10),0)]:
     assert bool(oc(*vals))==bool(exp),(vals,exp)
 
-def hybrid_arm(hall_selected,hall_valid,dpp,src,pa1_mv,sensorless_ok,owns=False):
+def hybrid_arm(hall_selected,hall_valid,dpp,src,pa1_mv,sensorless_ok,owns=False,fallback=False):
     if not hall_selected: return False
     vbus_ok=sensorless_ok and src=='PA1' and pa1_mv<=45000
     if owns: return 'COAST' if not vbus_ok else 'KEEP'
+    if fallback: return 'LATCH_HALL'
     return vbus_ok and hall_valid and dpp<=-64
 
 hybrid_cases=[
@@ -134,7 +144,8 @@ hybrid_cases=[
  ((1,1,-100,'BMS_EST',40000,1,0),False),
  ((1,1,100,'PA1',27000,1,0),False),
  ((1,0,-100,'PA1',27000,1,0),False),
- ((1,1,-100,'PA1',47000,1,1),'COAST'),
+ ((1,1,-100,'PA1',47000,1,1,0),'COAST'),
+ ((1,1,-100,'PA1',27000,1,0,1),'LATCH_HALL'),
 ]
 for args,exp in hybrid_cases:
     got=hybrid_arm(*args)
@@ -149,6 +160,8 @@ print('SAFETYCORE_V2_FO76_CONFIDENCE_GATE_PRESERVED=PASS')
 print('SAFETYCORE_V2_PA1_45V_GATE_PRESERVED=PASS')
 print('SAFETYCORE_V2_NO_LIVE_SNAPBACK=PASS')
 print('SAFETYCORE_V2_FAST_COAST=PASS')
+print('SAFETYCORE_V2_OBSERVER_SPEED_OWNERSHIP=PASS')
+print('SAFETYCORE_V2_FALLBACK_LATCH_NO_CHATTER=PASS')
 print('SAFETYCORE_V2_POWER_LIMITS_UNCHANGED=PASS')
 print('SAFETYCORE_V2_SCENARIO_MATRIX=8/8 PASS')
 
