@@ -169,3 +169,22 @@ jobs:
             ci/sesc_dash_appcompat_v2.patch
             ci/sesc_dash_appcompat_v3.patch
             ci/test_sesc_dash_appcompat_v1.py
+
+      - name: Publish V3 Actions run and artifact IDs
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -u
+          mkdir -p ci/generated/appcompat_v3
+          printf '%s\n' "${GITHUB_RUN_ID}" > ci/generated/appcompat_v3/RUN_ID.txt
+          ARTID="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}/artifacts" --jq '.artifacts[] | select(.name=="G30D_SESC_DRV126_P6500_H14_SHUD4BMS_APPCOMPAT_V3_COMPILED") | .id' | head -1 || true)"
+          printf '%s\n' "${ARTID}" > ci/generated/appcompat_v3/ARTIFACT_ID.txt
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add ci/generated/appcompat_v3/RUN_ID.txt ci/generated/appcompat_v3/ARTIFACT_ID.txt
+          if git diff --cached --quiet; then exit 0; fi
+          git commit -m "build: record APPCOMPAT V3 Actions IDs [skip ci]"
+          git push origin "HEAD:${GITHUB_REF_NAME}"
+
