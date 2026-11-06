@@ -16,7 +16,7 @@ jobs:
   build:
     runs-on: ubuntu-24.04
     permissions:
-      contents: read
+      contents: write
       actions: read
     steps:
       - uses: actions/checkout@v4
@@ -113,12 +113,31 @@ jobs:
           grep -q 'SESC-DRV126-P6500-H14-SHUD4BMS-APPCOMPAT-V3' SOURCE_KOXX3/common_files/src/defines.h
           grep -q '#define G30_DASH_APPCOMPAT_V1 1' SOURCE_KOXX3/common_files/src/defines.h
           grep -q '#define G30_DASH_APPCOMPAT_V2 1' SOURCE_KOXX3/common_files/src/defines.h
+          grep -q '#define G30_DASH_APPCOMPAT_V3 1' SOURCE_KOXX3/common_files/src/defines.h
           sha256sum SOURCE_KOXX3/common_files/src/mc_tasks.c | grep -q '^1c3f61ad12855960ddf25ea96730328bdfaa4d8653d6f7ec9fe89d2114518c98'
           sha256sum SOURCE_KOXX3/common_files/MotorControl/MCSDK/MCLib/F1xx/Src/r3_2_f1xx_pwm_curr_fdbk.c | grep -q '^14ccd029244f230d5632f18c6c278aa3021976ede8a4513939af068456eee276'
           sha256sum SOURCE_KOXX3/common_files/src/task_pwr.c | grep -q '^9fb70e29f7d9cc754c05f4fc439d555822c34097347b25e54aff7beb084f6cad'
           ! grep -q 'G30_DASH_APPCOMPAT_V1' SOURCE_KOXX3/common_files/src/mc_tasks.c
           ! grep -q 'G30_DASH_APPCOMPAT_V1' SOURCE_KOXX3/common_files/MotorControl/MCSDK/MCLib/F1xx/Src/r3_2_f1xx_pwm_curr_fdbk.c
           printf 'MOTOR_FASTPATH_HASH_EXACT=PASS\nBUTTON_HASH_EXACT=PASS\nAPPCOMPAT_READ_ONLY=PASS\nAPPCOMPAT_V2_METADATA_BOOTSTRAP=PASS\nAPPCOMPAT_V3_DEFERRED_CMD04_PIGGYBACK=PASS\n' > OUTPUT/POST_BUILD_INVARIANTS.txt
+
+      - name: Publish compiled handoff on V3 test branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          BIN=OUTPUT/SmartESC_v2_G30D_SESC_DRV126_P6500_H14_SHUD4BMS_APPCOMPAT_V3_STLINK_APP_0x08001000.bin
+          mkdir -p ci/generated/appcompat_v3
+          base64 -w 0 "$BIN" > ci/generated/appcompat_v3/firmware.bin.b64
+          cp OUTPUT/SHA256_BIN.txt ci/generated/appcompat_v3/SHA256_BIN.txt
+          cp OUTPUT/SIZE.txt ci/generated/appcompat_v3/SIZE.txt
+          cp OUTPUT/MEMORY_GATE.txt ci/generated/appcompat_v3/MEMORY_GATE.txt
+          cp OUTPUT/validation.log ci/generated/appcompat_v3/validation.log
+          cp OUTPUT/POST_BUILD_INVARIANTS.txt ci/generated/appcompat_v3/POST_BUILD_INVARIANTS.txt
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add ci/generated/appcompat_v3
+          git commit -m "build: APPCOMPAT V3 compiled handoff [skip ci]"
+          git push origin "HEAD:${GITHUB_REF_NAME}"
 
       - name: Upload APPCOMPAT V3
         uses: actions/upload-artifact@v4
