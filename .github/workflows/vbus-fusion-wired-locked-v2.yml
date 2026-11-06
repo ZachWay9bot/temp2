@@ -7,7 +7,7 @@ on:
     paths:
       - 'ci/apply_sesc_vbus_fusion_wired_locked_v2.py'
       - 'ci/test_sesc_vbus_fusion_wired_locked_v2.py'
-      - '.github/workflows/vbus-fusion-wired-locked-v1.yml'
+      - '.github/workflows/vbus-fusion-wired-locked-v2.yml'
   workflow_dispatch:
 
 jobs:
@@ -19,7 +19,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Restore exact hardware-validated Fusion SIM V1 source
+      - name: Restore exact hardware-validated VBUS FUSION WIRED LOCKED V1 source
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
