@@ -117,8 +117,8 @@ g30_vbus_fusion_result_t g30_vbus_fusion_eval(uint32_t pa1_mv,
 p=root/"common_files/src/terminal.c"
 s=p.read_text()
 # include alongside local source headers
-inc='#include "g30_vbus_fusion.h"\n'
-if inc not in s:
+inc='#include "g30_vbus_fusion.h"\n#include "g30_vbus_fusion_impl.inc"\n'
+if '#include "g30_vbus_fusion_impl.inc"' not in s:
     idx=s.find('#include "')
     assert idx>=0
     s=s[:idx]+inc+s[idx:]
