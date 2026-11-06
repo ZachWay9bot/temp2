@@ -121,7 +121,13 @@ jobs:
               # the locked functions must contain only a MOE-clearing instruction.
               bad=re.findall(r"\borr(?:\.w)?\s+[^\n]*#(?:32768|0x8000)\b",asm)
               assert not bad,(n,"MOE set in compiled binary",bad)
-              assert re.search(r"\bbic(?:\.w)?\s+[^\n]*#(?:32768|0x8000)\b",asm),(n,"MOE clear missing",asm)
+              clear=re.search(r"\bbic(?:\.w)?\s+[^\n]*#(?:32768|0x8000)\b",asm)
+              if n=="R3_2_SwitchOnPWM" and len(instr)==1 and "R3_2_TurnOnLowSides" in asm:
+                  # GCC folds identical safe PWM-disable stubs into a tail branch.
+                  low=Path("OUTPUT/DISASM_LOW_SIDES.txt").read_text()
+                  assert re.search(r"\bbic(?:\.w)?\s+[^\n]*#(?:32768|0x8000)\b",low),(n,"tail target not locked")
+              else:
+                  assert clear,(n,"MOE clear missing",asm)
           Path("OUTPUT/POST_BUILD_INVARIANTS.txt").write_text("SOURCE_GUARD=PASS\nBINARY_PWM_MOE_OFF=PASS\n")
           print("SOURCE_GUARD=PASS BINARY_PWM_MOE_OFF=PASS")
           PY
