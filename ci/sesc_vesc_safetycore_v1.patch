@@ -1,0 +1,260 @@
+--- SOURCE_KOXX3/common_files/src/defines.h
++++ SOURCE_KOXX3/common_files/src/defines.h
+@@ -2,8 +2,8 @@
+ #define DEFINES_H_
+ 
+ #ifdef G30P
+-#define HW_NAME "SESC-DRV126-POWERCORE6500-VBUS-FUSION-LIVE-SHADOW-V1"
+-#define G30_VBUS_LIVE_SHADOW_GATE 1
++#define HW_NAME "SESC-DRV126-POWERCORE6500-VESC-SAFETYCORE-V1"
++#define G30_VESC_SAFETYCORE_V1 1
+ #else
+ #define HW_NAME "40"
+ #endif
+--- SOURCE_KOXX3/common_files/src/VescToSTM.c
++++ SOURCE_KOXX3/common_files/src/VescToSTM.c
+@@ -118,6 +118,14 @@
+ 
+ int16_t VescToSTM_Iq_lim_hook(int16_t iq){
+ #ifdef G30P
++#ifdef G30_VESC_SAFETYCORE_V1
++    int32_t g30_safe_iq=(int32_t)current_to_torque(5000);
++    if((int32_t)iq>g30_safe_iq) iq=(int16_t)g30_safe_iq;
++    if((int32_t)iq< -g30_safe_iq) iq=(int16_t)-g30_safe_iq;
++    /* Current/torque commands also obey the bench ERPM ceiling. */
++    int32_t g30_lim_erpm=g30_r3i_sensorless_active()?g30_r3i_erpm():(VescToSTM_get_erpm_fast()*2);
++    if(g30_lim_erpm>3000 || g30_lim_erpm< -3000) iq=0;
++#endif
+     if(g30_r3i_sensorless_active()){
+         /* DevV0.1: keep the proven 1 A catch window, but never jump directly
+          * from 1 A to the full requested torque at 800 ms. Ramp to the actual
+@@ -361,19 +369,11 @@
+ 
+ #ifdef G30P
+ bool VescToSTM_g30_sensorless_selected(void){
+-#ifdef G30_VBUS_LIVE_SHADOW_GATE
+-    return false;
+-#else
+     return mc_conf.foc_sensor_mode == FOC_SENSOR_MODE_SENSORLESS;
+-#endif
+ }
+ 
+ bool VescToSTM_g30_hall_selected(void){
+-#ifdef G30_VBUS_LIVE_SHADOW_GATE
+-    return true;
+-#else
+     return mc_conf.foc_sensor_mode == FOC_SENSOR_MODE_HALL;
+-#endif
+ }
+ 
+ static bool g30_hall_lut_valid(void){
+@@ -463,6 +463,16 @@
+     VescToSTM_set_open_loop(false,0,0);
+     VescToSTM_set_current(0.0f,0.0f);
+     SpeednTorqCtrlM1.PISpeed->wIntegralTerm=0;
++#ifdef G30_VESC_SAFETYCORE_V1
++    /* VESC-style release latch: only a zero/coast command may acknowledge an
++     * already-cleared fault. This does not energize PWM; a fresh non-zero
++     * command must start the motor again. */
++    if(pMCI[M1] && pMCI[M1]->pSTM &&
++       pMCI[M1]->pSTM->hFaultNow==MC_NO_FAULTS &&
++       STM_GetState(pMCI[M1]->pSTM)==FAULT_OVER){
++        (void)MCI_FaultAcknowledged(pMCI[M1]);
++    }
++#endif
+     /* Only Sensorless stays armed while coasting. Hall mode must remain
+      * completely disconnected from the pushstart/observer state machine. */
+     g30_r3i_request_arm(VescToSTM_g30_sensorless_selected() ? 1u : 0u);
+@@ -600,6 +610,10 @@
+ #ifdef G30P
+     extern void g30_drv126_final_reset(void);
+     extern void g30_drv126_final_preload(int16_t vq,int16_t vd);
++#ifdef G30_VESC_SAFETYCORE_V1
++    /* FO76 needs a real VBUS. PA1 is trusted only below 45 V on this board. */
++    if(VescToSTM_g30_sensorless_selected() && VescToSTM_get_bus_voltage()>45.0f) return;
++#endif
+     /* HallDevV0.1: never energize the bridge with an invalid Hall state.
+      * Sensorless keeps its separate frozen rolling-start gate. */
+     if(VescToSTM_g30_hall_selected() && !VescToSTM_g30_hall_feedback_valid()) return;
+@@ -652,6 +666,10 @@
+ 
+ void VescToSTM_update_torque(int32_t q, int32_t min_erpm, int32_t max_erpm){
+ #ifdef G30P
++#ifdef G30_VESC_SAFETYCORE_V1
++    if(max_erpm>3000) max_erpm=3000;
++    if(min_erpm< -3000) min_erpm=-3000;
++#endif
+     if(!VescToSTM_g30_hall_direction_allowed(q)){
+         VescToSTM_set_brake(0);
+         return;
+@@ -761,7 +779,7 @@
+ 
+ void VescToSTM_set_speed(int32_t erpm){
+ #ifdef G30P
+-#ifdef G30_VBUS_LIVE_SHADOW_GATE
++#ifdef G30_VESC_SAFETYCORE_V1
+     if(erpm>3000) erpm=3000;
+     if(erpm< -3000) erpm=-3000;
+ #endif
+--- SOURCE_KOXX3/common_files/src/mc_tasks.c
++++ SOURCE_KOXX3/common_files/src/mc_tasks.c
+@@ -356,8 +356,8 @@
+   int32_t neg=(int32_t)SpeednTorqCtrlM1.MinNegativeTorque;
+   if(pos<0)pos=0;
+   if(neg>0)neg=0;
+-#ifdef G30_VBUS_LIVE_SHADOW_GATE
+-  /* Absolute gate clamp: 5 A phase, regardless of loaded mc_conf. */
++#ifdef G30_VESC_SAFETYCORE_V1
++  /* Bench envelope: 5 A commanded phase current regardless of loaded mc_conf. */
+   const int32_t gate_phase_lim=(int32_t)(5.0f*CURRENT_FACTOR_A+0.5f);
+   if(pos>gate_phase_lim) pos=gate_phase_lim;
+   if(neg< -gate_phase_lim) neg=-gate_phase_lim;
+@@ -366,8 +366,8 @@
+   int32_t phase_lim=pos;
+   if(-neg>phase_lim)phase_lim=-neg;
+   int32_t dmc=g30_drv126_final_clamp32((int32_t)dref_mc,-phase_lim,phase_lim);
+-#ifdef G30_VBUS_LIVE_SHADOW_GATE
+-  dmc=0; /* no field weakening / d-axis excitation in the gate */
++#ifdef G30_VESC_SAFETYCORE_V1
++  dmc=0; /* no field weakening / d-axis excitation in the safety core */
+ #endif
+ 
+   /* Hold DRV126 voltage for four 16-kHz current samples. The MCSDK
+@@ -404,7 +404,7 @@
+                                           25500057,31128);
+   g30_drv126_final_vd=g30_drv126_final_pi(dref,id,&g30_drv126_final_d_acc,
+                                           8500019,10376);
+-#ifdef G30_VBUS_LIVE_SHADOW_GATE
++#ifdef G30_VESC_SAFETYCORE_V1
+   /* Roughly 25% of full q-axis voltage. The current clamp remains primary. */
+   g30_drv126_final_vq=(int16_t)g30_drv126_final_clamp32(g30_drv126_final_vq,-8192,8192);
+   g30_drv126_final_vd=0;
+@@ -1264,6 +1264,12 @@
+   PWMC_GetPhaseCurrents(pwmcHandle[M1], &Iab);
+ 
+ #ifdef G30P
++#ifdef G30_VESC_SAFETYCORE_V1
++  if(VescToSTM_g30_sensorless_selected() && g30_fo76_coast_requested()){
++    PWMC_SwitchOffPWM(pwmcHandle[M1]);
++    return MC_NO_ERROR;
++  }
++#endif
+   if(VescToSTM_g30_hall_selected() ||
+      (VescToSTM_g30_sensorless_selected() && g30_fo76_sensorless_active())){
+     /* VESC Tool still selects HALL ONLY or SENSORLESS ONLY exactly as before.
+@@ -1273,10 +1279,17 @@
+     uint16_t g30_old_cb=pwmcHandle[M1]->CntPhB;
+     uint16_t g30_old_cc=pwmcHandle[M1]->CntPhC;
+     uint8_t hall_guard=(uint8_t)VescToSTM_g30_hall_selected();
+-#ifdef G30_VBUS_LIVE_SHADOW_GATE
+-    if(!g30_vbus_fusion_runtime_sensorless_ok()){
+-      PWMC_SwitchOffPWM(pwmcHandle[M1]);
+-      return MC_NO_ERROR;
++#ifdef G30_VESC_SAFETYCORE_V1
++    /* Stock-like Hall FOC does not need absolute VBUS. Sensorless does: until
++     * the G30 has a true >47 V measurement path, only unsaturated PA1 is an
++     * acceptable observer voltage source. Never use the 10S*1.4 estimate to
++     * authorize angle control. */
++    if(VescToSTM_g30_sensorless_selected()){
++      const uint32_t g30_pa1_trust_counts=(uint32_t)(45.0f*BATTERY_VOLTAGE_GAIN+0.5f);
++      if((uint32_t)pBusSensorM1->_Super.AvBusVoltage_d>g30_pa1_trust_counts){
++        PWMC_SwitchOffPWM(pwmcHandle[M1]);
++        return MC_NO_ERROR;
++      }
+     }
+ #endif
+ 
+@@ -1301,8 +1314,9 @@
+     FOCVars[M1].hElAngle=hElAngle;
+     FW_DataProcess(pFW[M1],Vqd,Iqd);
+ 
+-#ifdef G30_VBUS_LIVE_SHADOW_GATE
+-    g30_fo76_request_takeover(0u);
++#ifdef G30_VESC_SAFETYCORE_V1
++    /* Keep FO76 live as a shadow in Hall mode; in Sensorless it owns angle only
++     * after the existing BEMF/validity gates. Shadow quality never affects Hall. */
+     g30_fo76_shadow_step(Iab.a,Iab.b,HALL_M1._Super.hElAngle,
+                          g30_vbus_fusion_runtime_mv(),
+                          g30_old_ca,g30_old_cb,g30_old_cc,
+@@ -1422,10 +1436,16 @@
+ 		  VescToSTM_pwm_stop();
+ 		  last_pwm_state = false;
+ 	  }else if (last_pwm_state==false){
++#ifndef G30_VESC_SAFETYCORE_V1
+ 		  if(CodeReturn == MC_NO_ERROR){
+ 			  VescToSTM_pwm_start();
+ 			  last_pwm_state=true;
+ 		  }
++#else
++          /* Fault/voltage recovery is never an actuator command. A fresh
++           * zero->nonzero command owns restart after release acknowledgment. */
++          (void)CodeReturn;
++#endif
+ 	  }
+   }
+ 
+--- SOURCE_KOXX3/common_files/src/conf_general.c
++++ SOURCE_KOXX3/common_files/src/conf_general.c
+@@ -364,14 +364,24 @@
+ 	 * VESC absolute-current setting (>~87.45 A on G30) wrap negative and
+ 	 * silently disable software OCP. Saturation keeps protection active. */
+ 	float oc_counts_f = mcconf->l_abs_current_max * CURRENT_FACTOR_A;
++#ifdef G30_VESC_SAFETYCORE_V1
++    const float g30_abs_trip_counts = 10.0f * CURRENT_FACTOR_A;
++    if(oc_counts_f > g30_abs_trip_counts) oc_counts_f = g30_abs_trip_counts;
++#endif
+ 	utils_truncate_number(&oc_counts_f, 0.0f, (float)INT16_MAX);
+ 	PWM_Handle_M1._Super.OverCurrent = (int16_t)oc_counts_f;
+ 
++#ifdef G30_VESC_SAFETYCORE_V1
++    /* VESC-style independent absolute-current protection: one raw sample over
++     * the threshold switches PWM off in the current-acquisition ISR. */
++    PWM_Handle_M1._Super.OverCurrentCycles = 0;
++#else
+ 	if(mcconf->l_slow_abs_current){
+ 		PWM_Handle_M1._Super.OverCurrentCycles = utils_map(mcconf->foc_current_filter_const,1,0,0,ABS_OVR_CURRENT_TRIP_MS) / (1000.0 / mcconf->foc_f_sw);
+ 	}else{
+ 		PWM_Handle_M1._Super.OverCurrentCycles = 0;  //instant trip
+ 	}
++#endif
+ 
+ 	FOCVars[M1].max_i_batt = mcconf->l_in_current_max * CURRENT_FACTOR_A;
+ 	FOCVars[M1].min_i_batt = mcconf->l_in_current_min * CURRENT_FACTOR_A;
+--- SOURCE_KOXX3/common_files/inc/product.h
++++ SOURCE_KOXX3/common_files/inc/product.h
+@@ -177,7 +177,11 @@
+ #define KMH_NO_LIMIT														 1337
+ #define PRODUCT_FIRMWARE_VERSION                                      		 0x0001
+ #define VESC_TOOL_ENABLE													 1
+-#define AUTO_RESET_FAULT													 1
++#ifdef G30P
++#define AUTO_RESET_FAULT 0
++#else
++#define AUTO_RESET_FAULT 1
++#endif
+ #define ERROR_PRINTING														 1
+ #define MUSIC_ENABLE														 0
+ #define BATTERY_SUPPORT_LIION												 1
+--- SOURCE_KOXX3/common_files/src/terminal.c
++++ SOURCE_KOXX3/common_files/src/terminal.c
+@@ -130,14 +130,16 @@
+         commands_printf(phandle, "DriveSensor=%s sensorlessActive=%u minStartDpp=64",
+             VescToSTM_g30_hall_selected()?"HALL":"SENSORLESS",
+             (unsigned)g30_r3i_sensorless_active());
+-    }else if (strcmp(argv[0], "g30_live_shadow_gate") == 0){
++    }else if (strcmp(argv[0], "g30_safetycore") == 0){
+         g30_vbus_fusion_result_t r=g30_vbus_fusion_runtime_result();
+         uint32_t fused=(r.source==G30_VBUS_SRC_PA1)?r.pa1_mv:
+                        (r.source==G30_VBUS_SRC_BMS_EST)?r.est_mv:0u;
+-        commands_printf(phandle,"LIVE_SHADOW gate=1 hall_forced=1 takeover=0 phase_limit_mA=5000 speed_limit_erpm=3000");
+-        commands_printf(phandle,"LIVE_SHADOW fusion_src=%s fused=%lu sl_ok=%u pwm_off=%u moe=%u",
++        commands_printf(phandle,"SAFETYCORE mode=%s phase_cmd_mA=5000 abs_trip_mA=10000 speed_erpm=3000 auto_rearm=0",
++          VescToSTM_g30_hall_selected()?"HALL":"SENSORLESS");
++        commands_printf(phandle,"SAFETYCORE vbus_src=%s fused=%lu sensorless_vbus_ok=%u pwm_off=%u moe=%u",
+           g30_vbus_fusion_source_name(r.source),(unsigned long)fused,
+-          (unsigned)r.sensorless_ok,(unsigned)PWM_Handle_M1._Super.PWM_off,
++          (unsigned)(r.sensorless_ok && r.source==G30_VBUS_SRC_PA1),
++          (unsigned)PWM_Handle_M1._Super.PWM_off,
+           (unsigned)((TIM1->BDTR&TIM_BDTR_MOE)?1u:0u));
+         return;
+     }else if (strcmp(argv[0], "g30_vbus_fusion_wired") == 0){
