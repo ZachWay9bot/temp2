@@ -7,8 +7,9 @@ p=root/"common_files/src/defines.h"
 s=p.read_text()
 old='''#define HW_NAME "SESC-DRV126-POWERCORE6500-VBUS-FUSION-WIRED-LOCKED-V2"
 #define G30_BMS_BATTERY_SAFE_POWERLOCK 1'''
-new='''#define HW_NAME "SESC-DRV126-POWERCORE6500-VBUS-FUSION-LIVE-SHADOW-V1S"
-#define G30_VBUS_LIVE_SHADOW_GATE 1'''
+new='''#define HW_NAME "SESC-DRV126-POWERCORE6500-FAULTGUARD-V1"
+#define G30_VBUS_LIVE_SHADOW_GATE 1
+#define G30_FAULTGUARD_V1 1'''
 assert old in s
 p.write_text(s.replace(old,new,1))
 
@@ -185,3 +186,83 @@ assert s.count(old)==1, s.count(old)
 s=s.replace(old,'uint8_t send_buffer[PACKET_SIZE(96)];',1)
 p.write_text(s)
 print("FW_VERSION response stack buffer fixed: 96B payload capacity")
+
+
+# FAULTGUARD V1: latch every MCSDK fault. Never auto-ack/restart the bridge.
+p=root/"common_files/inc/product.h"
+x=p.read_text()
+old='#define AUTO_RESET_FAULT													 1'
+assert old in x, "AUTO_RESET_FAULT define not found"
+x=x.replace(old,'#define AUTO_RESET_FAULT													 0',1)
+p.write_text(x)
+
+# With auto-reset disabled, task_LED's legacy logger would print the same fault forever.
+# Print once per newly latched fault instead.
+p=root/"common_files/src/task_LED.c"
+x=p.read_text()
+old='''#if ERROR_PRINTING && VESC_TOOL_ENABLE
+				commands_printf(((port_str*)argument)->phandle, "FAULTS: %x", last_fault);
+#endif
+
+#if AUTO_RESET_FAULT'''
+new='''#if ERROR_PRINTING && VESC_TOOL_ENABLE
+				commands_printf(((port_str*)argument)->phandle, "FAULTS: %x", last_fault);
+#ifdef G30_FAULTGUARD_V1
+				last_fault_time = 0xFFFFFFFFu; /* one-shot diagnostic, no UART flood */
+#endif
+#endif
+
+#if AUTO_RESET_FAULT'''
+assert old in x
+x=x.replace(old,new,1)
+p.write_text(x)
+
+# Surface MCSDK timing faults through the normal VESC fault byte too.
+# Diagnostic only; fault generation and motor loop are unchanged.
+p=root/"common_files/src/VescToSTM.c"
+x=p.read_text()
+a=x.index('mc_fault_code VescToSTM_get_fault(void) {')
+b=x.index('\n\n}',a)+3
+old=x[a:b]
+new='''mc_fault_code VescToSTM_get_fault(void) {
+	uint16_t f=pMCI[M1]->pSTM->hFaultOccurred;
+	if(f & MC_BREAK_IN)    return FAULT_CODE_ABS_OVER_CURRENT;
+	if(f & MC_OVER_VOLT)   return FAULT_CODE_OVER_VOLTAGE;
+	if(f & MC_UNDER_VOLT)  return FAULT_CODE_UNDER_VOLTAGE;
+	if(f & MC_OVER_TEMP)   return FAULT_CODE_OVER_TEMP_FET;
+#ifdef MC_FOC_DURATION
+	if(f & MC_FOC_DURATION) return FAULT_CODE_DRV;
+#endif
+#ifdef MC_SPEED_FDBK
+	if(f & MC_SPEED_FDBK)   return FAULT_CODE_DRV;
+#endif
+	return FAULT_CODE_NONE;
+}'''
+x=x[:a]+new+x[b:]
+p.write_text(x)
+
+# Minimal raw MCSDK fault snapshot. Host queries this only while motor is coasted.
+p=root/"common_files/src/terminal.c"
+x=p.read_text()
+marker='''    }else if (strcmp(argv[0], "g30_live_shadow_gate") == 0){'''
+assert marker in x
+block=r'''    }else if (strcmp(argv[0], "g30_faultguard") == 0){
+        uint16_t fn=pMCI[M1]->pSTM->hFaultNow;
+        uint16_t fo=pMCI[M1]->pSTM->hFaultOccurred;
+        commands_printf(phandle,
+          "FAULTGUARD v1 now=0x%04x occurred=0x%04x state=%u pwm_off=%u moe=%u auto_reset=0",
+          (unsigned)fn,(unsigned)fo,(unsigned)STM_GetState(pMCI[M1]->pSTM),
+          (unsigned)PWM_Handle_M1._Super.PWM_off,
+          (unsigned)((TIM1->BDTR&TIM_BDTR_MOE)?1u:0u));
+        commands_printf(phandle,
+          "FAULTGUARD foc_cycles last=%lu max=%lu budget=%lu load_max_pct=%lu",
+          (unsigned long)pMCI[M1]->pFOCVars->cycles_last,
+          (unsigned long)pMCI[M1]->pFOCVars->cycles_max,
+          (unsigned long)(CPU_CLOCK/PWM_FREQUENCY),
+          (unsigned long)(pMCI[M1]->pFOCVars->cycles_max*PWM_FREQUENCY*100u/CPU_CLOCK));
+        return;
+'''
+x=x.replace(marker,block+marker,1)
+p.write_text(x)
+
+print("FAULTGUARD V1 applied: latched faults, one-shot fault print, raw fault terminal, diagnostic VESC mapping")
