@@ -96,7 +96,7 @@ jobs:
           print(f'FLASH={flash}/118784 RAM={ram}/20480 PASS')
           PY
           arm-none-eabi-nm -S --size-sort "$ELF" | tail -40 > OUTPUT/LARGEST_SYMBOLS.txt
-          arm-none-eabi-nm "$ELF" | grep -E 'g30_fo76_(takeover_owns_angle|request_coast)' | tee OUTPUT/HYBRID_SYMBOLS.txt
+          arm-none-eabi-nm "$ELF" | grep -E 'g30_fo76_(takeover_owns_angle|takeover_observer_active|takeover_fallback_latched|request_coast)' | tee OUTPUT/HYBRID_SYMBOLS.txt
           tar --exclude='SOURCE_KOXX3/.git' -czf OUTPUT/SOURCE_KOXX3_SESC_DRV126_POWERCORE6500_SAFETYCORE_V2_HYBRID_EXACT.tgz SOURCE_KOXX3
 
       - name: Post-build invariants and binary protection proof
@@ -131,8 +131,10 @@ jobs:
           assert "utils_map_int(temp, fp.temp_cut_start, fp.temp_cut_end, iq, 0)" in vs
           assert "G30_HYBRID_TAKEOVER_MIN_DPP 64" in vs
           assert "g30_fo76_request_takeover(1u)" in vs
+          assert "if(g30_fo76_takeover_fallback_latched()) return;" in vs
           assert "g30_fo76_request_coast()" in vs
           assert "VescToSTM_g30_sensorless_selected() || g30_fo76_takeover_owns_angle()" in mc
+          assert "VescToSTM_g30_hall_selected() && g30_fo76_takeover_observer_active()" in mc
           assert "d.valid && d.tracking && takeover_phase_history" in fo
           assert "(ia_oc > oc)" in pw and "(ib_oc > oc)" in pw and "(ic_oc > oc)" in pw
           oc=Path("OUTPUT/DISASM_OCP.txt").read_text()
@@ -143,14 +145,18 @@ jobs:
           assert "<R3_2_SwitchOnPWM>:" in sw
           assert re.search(r"\borr(?:\.w)?\s+[^\n]*#(?:32768|0x8000)\b",sw)
           assert "g30_fo76_takeover_owns_angle" in sy and "g30_fo76_request_coast" in sy
+          assert "g30_fo76_takeover_observer_active" in sy
+          assert "g30_fo76_takeover_fallback_latched" in sy
           Path("OUTPUT/POST_BUILD_INVARIANTS.txt").write_text(
               "SOURCE_SAFETYCORE_V2_CONTRACT=PASS\n"
               "THERMAL_DERATING_DIRECTION=PASS\n"
               "HYBRID_64DPP_PA1_GATE=PASS\n"
+              "HYBRID_OBSERVER_SPEED_OWNERSHIP=PASS\n"
+              "HYBRID_FALLBACK_LATCH_NO_CHATTER=PASS\n"
               "BINARY_HYBRID_HELPERS_PRESENT=PASS\n"
               "BINARY_OCP_TO_PWM_OFF=PASS\n"
               "BINARY_MOTOR_PWM_ENABLE_PRESENT=PASS\n")
-          print("SOURCE_SAFETYCORE_V2_CONTRACT=PASS THERMAL_DERATING_DIRECTION=PASS HYBRID_64DPP_PA1_GATE=PASS")
+          print("SOURCE_SAFETYCORE_V2_CONTRACT=PASS THERMAL_DERATING_DIRECTION=PASS HYBRID_64DPP_PA1_GATE=PASS HYBRID_OBSERVER_SPEED_OWNERSHIP=PASS HYBRID_FALLBACK_LATCH_NO_CHATTER=PASS")
           PY
 
       - name: Upload SafetyCore V2 hybrid build
