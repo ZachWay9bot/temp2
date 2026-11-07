@@ -77,7 +77,7 @@
  #endif
 +#ifdef G30_DASH_APPCOMPAT_V4
 +    commands_printf(phandle,"APPCOMPATV4 r5tx=1 dmaRxPreserved=1 cr1=%04lx cr3=%04lx",
-+        (unsigned long)u->Instance->CR1,(unsigned long)u->Instance->CR3);
++        (unsigned long)d->port->uart->Instance->CR1,(unsigned long)d->port->uart->Instance->CR3);
 +#endif
  #endif
  #endif
