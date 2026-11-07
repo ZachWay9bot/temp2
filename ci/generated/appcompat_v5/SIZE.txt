@@ -1,0 +1,2 @@
+   text	   data	    bss	    dec	    hex	filename
+  99508	   1428	  18968	 119904	  1d460	OUTPUT/SmartESC_v2_G30D_SESC_DRV126_P6500_H14_SHUD4BMS_APPCOMPAT_V5.elf

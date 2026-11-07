@@ -1,0 +1,65 @@
+{
+  "upstream": "Koxx3/SmartESC_STM32_v2",
+  "commit": "272bdb99d75484dcc377e1cf3e6a20e53a6fd8de",
+  "compiler": "arm-none-eabi-gcc (xPack GNU Arm Embedded GCC x86_64) 13.2.1 20231009",
+  "binary_bytes": 100940,
+  "sha256": "8bdcb9579473dd3f4462a90c3b8adb446ae0808898f3a74c8ec07165b69c3ce8",
+  "app_origin": "0x8001000",
+  "image_end_exclusive": "0x8019a4c",
+  "initial_sp": "0x20005000",
+  "reset_handler": "0x8014d65",
+  "ram_end": "0x20005000",
+  "config_pages": {
+    "app": 120,
+    "motor": 121
+  },
+  "freertos_heap_bytes": 13312,
+  "stock_iap_staging_bytes": 55296,
+  "stock_iap_image_fits": false,
+  "strong_vectors_checked": [
+    "SVC_Handler",
+    "PendSV_Handler",
+    "SysTick_Handler",
+    "DMA1_Channel4_IRQHandler",
+    "DMA1_Channel5_IRQHandler",
+    "ADC1_2_IRQHandler",
+    "TIM1_BRK_IRQHandler",
+    "TIM1_UP_IRQHandler",
+    "TIM3_IRQHandler",
+    "TIM4_IRQHandler"
+  ],
+  "load_segments": [
+    {
+      "vma": "0x8001000",
+      "lma": "0x8001000",
+      "file_bytes": 99520,
+      "memory_bytes": 99520
+    },
+    {
+      "vma": "0x20000000",
+      "lma": "0x80194c0",
+      "file_bytes": 1420,
+      "memory_bytes": 1420
+    },
+    {
+      "vma": "0x20000590",
+      "lma": "0x8019a4c",
+      "file_bytes": 0,
+      "memory_bytes": 17432
+    },
+    {
+      "vma": "0x200049a8",
+      "lma": "0x8019a4c",
+      "file_bytes": 0,
+      "memory_bytes": 1536
+    }
+  ],
+  "static_checks": "PASS",
+  "hardware_motor_test": "NOT PERFORMED",
+  "runtime_heap_and_stack_high_watermarks": "NOT MEASURED",
+  "scope": "Original Koxx3 Hall-FOC, FO76 compact observer in shadow mode only, no angle takeover",
+  "build_id": "SESC-DRV126-P6500-H14-SHUD4BMS-APPCOMPAT-V5",
+  "led_stack_words": 256,
+  "voltage_threshold_conversion": "saturating uint16",
+  "fault_mapping": "bitmask"
+}
