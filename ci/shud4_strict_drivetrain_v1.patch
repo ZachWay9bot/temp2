@@ -1,0 +1,435 @@
+--- a/common_files/src/defines.h
++++ b/common_files/src/defines.h
+@@ -2,10 +2,11 @@
+ #define DEFINES_H_
+ 
+ #ifdef G30P
+-#define HW_NAME "SESC-DRV126-P6500-H14-SBMS-HSYNC-V1"
++#define HW_NAME "SHUD4-STRICT-DRIVE-V1"
+ #define G30_HALL14S_V1 1
+ #define G30_SHUD4_BMS_V1 1
+-#define G30_HALL_ROLLING_SYNC_V1 1
++#define G30_SHUD4_STRICT_DRIVETRAIN_V1 1
++/* HSYNC is deliberately excluded: STRICT uses SHUD4 release/enable semantics. */
+ #define G30_POWERPATH_RESTORE_V1 1
+ #else
+ #define HW_NAME "40"
+--- a/common_files/src/g30_dash_link.h
++++ b/common_files/src/g30_dash_link.h
+@@ -5,5 +5,7 @@
+ void g30_dash_link_start(port_str *port);
+ void g30_dash_link_vesc_claim(void);
+ bool g30_dash_link_brake_active(void);
++bool g30_dash_link_strict_owns_motor(void);
+ void g30_dash_link_print(PACKET_STATE_t *phandle);
++void g30_dash_link_shud4_print(PACKET_STATE_t *phandle);
+ #endif
+--- a/common_files/src/g30_dash_link.c
++++ b/common_files/src/g30_dash_link.c
+@@ -27,6 +27,20 @@
+     volatile uint32_t last_remote_ms;
+     uint32_t last_input_ms, drive_commands, coast_commands, remote_claims;
+     g30_dash_r2_control control;
++#ifdef G30_SHUD4_STRICT_DRIVETRAIN_V1
++    struct {
++        int32_t request_ma;
++        int32_t target_ma;
++        int32_t hall_rate;
++        int32_t applied_ma;
++        uint16_t derating;
++        uint16_t low_speed_shutdown_count;
++        uint8_t motor_enabled;
++        uint8_t action;
++        uint32_t steps;
++        uint32_t invalid_inputs;
++    } shud4;
++#endif
+ } dash_link_state;
+ /* SRAM footprint is allocated from the existing FreeRTOS heap, not carved
+  * out of the almost-full static data region. One UART owner, one task. */
+@@ -55,7 +69,142 @@
+            d->brake<=G30_DASH_R2_INPUT_MAX;
+ }
+ 
++bool g30_dash_link_strict_owns_motor(void) {
++#ifdef G30_SHUD4_STRICT_DRIVETRAIN_V1
++    return true;
++#else
++    return false;
++#endif
++}
++
+ /* One consumer: DASH task. No second motor-control task is created. */
++#ifdef G30_SHUD4_STRICT_DRIVETRAIN_V1
++/* STRICT SHUD4 slow-drive reconstruction. These are direct translations of
++ * the frozen SHUD4 delta reference around 0x08001CA0 and 0x08001E00.
++ * No SESC speed PI, torque ramp, brake PI, coast helper, HSYNC or observer
++ * participates in this path. SESC remains only the hardware/safety adapter. */
++enum {
++    SHUD4_ACT_SAFE_OFF=0,
++    SHUD4_ACT_DPC=1,
++    SHUD4_ACT_BRAKE=2,
++    SHUD4_ACT_RELEASE=3
++};
++static int32_t shud4_clamp32(int32_t x,int32_t lo,int32_t hi){return x<lo?lo:(x>hi?hi:x);}
++static int32_t shud4_slew(int32_t cur,int32_t target,int32_t step){
++    int32_t d=target-cur;
++    if(d>step)return cur+step;
++    if(d<-step)return cur-step;
++    return target;
++}
++static int32_t shud4_hall_rate(void){
++    /* Native SHUD4 speed settings use the patched wheel/unit factor 313.
++     * VescToSTM_get_speed() is the board-adapter road speed in m/s. */
++    float kph=VescToSTM_get_speed()*3.6f;
++    if(!isfinite(kph)) return 0;
++    float r=kph*313.0f;
++    if(r>2147480000.0f) return 2147480000;
++    if(r<-2147480000.0f) return -2147480000;
++    return (int32_t)(r>=0.0f ? r+0.5f : r-0.5f);
++}
++static int32_t shud4_dpc_target(uint8_t raw){
++    int32_t n=shud4_clamp32((int32_t)raw-55,0,120);
++    /* SHUD4: phase/current limit 55000, quadratic selector, coeff 110. */
++    return (int32_t)(((int64_t)55000*n*n)/(110*110));
++}
++static void shud4_safe_off(dash_link_state *d){
++    d->shud4.request_ma=0;
++    d->shud4.target_ma=0;
++    d->shud4.motor_enabled=0;
++    d->shud4.action=SHUD4_ACT_SAFE_OFF;
++    d->shud4.applied_ma=0;
++    VescToSTM_g30_shud4_apply_request(0,false);
++}
++static void shud4_brake_release_step(dash_link_state *d,bool brake_active){
++    int32_t rate=d->shud4.hall_rate;
++    if(d->shud4.derating<20u){shud4_safe_off(d);return;}
++    if(brake_active){
++        if(rate>945){
++            d->shud4.motor_enabled=1;
++            int32_t b=shud4_clamp32((int32_t)d->brake-55,0,130);
++            int32_t mag=5000 + b*(30000-5000)/130;
++            int32_t target=-mag;
++            if(target<-30000)target=-30000;
++            target=(target*(int32_t)d->shud4.derating)/2048;
++            d->shud4.target_ma=target;
++            d->shud4.request_ma=shud4_slew(d->shud4.request_ma,target,500);
++            d->shud4.low_speed_shutdown_count=0;
++            return;
++        }
++        d->shud4.target_ma=0;
++        if(rate>400){
++            d->shud4.request_ma=shud4_slew(d->shud4.request_ma,0,500);
++            return;
++        }
++        d->shud4.request_ma=0;
++        if(++d->shud4.low_speed_shutdown_count>4u){
++            d->shud4.motor_enabled=0;
++            d->shud4.low_speed_shutdown_count=0;
++        }
++        return;
++    }
++    d->shud4.target_ma=0;
++    if(rate>500){
++        /* SHUD4 no_kers: passive release anchor is patched to zero, but the
++         * motor-enabled state is retained while rolling above this threshold. */
++        d->shud4.request_ma=shud4_slew(d->shud4.request_ma,0,1500);
++        d->shud4.low_speed_shutdown_count=0;
++        return;
++    }
++    if(rate>400){
++        if(d->shud4.request_ma==0){d->shud4.motor_enabled=0;return;}
++        d->shud4.request_ma=shud4_slew(d->shud4.request_ma,0,500);
++        return;
++    }
++    d->shud4.request_ma=0;
++    d->shud4.motor_enabled=0;
++    d->shud4.low_speed_shutdown_count=0;
++}
++static void handle_control(dash_link_state *d) {
++    uint32_t now=HAL_GetTick();
++    bool fresh=d->input_seen && (uint32_t)(now-d->last_input_ms)<=G30_DASH_R2_STALE_MS;
++    bool ready=pMCI[M1] && pMCI[M1]->pSTM && !app_is_output_disabled() &&
++               VescToSTM_get_fault()==FAULT_CODE_NONE;
++    d->shud4.hall_rate=shud4_hall_rate();
++    d->shud4.derating=ready?2048u:0u;
++    d->shud4.steps++;
++    /* Stock/SHUD dashboard valid raw window is 0x1E..0xD2. */
++    bool valid_raw=d->gas>=0x1Eu && d->gas<=0xD2u && d->brake>=0x1Eu && d->brake<=0xD2u;
++    if(!fresh || !ready || !valid_raw){
++        if(fresh && !valid_raw)d->shud4.invalid_inputs++;
++        shud4_safe_off(d);
++        return;
++    }
++    bool brake_active=d->brake>55u;
++    bool throttle_active=d->gas>55u;
++    if(brake_active){
++        d->shud4.action=SHUD4_ACT_BRAKE;
++        shud4_brake_release_step(d,true);
++    }else if(throttle_active){
++        d->shud4.action=SHUD4_ACT_DPC;
++        if(d->shud4.hall_rate<0){
++            d->shud4.request_ma=0;
++            d->shud4.target_ma=0;
++            d->shud4.motor_enabled=0;
++        }else{
++            d->shud4.motor_enabled=1;
++            d->shud4.low_speed_shutdown_count=0;
++            d->shud4.target_ma=shud4_dpc_target(d->gas);
++            d->shud4.request_ma=shud4_slew(d->shud4.request_ma,d->shud4.target_ma,6500);
++        }
++    }else{
++        d->shud4.action=SHUD4_ACT_RELEASE;
++        shud4_brake_release_step(d,false);
++    }
++    d->shud4.applied_ma=d->shud4.request_ma;
++    VescToSTM_g30_shud4_apply_request(d->shud4.request_ma,d->shud4.motor_enabled!=0u);
++    VescToSTM_timeout_reset();
++}
++#else
+ static void handle_control(dash_link_state *d) {
+     uint32_t now=HAL_GetTick();
+     bool fresh=d->input_seen &&
+@@ -63,25 +212,16 @@
+     bool remote_busy=d->remote_claimed &&
+         (uint32_t)(now-d->last_remote_ms) < G30_DASH_R2_VESC_HOLD_MS;
+     if(!remote_busy) d->remote_claimed=0u;
+-    /* HS3: do not duplicate the motor battery-cut with a hard 18 V dashboard
+-     * coast edge. VescToSTM_Iq_lim_hook() already applies the configured
+-     * 20.4 -> 18.0 V current reduction. The extra boolean 18 V gate caused
+-     * drive/coast oscillation on the 24 V + series-lamp bench because Vbus
+-     * recovered immediately after every coast. Real MCSDK faults still block
+-     * dashboard torque exactly as before. */
+     bool ready=pMCI[M1] && pMCI[M1]->pSTM &&
+         !app_is_output_disabled() &&
+         VescToSTM_get_fault()==FAULT_CODE_NONE;
+     g30_dash_r2_action action=g30_dash_r2_step(&d->control,now,
+         d->gas,d->brake,fresh,remote_busy,ready);
+     if(action==G30_DASH_R2_COAST) {
+-        /* Existing HF4 brake implementation is true coast, never regen. */
+         VescToSTM_set_brake(0);
+         VescToSTM_g30_pushstart_command(false);
+         d->coast_commands++;
+     } else if(action==G30_DASH_R2_DRIVE) {
+-        /* A valid neutral-to-throttle transition arms the ORIGINAL
+-         * >=3 km/h sensorless push-start. Not a stationary start path. */
+         uint16_t torque=g30_dash_r2_scale(d->gas);
+         if(!torque) return;
+         if(!VescToSTM_g30_hall_direction_allowed(1)){
+@@ -90,13 +230,12 @@
+             return;
+         }
+         VescToSTM_g30_pushstart_command(true);
+-        /* HF4SL1: no post-HF4 sensorless startup torque shaping here. The
+-         * dashboard is only an input adapter; motor start/catch stays HF4. */
+         VescToSTM_set_current_rel_int((int32_t)torque);
+         VescToSTM_timeout_reset();
+         d->drive_commands++;
+     }
+ }
++#endif
+ 
+ static unsigned rx_pos(dash_link_state *d) {
+     return (128u-d->port->uart->hdmarx->Instance->CNDTR)&127u;
+@@ -189,6 +328,31 @@
+     }
+ }
+ 
++void g30_dash_link_shud4_print(PACKET_STATE_t *phandle) {
++#ifdef G30_SHUD4_STRICT_DRIVETRAIN_V1
++    dash_link_state *d=dash;
++    if(!d){commands_printf(phandle,"SHUD4STRICT task=0");return;}
++    const char *a=d->shud4.action==SHUD4_ACT_DPC?"DPC":
++                  d->shud4.action==SHUD4_ACT_BRAKE?"BRAKE":
++                  d->shud4.action==SHUD4_ACT_RELEASE?"RELEASE":"SAFE_OFF";
++    commands_printf(phandle,"SHUD4STRICT action=%s gas=%u brake=%u fresh=%u hallRate=%ld derate=%u",
++        a,(unsigned)d->gas,(unsigned)d->brake,
++        (unsigned)(d->input_seen && (uint32_t)(HAL_GetTick()-d->last_input_ms)<=G30_DASH_R2_STALE_MS),
++        (long)d->shud4.hall_rate,(unsigned)d->shud4.derating);
++    commands_printf(phandle,"SHUD4STRICT request=%ld target=%ld applied=%ld motorEn=%u lowCnt=%u steps=%lu invalid=%lu",
++        (long)d->shud4.request_ma,(long)d->shud4.target_ma,(long)d->shud4.applied_ma,
++        (unsigned)d->shud4.motor_enabled,(unsigned)d->shud4.low_speed_shutdown_count,
++        (unsigned long)d->shud4.steps,(unsigned long)d->shud4.invalid_inputs);
++    commands_printf(phandle,"SHUD4STRICT pwmOff=%u moe=%u state=%u fault=0x%04x iqRef=%ldmA iq=%ldmA",
++        (unsigned)PWM_Handle_M1._Super.PWM_off,(unsigned)((TIM1->BDTR&TIM_BDTR_MOE)!=0u),
++        (unsigned)pMCI[M1]->pSTM->bState,(unsigned)pMCI[M1]->pSTM->hFaultNow,
++        (long)((float)FOCVars[M1].Iqdref.q*1000.0f/CURRENT_FACTOR_A),
++        (long)((float)FOCVars[M1].Iqd.q*1000.0f/CURRENT_FACTOR_A));
++#else
++    commands_printf(phandle,"SHUD4STRICT disabled");
++#endif
++}
++
+ void g30_dash_link_print(PACKET_STATE_t *phandle) {
+     dash_link_state *d=dash;
+     if(!d){commands_printf(phandle,"HF4 DASH R2 drive=1 task=0 allocFail=%lu",(unsigned long)alloc_failed);return;}
+--- a/common_files/src/VescToSTM.h
++++ b/common_files/src/VescToSTM.h
+@@ -55,6 +55,7 @@
+ bool VescToSTM_g30_hall_feedback_valid(void);
+ bool VescToSTM_g30_hall_direction_allowed(int32_t requested);
+ void VescToSTM_g30_sensor_mode_sync(void);
++void VescToSTM_g30_shud4_apply_request(int32_t request_ma, bool motor_enabled);
+ #endif
+ void VescToSTM_pwm_start(void);
+ void VescToSTM_prepare_sensorless_start(void);
+--- a/common_files/src/VescToSTM.c
++++ b/common_files/src/VescToSTM.c
+@@ -705,7 +705,12 @@
+         }
+ #ifdef G30P
+         if(VescToSTM_g30_hall_selected()){
++#ifdef G30_SHUD4_STRICT_DRIVETRAIN_V1
++            /* Native SHUD4 keeps the Hall timing/interpolator alive while the
++             * phase outputs are off. Do not reseed or zero speed on re-enable. */
++#else
+             g30_hall_prepare_pwm_reentry_angle();
++#endif
+         }else
+ #endif
+         {
+@@ -717,6 +722,44 @@
+     }
+ }
+ 
++#ifdef G30_SHUD4_STRICT_DRIVETRAIN_V1
++void VescToSTM_g30_shud4_apply_request(int32_t request_ma, bool motor_enabled){
++    /* Hardware adapter only. SHUD4 owns the signed request and enable state.
++     * Do not route through SESC speed PI / torque policy / brake policy. */
++    qd_t ref={0,0};
++    int32_t q=current_to_torque(request_ma);
++    q*=DIR_MUL;
++    if(q>32767)q=32767;
++    if(q<-32767)q=-32767;
++    ref.q=(int16_t)q;
++    ref.d=0;
++    MCI_SetCurrentReferences(pMCI[M1],ref);
++    FOCVars[M1].hTeref=ref.q;
++    if(!motor_enabled){
++        ref.q=0;
++        MCI_SetCurrentReferences(pMCI[M1],ref);
++        FOCVars[M1].hTeref=0;
++        if(!PWM_Handle_M1._Super.PWM_off){
++            PWMC_SwitchOffPWM(&PWM_Handle_M1._Super);
++            PIDIqHandle_M1.wIntegralTerm=0;
++            PIDIdHandle_M1.wIntegralTerm=0;
++            FOCVars[M1].Vqd.q=0;
++            FOCVars[M1].Vqd.d=0;
++            extern void g30_drv126_final_reset(void);
++            g30_drv126_final_reset();
++        }
++        return;
++    }
++    if(!VescToSTM_g30_hall_feedback_valid()) return;
++    if(STM_GetState(&STM[M1])==IDLE){
++        MCI_ExecSpeedRamp(pMCI[M1],0,0);
++        (void)MCI_StartMotor(pMCI[M1]);
++    }else if(STM_GetState(&STM[M1])==RUN && PWM_Handle_M1._Super.PWM_off){
++        VescToSTM_pwm_start();
++    }
++}
++#endif
++
+ void VescToSTM_update_torque(int32_t q, int32_t min_erpm, int32_t max_erpm){
+ #ifdef G30P
+     if(!VescToSTM_g30_hall_direction_allowed(q)){
+--- a/common_files/src/mc_tasks.c
++++ b/common_files/src/mc_tasks.c
+@@ -322,6 +322,12 @@
+   /* Exact modified-DRV126 setpoint behavior: before the current PI, move the
+    * requested q current toward target by at most coeff=6500 mA per 4-kHz
+    * controller update. This is the only intentional Stock->CFW behavior delta. */
++#ifdef G30_SHUD4_STRICT_DRIVETRAIN_V1
++  /* STRICT: 0x08001E00/0x08001CA0 already apply SHUD4's request slews in
++   * the slow path. The original 0x08002EC4 FOC consumes that request directly. */
++  g30_drv126_final_q_slew_mc=qtarget;
++  int32_t qmc=qtarget;
++#else
+   int32_t qdelta=qtarget-g30_drv126_final_q_slew_mc;
+   if(qdelta>G30_DRV126_CURRENT_RAISING_STEP_MC)
+       g30_drv126_final_q_slew_mc+=G30_DRV126_CURRENT_RAISING_STEP_MC;
+@@ -330,6 +336,7 @@
+   else
+       g30_drv126_final_q_slew_mc=qtarget;
+   int32_t qmc=g30_drv126_final_q_slew_mc;
++#endif
+ 
+   int32_t ia=g30_drv126_final_stock_u_from_mc(Iab.a);
+   int32_t ib=g30_drv126_final_stock_u_from_mc(Iab.b);
+--- a/common_files/src/terminal.c
++++ b/common_files/src/terminal.c
+@@ -105,6 +105,10 @@
+         g30_dash_link_print(phandle);
+         return;
+     }
++    if (strcmp(argv[0], "g30_shud4") == 0) {
++        g30_dash_link_shud4_print(phandle);
++        return;
++    }
+ 	if (strcmp(argv[0], "ping") == 0) {
+ 		commands_printf(phandle, "pong\n");
+ 	}else if (strcmp(argv[0], "g30_status") == 0){
+--- a/common_files/src/VescCommand.c
++++ b/common_files/src/VescCommand.c
+@@ -414,6 +414,9 @@
+ 				int32_t ind = 0;
+ 				int32_t raw = buffer_get_int32(data, &ind);
+ #ifdef G30P
++				#ifdef G30_SHUD4_STRICT_DRIVETRAIN_V1
++				if(g30_dash_link_strict_owns_motor()){ VescToSTM_timeout_reset(); break; }
++#endif
+ 				g30_dash_link_vesc_claim();
+ 				if(g30_dash_link_brake_active()){
+ 					VescToSTM_g30_pushstart_command(false);
+@@ -437,6 +440,9 @@
+ 				int32_t ind = 0;
+ 				int32_t raw = buffer_get_int32(data, &ind);
+ #ifdef G30P
++				#ifdef G30_SHUD4_STRICT_DRIVETRAIN_V1
++				if(g30_dash_link_strict_owns_motor()){ VescToSTM_timeout_reset(); break; }
++#endif
+ 				g30_dash_link_vesc_claim();
+ 				if(g30_dash_link_brake_active()){
+ 					VescToSTM_g30_pushstart_command(false);
+@@ -461,6 +467,9 @@
+ 				int32_t raw = buffer_get_int32(data, &ind);
+ #ifdef G30P
+ 				(void)raw;
++				#ifdef G30_SHUD4_STRICT_DRIVETRAIN_V1
++				if(g30_dash_link_strict_owns_motor()){ VescToSTM_timeout_reset(); break; }
++#endif
+ 				g30_dash_link_vesc_claim();
+ 				VescToSTM_g30_pushstart_command(false);
+ 				VescToSTM_set_brake(0); /* Coast, never regenerative torque. */
+@@ -474,6 +483,9 @@
+ 				int32_t ind = 0;
+ 				int32_t raw = buffer_get_int32(data, &ind);
+ #ifdef G30P
++				#ifdef G30_SHUD4_STRICT_DRIVETRAIN_V1
++				if(g30_dash_link_strict_owns_motor()){ VescToSTM_timeout_reset(); break; }
++#endif
+ 				g30_dash_link_vesc_claim();
+ 				if(g30_dash_link_brake_active()){
+ 					VescToSTM_g30_pushstart_command(false);
+@@ -503,6 +515,9 @@
+ 				int32_t ind = 0;
+ #ifdef G30P
+ 				(void)ind;
++				#ifdef G30_SHUD4_STRICT_DRIVETRAIN_V1
++				if(g30_dash_link_strict_owns_motor()){ VescToSTM_timeout_reset(); break; }
++#endif
+ 				g30_dash_link_vesc_claim();
+ 				VescToSTM_g30_pushstart_command(false);
+ 				VescToSTM_set_brake(0); /* G30 brake is coast only. */
+@@ -1047,7 +1062,10 @@
+ 					int32_t ind = 0;
+ 					float val = buffer_get_float32(data, 1e5, &ind);
+ #ifdef G30P
+-					g30_dash_link_vesc_claim();
++					#ifdef G30_SHUD4_STRICT_DRIVETRAIN_V1
++				if(g30_dash_link_strict_owns_motor()){ VescToSTM_timeout_reset(); break; }
++#endif
++				g30_dash_link_vesc_claim();
+ 				if(g30_dash_link_brake_active()){
+ 					VescToSTM_g30_pushstart_command(false);
+ 					VescToSTM_set_brake(0);
