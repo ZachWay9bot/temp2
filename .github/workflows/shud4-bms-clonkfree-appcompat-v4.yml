@@ -1,0 +1,200 @@
+name: SESC HALL14S SHUD4+BMS CLONKFREE APPCOMPAT V4
+
+on:
+  push:
+    branches:
+      - hall14s-shud4-bms-clonkfree-appcompat-v4-r5tx-20261107
+    paths:
+      - 'ci/sesc_dash_appcompat_v1.patch'
+      - 'ci/test_sesc_dash_appcompat_v1.py'
+      - 'ci/sesc_dash_appcompat_v2.patch'
+      - 'ci/sesc_dash_appcompat_v3.patch'
+      - 'ci/sesc_dash_appcompat_v4.patch'
+      - '.github/workflows/shud4-bms-clonkfree-appcompat-v4.yml'
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+      actions: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Restore exact 10S BMS HW-PASS clonkfree freeze source
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh api repos/${GITHUB_REPOSITORY}/actions/artifacts/13543766633/zip > /tmp/freeze.zip
+          mkdir -p /tmp/freeze
+          unzip -q /tmp/freeze.zip -d /tmp/freeze
+          test -f /tmp/freeze/OUTPUT/SOURCE_KOXX3_SESC_DRV126_P6500_H14_SHUD4BMS_CLONKFREE_V1_EXACT.tgz
+          tar -xzf /tmp/freeze/OUTPUT/SOURCE_KOXX3_SESC_DRV126_P6500_H14_SHUD4BMS_CLONKFREE_V1_EXACT.tgz
+          grep -q 'SESC-DRV126-P6500-H14-SHUD4BMS-CLONKFREE-V1' SOURCE_KOXX3/common_files/src/defines.h
+          sha256sum SOURCE_KOXX3/common_files/src/mc_tasks.c | grep -q '^1c3f61ad12855960ddf25ea96730328bdfaa4d8653d6f7ec9fe89d2114518c98'
+          sha256sum SOURCE_KOXX3/common_files/MotorControl/MCSDK/MCLib/F1xx/Src/r3_2_f1xx_pwm_curr_fdbk.c | grep -q '^14ccd029244f230d5632f18c6c278aa3021976ede8a4513939af068456eee276'
+          sha256sum SOURCE_KOXX3/common_files/src/task_pwr.c | grep -q '^9fb70e29f7d9cc754c05f4fc439d555822c34097347b25e54aff7beb084f6cad'
+          mkdir -p tools OUTPUT
+          base64 -d ci/r3_payload.tgz.b64 > /tmp/r3_payload.tgz
+          mkdir -p /tmp/r3payload
+          tar -xzf /tmp/r3_payload.tgz -C /tmp/r3payload
+          cp /tmp/r3payload/build_native.py tools/
+          cp /tmp/r3payload/validate_image.py tools/
+          printf '%s\n'             'parent_freeze=SESC-SHUD4BMS-CLONKFREE-V1-10S-BMS-HW-PASS-2026-11-06'             'parent_artifact=13543766633'             'parent_bin_sha256=df8ef433c322b67ec34ae9c5c8dccdd7b980c685652f1a5beab30a31c0541dbc'             > OUTPUT/PARENT_PROVENANCE.txt
+
+      - name: Apply read-only dashboard app compatibility
+        shell: bash
+        run: |
+          set -euo pipefail
+          patch -p1 < ci/sesc_dash_appcompat_v1.patch
+          python3 ci/test_sesc_dash_appcompat_v1.py | tee OUTPUT/APPCOMPAT_V1_STATIC_TESTS.txt
+          patch -p1 < ci/sesc_dash_appcompat_v2.patch
+          grep -q 'SESC-DRV126-P6500-H14-SHUD4BMS-APPCOMPAT-V2' SOURCE_KOXX3/common_files/src/defines.h
+          grep -q '#define G30_DASH_APPCOMPAT_V2 1' SOURCE_KOXX3/common_files/src/defines.h
+          grep -q 'g30_dash_frame(0x20u,0x21u,0x01u,0x00u,0,0u,tx+len)' SOURCE_KOXX3/common_files/src/g30_dash_link.c
+          grep -q 'd->meta_seen=1u; d->meta_replies++' SOURCE_KOXX3/common_files/src/g30_dash_link.c
+          grep -q 'DASHMETA seen=' SOURCE_KOXX3/common_files/src/g30_dash_link.c
+          printf 'APPCOMPAT_V2_METADATA_BOOTSTRAP=PASS\n' | tee OUTPUT/APPCOMPAT_V2_STATIC_TESTS.txt
+          patch -p1 < ci/sesc_dash_appcompat_v3.patch
+          grep -q 'SESC-DRV126-P6500-H14-SHUD4BMS-APPCOMPAT-V3' SOURCE_KOXX3/common_files/src/defines.h
+          grep -q '#define G30_DASH_APPCOMPAT_V3 1' SOURCE_KOXX3/common_files/src/defines.h
+          grep -q 'g30_dash_defer_app_read' SOURCE_KOXX3/common_files/src/g30_dash_link.c
+          grep -q 'g30_dash_build_deferred_app_reply' SOURCE_KOXX3/common_files/src/g30_dash_link.c
+          grep -q 'APPCOMPATV3 pending=' SOURCE_KOXX3/common_files/src/g30_dash_link.c
+          grep -q 'uint8_t tx\[89\]' SOURCE_KOXX3/common_files/src/g30_dash_link.c
+          printf 'APPCOMPAT_V3_DEFERRED_CMD04_PIGGYBACK=PASS\n' | tee OUTPUT/APPCOMPAT_V3_STATIC_TESTS.txt
+          patch -p1 < ci/sesc_dash_appcompat_v4.patch
+          grep -q 'SESC-DRV126-P6500-H14-SHUD4BMS-APPCOMPAT-V4' SOURCE_KOXX3/common_files/src/defines.h
+          grep -q '#define G30_DASH_APPCOMPAT_V4 1' SOURCE_KOXX3/common_files/src/defines.h
+          grep -q 'u->Instance->CR1=USART_CR1_UE|USART_CR1_TE' SOURCE_KOXX3/common_files/src/g30_dash_link.c
+          grep -q 'APPCOMPATV4 r5tx=1 dmaRxPreserved=1' SOURCE_KOXX3/common_files/src/g30_dash_link.c
+          printf 'APPCOMPAT_V4_R5_PHYSICAL_TX=PASS\n' | tee OUTPUT/APPCOMPAT_V4_STATIC_TESTS.txt
+
+      - name: Install ARM GNU GCC 13.2.1
+        shell: bash
+        run: |
+          set -euo pipefail
+          URL=https://github.com/xpack-dev-tools/arm-none-eabi-gcc-xpack/releases/download/v13.2.1-1.1
+          FILE=xpack-arm-none-eabi-gcc-13.2.1-1.1-linux-x64.tar.gz
+          curl -fL "$URL/$FILE" -o "/tmp/$FILE"
+          curl -fL "$URL/$FILE.sha" -o "/tmp/$FILE.sha"
+          cd /tmp
+          sha256sum -c "$FILE.sha"
+          tar -xzf "$FILE"
+          echo "/tmp/xpack-arm-none-eabi-gcc-13.2.1-1.1/bin" >> "$GITHUB_PATH"
+
+      - name: Compile and validate APPCOMPAT V4
+        shell: bash
+        run: |
+          set -euo pipefail
+          sed -i 's/FO76_SHADOW_R3/SESC_DRV126_P6500_H14_SHUD4BMS_APPCOMPAT_V4/g' tools/build_native.py tools/validate_image.py
+          sed -i 's/G30D-FO76-SHADOW-R3/SESC-DRV126-P6500-H14-SHUD4BMS-APPCOMPAT-V4/g' tools/validate_image.py
+          python3 tools/build_native.py | tee OUTPUT/build.log
+          python3 tools/validate_image.py | tee OUTPUT/validation.log
+          BIN=OUTPUT/SmartESC_v2_G30D_SESC_DRV126_P6500_H14_SHUD4BMS_APPCOMPAT_V4_STLINK_APP_0x08001000.bin
+          ELF=OUTPUT/SmartESC_v2_G30D_SESC_DRV126_P6500_H14_SHUD4BMS_APPCOMPAT_V4.elf
+          test -f "$BIN"
+          test -f "$ELF"
+          sha256sum "$BIN" | tee OUTPUT/SHA256_BIN.txt
+          arm-none-eabi-size "$ELF" | tee OUTPUT/SIZE.txt
+          python3 - <<'PY'
+          from pathlib import Path
+          parts=Path('OUTPUT/SIZE.txt').read_text().splitlines()[-1].split()
+          text,data,bss=map(int,parts[:3])
+          flash=text+data; ram=data+bss
+          assert flash <= 118784,(flash,118784)
+          assert ram <= 20480,(ram,20480)
+          Path('OUTPUT/MEMORY_GATE.txt').write_text(f'FLASH={flash}/118784\nRAM={ram}/20480\nPASS\n')
+          print(f'FLASH={flash}/118784 RAM={ram}/20480 PASS')
+          PY
+          arm-none-eabi-nm -S --size-sort "$ELF" | tail -60 > OUTPUT/LARGEST_SYMBOLS.txt
+          tar --exclude='SOURCE_KOXX3/.git' -czf OUTPUT/SOURCE_KOXX3_SESC_DRV126_P6500_H14_SHUD4BMS_APPCOMPAT_V4_EXACT.tgz SOURCE_KOXX3
+
+      - name: Post-build freeze invariants
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -q 'SESC-DRV126-P6500-H14-SHUD4BMS-APPCOMPAT-V4' SOURCE_KOXX3/common_files/src/defines.h
+          grep -q '#define G30_DASH_APPCOMPAT_V1 1' SOURCE_KOXX3/common_files/src/defines.h
+          grep -q '#define G30_DASH_APPCOMPAT_V2 1' SOURCE_KOXX3/common_files/src/defines.h
+          grep -q '#define G30_DASH_APPCOMPAT_V3 1' SOURCE_KOXX3/common_files/src/defines.h
+          grep -q '#define G30_DASH_APPCOMPAT_V4 1' SOURCE_KOXX3/common_files/src/defines.h
+          sha256sum SOURCE_KOXX3/common_files/src/mc_tasks.c | grep -q '^1c3f61ad12855960ddf25ea96730328bdfaa4d8653d6f7ec9fe89d2114518c98'
+          sha256sum SOURCE_KOXX3/common_files/MotorControl/MCSDK/MCLib/F1xx/Src/r3_2_f1xx_pwm_curr_fdbk.c | grep -q '^14ccd029244f230d5632f18c6c278aa3021976ede8a4513939af068456eee276'
+          sha256sum SOURCE_KOXX3/common_files/src/task_pwr.c | grep -q '^9fb70e29f7d9cc754c05f4fc439d555822c34097347b25e54aff7beb084f6cad'
+          ! grep -q 'G30_DASH_APPCOMPAT_V1' SOURCE_KOXX3/common_files/src/mc_tasks.c
+          ! grep -q 'G30_DASH_APPCOMPAT_V1' SOURCE_KOXX3/common_files/MotorControl/MCSDK/MCLib/F1xx/Src/r3_2_f1xx_pwm_curr_fdbk.c
+          printf 'MOTOR_FASTPATH_HASH_EXACT=PASS\nBUTTON_HASH_EXACT=PASS\nAPPCOMPAT_READ_ONLY=PASS\nAPPCOMPAT_V2_METADATA_BOOTSTRAP=PASS\nAPPCOMPAT_V3_DEFERRED_CMD04_PIGGYBACK=PASS\nAPPCOMPAT_V4_R5_PHYSICAL_TX=PASS\n' > OUTPUT/POST_BUILD_INVARIANTS.txt
+
+      - name: Publish V3 CI status and compiled handoff
+        if: always()
+        shell: bash
+        run: |
+          set -u
+          mkdir -p ci/generated/appcompat_v4
+          printf '%s\n' "${{ job.status }}" > ci/generated/appcompat_v4/CI_STATUS.txt
+          BIN=OUTPUT/SmartESC_v2_G30D_SESC_DRV126_P6500_H14_SHUD4BMS_APPCOMPAT_V4_STLINK_APP_0x08001000.bin
+          if [ -f "$BIN" ]; then
+            base64 -w 0 "$BIN" > ci/generated/appcompat_v4/firmware.bin.b64
+            for f in SHA256_BIN.txt SIZE.txt MEMORY_GATE.txt validation.log POST_BUILD_INVARIANTS.txt APPCOMPAT_V4_STATIC_TESTS.txt; do
+              [ ! -f "OUTPUT/$f" ] || cp "OUTPUT/$f" "ci/generated/appcompat_v4/$f"
+            done
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add ci/generated/appcompat_v4
+          if git diff --cached --quiet; then exit 0; fi
+          git commit -m "build: APPCOMPAT V4 CI handoff [skip ci]"
+          git push origin "HEAD:${GITHUB_REF_NAME}"
+
+      - name: Upload APPCOMPAT V4
+        uses: actions/upload-artifact@v4
+        with:
+          name: G30D_SESC_DRV126_P6500_H14_SHUD4BMS_APPCOMPAT_V4_COMPILED
+          retention-days: 30
+          if-no-files-found: error
+          path: |
+            OUTPUT/SmartESC_v2_G30D_SESC_DRV126_P6500_H14_SHUD4BMS_APPCOMPAT_V4_STLINK_APP_0x08001000.bin
+            OUTPUT/SmartESC_v2_G30D_SESC_DRV126_P6500_H14_SHUD4BMS_APPCOMPAT_V4.hex
+            OUTPUT/SmartESC_v2_G30D_SESC_DRV126_P6500_H14_SHUD4BMS_APPCOMPAT_V4.elf
+            OUTPUT/SmartESC_v2_G30D_SESC_DRV126_P6500_H14_SHUD4BMS_APPCOMPAT_V4.map
+            OUTPUT/SHA256_BIN.txt
+            OUTPUT/SIZE.txt
+            OUTPUT/MEMORY_GATE.txt
+            OUTPUT/LARGEST_SYMBOLS.txt
+            OUTPUT/validation.log
+            OUTPUT/build.log
+            OUTPUT/PARENT_PROVENANCE.txt
+            OUTPUT/APPCOMPAT_V1_STATIC_TESTS.txt
+            OUTPUT/APPCOMPAT_V2_STATIC_TESTS.txt
+            OUTPUT/APPCOMPAT_V3_STATIC_TESTS.txt
+            OUTPUT/APPCOMPAT_V4_STATIC_TESTS.txt
+            OUTPUT/POST_BUILD_INVARIANTS.txt
+            OUTPUT/SOURCE_KOXX3_SESC_DRV126_P6500_H14_SHUD4BMS_APPCOMPAT_V4_EXACT.tgz
+            ci/sesc_dash_appcompat_v1.patch
+            ci/sesc_dash_appcompat_v2.patch
+            ci/sesc_dash_appcompat_v3.patch
+            ci/sesc_dash_appcompat_v4.patch
+            ci/test_sesc_dash_appcompat_v1.py
+
+      - name: Publish V3 Actions run and artifact IDs
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -u
+          mkdir -p ci/generated/appcompat_v4
+          printf '%s\n' "${GITHUB_RUN_ID}" > ci/generated/appcompat_v4/RUN_ID.txt
+          ARTID="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}/artifacts" --jq '.artifacts[] | select(.name=="G30D_SESC_DRV126_P6500_H14_SHUD4BMS_APPCOMPAT_V4_COMPILED") | .id' | head -1 || true)"
+          printf '%s\n' "${ARTID}" > ci/generated/appcompat_v4/ARTIFACT_ID.txt
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add ci/generated/appcompat_v4/RUN_ID.txt ci/generated/appcompat_v4/ARTIFACT_ID.txt
+          if git diff --cached --quiet; then exit 0; fi
+          git commit -m "build: record APPCOMPAT V4 Actions IDs [skip ci]"
+          git push origin "HEAD:${GITHUB_REF_NAME}"
+
