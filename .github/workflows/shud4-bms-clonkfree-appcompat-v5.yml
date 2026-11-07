@@ -70,7 +70,6 @@ jobs:
           patch -p1 < ci/sesc_dash_appcompat_v4.patch
           grep -q 'SESC-DRV126-P6500-H14-SHUD4BMS-APPCOMPAT-V4' SOURCE_KOXX3/common_files/src/defines.h
           grep -q '#define G30_DASH_APPCOMPAT_V4 1' SOURCE_KOXX3/common_files/src/defines.h
-          grep -q '#define G30_DASH_APPCOMPAT_V5 1' SOURCE_KOXX3/common_files/src/defines.h
           grep -q 'u->Instance->CR1=USART_CR1_UE|USART_CR1_TE' SOURCE_KOXX3/common_files/src/g30_dash_link.c
           grep -q 'APPCOMPATV4 r5tx=1 dmaRxPreserved=1' SOURCE_KOXX3/common_files/src/g30_dash_link.c
           printf 'APPCOMPAT_V4_R5_PHYSICAL_TX=PASS\n' | tee OUTPUT/APPCOMPAT_V4_STATIC_TESTS.txt
@@ -130,6 +129,7 @@ jobs:
           grep -q '#define G30_DASH_APPCOMPAT_V2 1' SOURCE_KOXX3/common_files/src/defines.h
           grep -q '#define G30_DASH_APPCOMPAT_V3 1' SOURCE_KOXX3/common_files/src/defines.h
           grep -q '#define G30_DASH_APPCOMPAT_V4 1' SOURCE_KOXX3/common_files/src/defines.h
+          grep -q '#define G30_DASH_APPCOMPAT_V5 1' SOURCE_KOXX3/common_files/src/defines.h
           sha256sum SOURCE_KOXX3/common_files/src/mc_tasks.c | grep -q '^1c3f61ad12855960ddf25ea96730328bdfaa4d8653d6f7ec9fe89d2114518c98'
           sha256sum SOURCE_KOXX3/common_files/MotorControl/MCSDK/MCLib/F1xx/Src/r3_2_f1xx_pwm_curr_fdbk.c | grep -q '^14ccd029244f230d5632f18c6c278aa3021976ede8a4513939af068456eee276'
           sha256sum SOURCE_KOXX3/common_files/src/task_pwr.c | grep -q '^9fb70e29f7d9cc754c05f4fc439d555822c34097347b25e54aff7beb084f6cad'
