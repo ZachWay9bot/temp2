@@ -1,0 +1,102 @@
+--- a/common_files/src/defines.h
++++ b/common_files/src/defines.h
+@@ -2,7 +2,7 @@
+ #define DEFINES_H_
+ 
+ #ifdef G30P
+-#define HW_NAME "SHUD4-STRICT-DRIVE-V2"
++#define HW_NAME "SHUD4-STRICT-DRIVE-V3"
+ #define G30_HALL14S_V1 1
+ #define G30_SHUD4_BMS_V1 1
+ #define G30_SHUD4_STRICT_DRIVETRAIN_V1 1
+--- a/common_files/inc/drive_parameters.h
++++ b/common_files/inc/drive_parameters.h
+@@ -55,7 +55,11 @@
+ /**************************    DRIVE SETTINGS SECTION   **********************/
+ /* PWM generation and current reading */
+ 
++#ifdef G30P
++#define PWM_FREQUENCY   8000  /* STRICT SHUD4 native carrier: 64 MHz / (2*4000) */
++#else
+ #define PWM_FREQUENCY   16000
++#endif
+ #define PWM_FREQ_SCALING 1
+ 
+ #define LOW_SIDE_SIGNALS_ENABLING        LS_PWM_TIMER
+--- a/common_files/src/VescToSTM.c
++++ b/common_files/src/VescToSTM.c
+@@ -742,11 +742,11 @@
+         /* STRICT SHUD4 output-OFF semantics, translated for the proven
+          * ARR=2000 hardware adapter. Native DRV126 0x080045A0 writes
+          * CCER=0x1000 and CCR4=3800 of ARR=4000, and does NOT clear MOE.
+-         * The equivalent sample point here is CCR4=1900. Keep TIM1/ADC/Hall
++         * V3 also restores ARR=4000, so the native CCR4 value is used. Keep TIM1/ADC/Hall
+          * timing alive; only CH1/2/3 phase outputs are disconnected. */
+         PWM_Handle_M1._Super.PWM_off=true;
+         TIM1->CCER=0x1000u;
+-        TIM1->CCR4=1900u;
++        TIM1->CCR4=3800u;
+         PIDIqHandle_M1.wIntegralTerm=0;
+         PIDIdHandle_M1.wIntegralTerm=0;
+         FOCVars[M1].Vqd.q=0;
+--- a/common_files/src/mc_tasks.c
++++ b/common_files/src/mc_tasks.c
+@@ -297,9 +297,9 @@
+ #ifdef G30_SHUD4_STRICT_DRIVETRAIN_V1
+   if(pHdl->PWM_off){
+     /* STRICT SHUD4 0x080045A0 motor_off(): CH1/2/3 disconnected while
+-     * CH4, TIM1, ADC timing and MOE remain alive. 3800/4000 -> 1900/2000. */
++     * CH4, TIM1, ADC timing and MOE remain alive. Native ARR=4000/CCR4=3800. */
+     TIM1->CCER=0x1000u;
+-    TIM1->CCR4=1900u;
++    TIM1->CCR4=3800u;
+     return MC_NO_ERROR;
+   }
+ #endif
+@@ -322,13 +322,22 @@
+   if(-neg>phase_lim)phase_lim=-neg;
+   int32_t dmc=g30_drv126_final_clamp32((int32_t)dref_mc,-phase_lim,phase_lim);
+ 
+-  /* Hold DRV126 voltage for four 16-kHz current samples. The MCSDK
+-   * ADC/sample-point writer still runs on every ISR. */
++#ifdef G30_SHUD4_STRICT_DRIVETRAIN_V1
++  /* STRICT SHUD4 native timing: 8-kHz carrier/sample, DRV126 control law
++   * at 4 kHz. Therefore update voltage every second current sample. */
++  if(g30_drv126_final_div!=0u){
++    g30_drv126_final_div=0u;
++    return pHdl->pFctSetADCSampPointSectX(pHdl);
++  }
++  g30_drv126_final_div=1u;
++#else
++  /* Proven SESC adapter timing: hold DRV126 voltage for four 16-kHz samples. */
+   if(g30_drv126_final_div!=0u){
+     g30_drv126_final_div=(uint8_t)((g30_drv126_final_div+1u)&3u);
+     return pHdl->pFctSetADCSampPointSectX(pHdl);
+   }
+   g30_drv126_final_div=1u;
++#endif
+ 
+   /* Exact modified-DRV126 setpoint behavior: before the current PI, move the
+    * requested q current toward target by at most coeff=6500 mA per 4-kHz
+@@ -370,13 +379,17 @@
+                            co,si,&va,&vb);
+   uint8_t sec=g30_drv126_final_svpwm(va,vb,&r1,&r2,&r3);
+ 
+-  /* Exact stock SVPWM range over the complete PI output space is 40..3960
+-   * of 4000 with <=3920 active span. Scale it onto the proven 2000-count
+-   * carrier. Keep stock's sector even at tie boundaries instead of injecting
+-   * the old R1 test neutral vector. */
++#ifdef G30_SHUD4_STRICT_DRIVETRAIN_V1
++  /* STRICT SHUD4: native DRV126 SVPWM is already expressed on ARR=4000. */
++  uint16_t c1=r1;
++  uint16_t c2=r2;
++  uint16_t c3=r3;
++#else
++  /* Proven 16-kHz SESC adapter scales native 0..4000 onto ARR=2000. */
+   uint16_t c1=(uint16_t)((r1+1u)>>1);
+   uint16_t c2=(uint16_t)((r2+1u)>>1);
+   uint16_t c3=(uint16_t)((r3+1u)>>1);
++#endif
+ 
+   pHdl->CntPhA=c1;
+   pHdl->CntPhB=c2;
