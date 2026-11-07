@@ -1,4 +1,4 @@
-name: SHUD4 STRICT DRIVETRAIN V3
+name: SHUD4 STRICT DRIVETRAIN V4
 
 on:
   push:
@@ -11,6 +11,8 @@ on:
       - 'ci/test_shud4_strict_native_output_v2.py'
       - 'ci/shud4_strict_native_timing_v3.patch'
       - 'ci/test_shud4_strict_native_timing_v3.py'
+      - 'ci/apply_shud4_strict_no_observer_runtime_v4.py'
+      - 'ci/test_shud4_strict_no_observer_runtime_v4.py'
       - '.github/workflows/shud4-strict-drivetrain-v1.yml'
   workflow_dispatch:
 
@@ -67,6 +69,8 @@ jobs:
           git -C SOURCE_KOXX3 apply --check ../ci/shud4_strict_native_timing_v3.patch
           git -C SOURCE_KOXX3 apply ../ci/shud4_strict_native_timing_v3.patch
           python3 ci/test_shud4_strict_native_timing_v3.py | tee OUTPUT/SHUD4_STRICT_NATIVE_TIMING_V3_STATIC_TESTS.txt
+          python3 ci/apply_shud4_strict_no_observer_runtime_v4.py
+          python3 ci/test_shud4_strict_no_observer_runtime_v4.py | tee OUTPUT/SHUD4_STRICT_NO_OBSERVER_RUNTIME_V4_STATIC_TESTS.txt
 
       - name: Install ARM GNU GCC 13.2.1
         shell: bash
@@ -85,12 +89,12 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          sed -i 's/FO76_SHADOW_R3/SHUD4_STRICT_DRIVE_V3/g' tools/build_native.py tools/validate_image.py
-          sed -i 's/G30D-FO76-SHADOW-R3/SHUD4-STRICT-DRIVE-V3/g' tools/validate_image.py
+          sed -i 's/FO76_SHADOW_R3/SHUD4_STRICT_DRIVE_V4/g' tools/build_native.py tools/validate_image.py
+          sed -i 's/G30D-FO76-SHADOW-R3/SHUD4-STRICT-DRIVE-V4/g' tools/validate_image.py
           python3 tools/build_native.py | tee OUTPUT/build.log
           python3 tools/validate_image.py | tee OUTPUT/validation.log
-          BIN=OUTPUT/SmartESC_v2_G30D_SHUD4_STRICT_DRIVE_V3_STLINK_APP_0x08001000.bin
-          ELF=OUTPUT/SmartESC_v2_G30D_SHUD4_STRICT_DRIVE_V3.elf
+          BIN=OUTPUT/SmartESC_v2_G30D_SHUD4_STRICT_DRIVE_V4_STLINK_APP_0x08001000.bin
+          ELF=OUTPUT/SmartESC_v2_G30D_SHUD4_STRICT_DRIVE_V4.elf
           test -f "$BIN"
           test -f "$ELF"
           sha256sum "$BIN" | tee OUTPUT/SHA256_BIN.txt
@@ -106,13 +110,13 @@ jobs:
           print(f'FLASH={flash}/118784 RAM={ram}/20480 PASS')
           PY
           arm-none-eabi-nm -S --size-sort "$ELF" | tail -60 > OUTPUT/LARGEST_SYMBOLS.txt
-          tar --exclude='SOURCE_KOXX3/.git' -czf OUTPUT/SOURCE_KOXX3_SHUD4_STRICT_DRIVE_V3_EXACT.tgz SOURCE_KOXX3
+          tar --exclude='SOURCE_KOXX3/.git' -czf OUTPUT/SOURCE_KOXX3_SHUD4_STRICT_DRIVE_V4_EXACT.tgz SOURCE_KOXX3
 
       - name: Post-build strict invariants
         shell: bash
         run: |
           set -euo pipefail
-          grep -q 'SHUD4-STRICT-DRIVE-V3' SOURCE_KOXX3/common_files/src/defines.h
+          grep -q 'SHUD4-STRICT-DRIVE-V4' SOURCE_KOXX3/common_files/src/defines.h
           grep -q 'TIM1->CCER=0x1000u' SOURCE_KOXX3/common_files/src/VescToSTM.c
           grep -q 'TIM1->CCER=0x1555u' SOURCE_KOXX3/common_files/src/mc_tasks.c
           grep -q '#define PWM_FREQUENCY   8000' SOURCE_KOXX3/common_files/inc/drive_parameters.h
@@ -129,14 +133,14 @@ jobs:
       - name: Upload compiled artifact
         uses: actions/upload-artifact@v4
         with:
-          name: G30D_SHUD4_STRICT_DRIVE_V3_COMPILED
+          name: G30D_SHUD4_STRICT_DRIVE_V4_COMPILED
           retention-days: 30
           if-no-files-found: error
           path: |
-            OUTPUT/SmartESC_v2_G30D_SHUD4_STRICT_DRIVE_V3_STLINK_APP_0x08001000.bin
-            OUTPUT/SmartESC_v2_G30D_SHUD4_STRICT_DRIVE_V3.hex
-            OUTPUT/SmartESC_v2_G30D_SHUD4_STRICT_DRIVE_V3.elf
-            OUTPUT/SmartESC_v2_G30D_SHUD4_STRICT_DRIVE_V3.map
+            OUTPUT/SmartESC_v2_G30D_SHUD4_STRICT_DRIVE_V4_STLINK_APP_0x08001000.bin
+            OUTPUT/SmartESC_v2_G30D_SHUD4_STRICT_DRIVE_V4.hex
+            OUTPUT/SmartESC_v2_G30D_SHUD4_STRICT_DRIVE_V4.elf
+            OUTPUT/SmartESC_v2_G30D_SHUD4_STRICT_DRIVE_V4.map
             OUTPUT/SHA256_BIN.txt
             OUTPUT/SIZE.txt
             OUTPUT/MEMORY_GATE.txt
@@ -151,12 +155,15 @@ jobs:
             OUTPUT/SHUD4_STRICT_STATIC_TESTS.txt
             OUTPUT/SHUD4_STRICT_NATIVE_OUTPUT_V2_STATIC_TESTS.txt
             OUTPUT/SHUD4_STRICT_NATIVE_TIMING_V3_STATIC_TESTS.txt
+            OUTPUT/SHUD4_STRICT_NO_OBSERVER_RUNTIME_V4_STATIC_TESTS.txt
             OUTPUT/PWM_BACKEND_SHA256.txt
             OUTPUT/POST_BUILD_INVARIANTS.txt
-            OUTPUT/SOURCE_KOXX3_SHUD4_STRICT_DRIVE_V3_EXACT.tgz
+            OUTPUT/SOURCE_KOXX3_SHUD4_STRICT_DRIVE_V4_EXACT.tgz
             ci/shud4_strict_drivetrain_v1.patch
             ci/test_shud4_strict_drivetrain_v1.py
             ci/shud4_strict_native_output_v2.patch
             ci/test_shud4_strict_native_output_v2.py
             ci/shud4_strict_native_timing_v3.patch
             ci/test_shud4_strict_native_timing_v3.py
+            ci/apply_shud4_strict_no_observer_runtime_v4.py
+            ci/test_shud4_strict_no_observer_runtime_v4.py
