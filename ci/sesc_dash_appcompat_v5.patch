@@ -1,0 +1,83 @@
+--- a/SOURCE_KOXX3/common_files/src/defines.h
++++ b/SOURCE_KOXX3/common_files/src/defines.h
+@@ -2,14 +2,15 @@
+ #define DEFINES_H_
+ 
+ #ifdef G30P
+-#define HW_NAME "SESC-DRV126-P6500-H14-SHUD4BMS-APPCOMPAT-V4"
++#define HW_NAME "SESC-DRV126-P6500-H14-SHUD4BMS-APPCOMPAT-V5"
+ #define G30_HALL14S_V1 1
+ #define G30_SHUD4_BMS_V1 1
+ #define G30_SHUD4_CLONKFREE_V1 1
+ #define G30_DASH_APPCOMPAT_V1 1
+ #define G30_DASH_APPCOMPAT_V2 1
+ #define G30_DASH_APPCOMPAT_V3 1
+ #define G30_DASH_APPCOMPAT_V4 1
++#define G30_DASH_APPCOMPAT_V5 1
+ #define G30_POWERPATH_RESTORE_V1 1
+ #else
+ #define HW_NAME "40"
+--- a/SOURCE_KOXX3/common_files/src/g30_dash_link.c
++++ b/SOURCE_KOXX3/common_files/src/g30_dash_link.c
+@@ -273,7 +273,7 @@
+ #endif
+     uint8_t status[6]={m365_to_display.mode,0,0,0,0,0};
+-#ifdef G30_DASH_APPCOMPAT_V3
++#if defined(G30_DASH_APPCOMPAT_V3) && !defined(G30_DASH_APPCOMPAT_V5)
+     /* 15-byte CMD64 + 9-byte metadata query + max 65-byte app CMD04. */
+     uint8_t tx[89];
+     bool app_attached=false;
+@@ -302,7 +302,7 @@
+         if(q){len+=q;d->meta_query_sent=1u;d->meta_query_ms=now;d->meta_queries++;}
+     }
+ #endif
+-#ifdef G30_DASH_APPCOMPAT_V3
++#if defined(G30_DASH_APPCOMPAT_V3) && !defined(G30_DASH_APPCOMPAT_V5)
+     if(d->app_deferred){
+         unsigned a=g30_dash_build_deferred_app_reply(d,tx+len);
+         if(a){len+=a;app_attached=true;}
+@@ -323,7 +323,7 @@
+     if(result==HAL_OK) {
+         d->tx_ok++;
+-#ifdef G30_DASH_APPCOMPAT_V3
++#if defined(G30_DASH_APPCOMPAT_V3) && !defined(G30_DASH_APPCOMPAT_V5)
+         if(app_attached){
+             d->app_deferred=0u;
+             d->app_replies++;
+@@ -350,7 +350,7 @@
+     __HAL_DMA_DISABLE_IT(u->hdmarx,DMA_IT_HT|DMA_IT_TC);
+     for(;;) {
+         unsigned reply_pending=0;
+-#if defined(G30_DASH_APPCOMPAT_V1) && !defined(G30_DASH_APPCOMPAT_V3)
++#if defined(G30_DASH_APPCOMPAT_V1) && (!defined(G30_DASH_APPCOMPAT_V3) || defined(G30_DASH_APPCOMPAT_V5))
+         uint8_t app_tx[65]; uint16_t app_tx_len=0u; bool app_pending=false;
+ #endif
+         while(rd!=rx_pos(d)) {
+@@ -368,7 +368,7 @@
+                     d->meta_seen=1u; d->meta_replies++;
+                 }
+ #endif
+-#ifdef G30_DASH_APPCOMPAT_V3
++#if defined(G30_DASH_APPCOMPAT_V3) && !defined(G30_DASH_APPCOMPAT_V5)
+                 (void)g30_dash_defer_app_read(d);
+ #elif defined(G30_DASH_APPCOMPAT_V1)
+                 if(!app_pending) app_pending=g30_dash_queue_app_read(d,app_tx,&app_tx_len);
+@@ -387,7 +387,7 @@
+             }
+         }
+         /* Do not switch away from RX in the middle of a newly arriving frame. */
+-#if defined(G30_DASH_APPCOMPAT_V1) && !defined(G30_DASH_APPCOMPAT_V3)
++#if defined(G30_DASH_APPCOMPAT_V1) && (!defined(G30_DASH_APPCOMPAT_V3) || defined(G30_DASH_APPCOMPAT_V5))
+         if(app_pending && d->parser.state==0u && rd==rx_pos(d)){
+             d->tx_calls++;
+             HAL_StatusTypeDef ar=g30_dash_tx_stocklike(d,app_tx,app_tx_len);
+@@ -485,6 +485,10 @@
+     commands_printf(phandle,"APPCOMPATV4 r5tx=1 dmaRxPreserved=1 cr1=%04lx cr3=%04lx",
+         (unsigned long)d->port->uart->Instance->CR1,(unsigned long)d->port->uart->Instance->CR3);
+ #endif
++#ifdef G30_DASH_APPCOMPAT_V5
++    commands_printf(phandle,"APPCOMPATV5 r5direct=1 piggybackDisabled=1");
++#endif
+ #endif
+ #endif
+     UART_HandleTypeDef *u=d->port->uart;
