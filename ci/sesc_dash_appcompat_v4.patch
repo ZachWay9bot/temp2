@@ -1,0 +1,84 @@
+--- a/SOURCE_KOXX3/common_files/src/defines.h
++++ b/SOURCE_KOXX3/common_files/src/defines.h
+@@ -2,13 +2,14 @@
+ #define DEFINES_H_
+ 
+ #ifdef G30P
+-#define HW_NAME "SESC-DRV126-P6500-H14-SHUD4BMS-APPCOMPAT-V3"
++#define HW_NAME "SESC-DRV126-P6500-H14-SHUD4BMS-APPCOMPAT-V4"
+ #define G30_HALL14S_V1 1
+ #define G30_SHUD4_BMS_V1 1
+ #define G30_SHUD4_CLONKFREE_V1 1
+ #define G30_DASH_APPCOMPAT_V1 1
+ #define G30_DASH_APPCOMPAT_V2 1
+ #define G30_DASH_APPCOMPAT_V3 1
++#define G30_DASH_APPCOMPAT_V4 1
+ #define G30_POWERPATH_RESTORE_V1 1
+ #else
+ #define HW_NAME "40"
+--- a/SOURCE_KOXX3/common_files/src/g30_dash_link.c
++++ b/SOURCE_KOXX3/common_files/src/g30_dash_link.c
+@@ -118,6 +118,36 @@
+ static HAL_StatusTypeDef g30_dash_tx_stocklike(dash_link_state *d,const uint8_t *buf,uint16_t len){
+     UART_HandleTypeDef *u=d->port->uart;
+     if(!buf || !len || u->Instance!=USART2) return HAL_ERROR;
++#ifdef G30_DASH_APPCOMPAT_V4
++    /* Hardware-proven EBiCS r5 physical TX order, adapted only at the RX
++     * restore point so SESC keeps its DMA receive architecture:
++     *   wait TXE while still in RX
++     *   PA2 AF push-pull
++     *   CR1 = UE|TE (direct write: no RX/PE IRQ bits during TX)
++     *   write byte, wait TC
++     *   PA2 AF open-drain
++     *   clear SR/DR
++     *   restore the exact pre-TX SESC RX CR1
++     * This deliberately does NOT alter USART1/IoT, USART3/BMS or CR3/DMAR. */
++    const uint32_t rx_cr1=u->Instance->CR1;
++    for(uint16_t i=0;i<len;i++){
++        uint32_t start=HAL_GetTick();
++        while((u->Instance->SR & USART_SR_TXE)==0u){
++            if((uint32_t)(HAL_GetTick()-start)>2u) goto fail;
++        }
++        g30_dash_pa2_crl(0xBu);
++        u->Instance->CR1=USART_CR1_UE|USART_CR1_TE;
++        u->Instance->DR=buf[i];
++        start=HAL_GetTick();
++        while((u->Instance->SR & USART_SR_TC)==0u){
++            if((uint32_t)(HAL_GetTick()-start)>2u) goto fail;
++        }
++        g30_dash_pa2_crl(0xFu);
++        (void)u->Instance->SR;(void)u->Instance->DR;
++        u->Instance->CR1=rx_cr1;
++    }
++    return HAL_OK;
++#else
+     for(uint16_t i=0;i<len;i++){
+         uint32_t start=HAL_GetTick();
+         /* AF push-pull, 50 MHz: CRL nibble 0xB on PA2. */
+@@ -137,9 +167,17 @@
+         MODIFY_REG(u->Instance->CR1,USART_CR1_TE|USART_CR1_RE,USART_CR1_RE);
+     }
+     return HAL_OK;
++#endif
+ fail:
+     d->tx_byte_timeouts++;
+     g30_dash_pa2_crl(0xFu);
++#ifdef G30_DASH_APPCOMPAT_V4
++    (void)u->Instance->SR;(void)u->Instance->DR;
++    u->Instance->CR1=rx_cr1;
++#else
+     MODIFY_REG(u->Instance->CR1,USART_CR1_TE|USART_CR1_RE,USART_CR1_RE);
++#endif
+     return HAL_TIMEOUT;
+ }
+@@ -452,6 +490,10 @@
+         d->app_deferred,(unsigned long)d->app_deferred_queued,(unsigned long)d->app_piggybacked,
+         (unsigned long)d->app_deferred_dropped,d->app_deferred_dst,d->app_deferred_arg,d->app_deferred_ask);
+ #endif
++#ifdef G30_DASH_APPCOMPAT_V4
++    commands_printf(phandle,"APPCOMPATV4 r5tx=1 dmaRxPreserved=1 cr1=%04lx cr3=%04lx",
++        (unsigned long)u->Instance->CR1,(unsigned long)u->Instance->CR3);
++#endif
+ #endif
+ #endif
+     UART_HandleTypeDef *u=d->port->uart;
