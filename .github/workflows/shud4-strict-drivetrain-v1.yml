@@ -1,0 +1,142 @@
+name: SHUD4 STRICT DRIVETRAIN V1
+
+on:
+  push:
+    branches:
+      - shud4-strict-drivetrain-v1-20261107
+    paths:
+      - 'ci/shud4_strict_drivetrain_v1.patch'
+      - 'ci/test_shud4_strict_drivetrain_v1.py'
+      - '.github/workflows/shud4-strict-drivetrain-v1.yml'
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Restore exact hardware-passed POWERPATH source
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh api repos/${GITHUB_REPOSITORY}/actions/artifacts/13528555020/zip > /tmp/parent.zip
+          mkdir -p /tmp/parent
+          unzip -q /tmp/parent.zip -d /tmp/parent
+          test -f /tmp/parent/OUTPUT/SOURCE_KOXX3_SESC_DRV126_POWERCORE6500_POWERPATH_RESTORE_V1_EXACT.tgz
+          tar -xzf /tmp/parent/OUTPUT/SOURCE_KOXX3_SESC_DRV126_POWERCORE6500_POWERPATH_RESTORE_V1_EXACT.tgz
+          grep -q 'SESC-DRV126-POWERCORE6500-POWERPATH-RESTORE-V1' SOURCE_KOXX3/common_files/src/defines.h
+          base64 -d ci/r3_payload.tgz.b64 > /tmp/r3_payload.tgz
+          mkdir -p /tmp/r3payload tools OUTPUT
+          tar -xzf /tmp/r3_payload.tgz -C /tmp/r3payload
+          cp /tmp/r3payload/build_native.py tools/
+          cp /tmp/r3payload/validate_image.py tools/
+          printf '%s\n'             'powerpath_parent_artifact=13528555020'             'hall14s_freeze=SESC-HALL14S-V1-FORWARD-HW-PASS-2026-11-06'             'shud4_full_re_freeze=SHUD4-FULL-RE-V1-FREEZE-2026-11-05'             'shud4_decrypted_sha256=dff62995ebb1e46f2cc3f3326fa327f50f6699f195d42de8feda58373fe759f9'             > OUTPUT/PARENT_PROVENANCE.txt
+
+      - name: Reconstruct HALL14S + SHUD4 BMS + HSYNC ancestry
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 ci/apply_sesc_hall14s_v1.py
+          python3 ci/test_sesc_hall14s_v1.py | tee OUTPUT/HALL14S_V1_STATIC_TESTS.txt
+          python3 ci/apply_sesc_shud4_bms_v1.py
+          python3 ci/test_sesc_shud4_bms_v1.py | tee OUTPUT/SHUD4_BMS_V1_STATIC_TESTS.txt
+          python3 ci/apply_sesc_shud4_bms_hallsync_v1.py
+          python3 ci/test_sesc_shud4_bms_hallsync_v1.py | tee OUTPUT/HSYNC_PARENT_STATIC_TESTS.txt
+
+      - name: Apply STRICT SHUD4 drivetrain
+        shell: bash
+        run: |
+          set -euo pipefail
+          sha256sum SOURCE_KOXX3/common_files/src/defines.h                     SOURCE_KOXX3/common_files/src/g30_dash_link.h                     SOURCE_KOXX3/common_files/src/g30_dash_link.c                     SOURCE_KOXX3/common_files/src/VescToSTM.h                     SOURCE_KOXX3/common_files/src/VescToSTM.c                     SOURCE_KOXX3/common_files/src/mc_tasks.c                     SOURCE_KOXX3/common_files/src/terminal.c                     SOURCE_KOXX3/common_files/src/VescCommand.c | tee OUTPUT/HSYNC_PARENT_HASHES.txt
+          git -C SOURCE_KOXX3 apply --check ../ci/shud4_strict_drivetrain_v1.patch
+          git -C SOURCE_KOXX3 apply ../ci/shud4_strict_drivetrain_v1.patch
+          python3 ci/test_shud4_strict_drivetrain_v1.py | tee OUTPUT/SHUD4_STRICT_STATIC_TESTS.txt
+
+      - name: Install ARM GNU GCC 13.2.1
+        shell: bash
+        run: |
+          set -euo pipefail
+          URL=https://github.com/xpack-dev-tools/arm-none-eabi-gcc-xpack/releases/download/v13.2.1-1.1
+          FILE=xpack-arm-none-eabi-gcc-13.2.1-1.1-linux-x64.tar.gz
+          curl -fL "$URL/$FILE" -o "/tmp/$FILE"
+          curl -fL "$URL/$FILE.sha" -o "/tmp/$FILE.sha"
+          cd /tmp
+          sha256sum -c "$FILE.sha"
+          tar -xzf "$FILE"
+          echo "/tmp/xpack-arm-none-eabi-gcc-13.2.1-1.1/bin" >> "$GITHUB_PATH"
+
+      - name: Compile and validate
+        shell: bash
+        run: |
+          set -euo pipefail
+          sed -i 's/FO76_SHADOW_R3/SHUD4_STRICT_DRIVE_V1/g' tools/build_native.py tools/validate_image.py
+          sed -i 's/G30D-FO76-SHADOW-R3/SHUD4-STRICT-DRIVE-V1/g' tools/validate_image.py
+          python3 tools/build_native.py | tee OUTPUT/build.log
+          python3 tools/validate_image.py | tee OUTPUT/validation.log
+          BIN=OUTPUT/SmartESC_v2_G30D_SHUD4_STRICT_DRIVE_V1_STLINK_APP_0x08001000.bin
+          ELF=OUTPUT/SmartESC_v2_G30D_SHUD4_STRICT_DRIVE_V1.elf
+          test -f "$BIN"
+          test -f "$ELF"
+          sha256sum "$BIN" | tee OUTPUT/SHA256_BIN.txt
+          arm-none-eabi-size "$ELF" | tee OUTPUT/SIZE.txt
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('OUTPUT/SIZE.txt').read_text().splitlines()[-1].split()
+          text,data,bss=map(int,p[:3])
+          flash=text+data; ram=data+bss
+          assert flash<=118784,(flash,118784)
+          assert ram<=20480,(ram,20480)
+          Path('OUTPUT/MEMORY_GATE.txt').write_text(f'FLASH={flash}/118784\nRAM={ram}/20480\nPASS\n')
+          print(f'FLASH={flash}/118784 RAM={ram}/20480 PASS')
+          PY
+          arm-none-eabi-nm -S --size-sort "$ELF" | tail -60 > OUTPUT/LARGEST_SYMBOLS.txt
+          tar --exclude='SOURCE_KOXX3/.git' -czf OUTPUT/SOURCE_KOXX3_SHUD4_STRICT_DRIVE_V1_EXACT.tgz SOURCE_KOXX3
+
+      - name: Post-build strict invariants
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -q 'SHUD4-STRICT-DRIVE-V1' SOURCE_KOXX3/common_files/src/defines.h
+          grep -q '#define G30_SHUD4_STRICT_DRIVETRAIN_V1 1' SOURCE_KOXX3/common_files/src/defines.h
+          ! grep -q '#define G30_HALL_ROLLING_SYNC_V1 1' SOURCE_KOXX3/common_files/src/defines.h
+          grep -q 'shud4_dpc_target' SOURCE_KOXX3/common_files/src/g30_dash_link.c
+          grep -q 'VescToSTM_g30_shud4_apply_request' SOURCE_KOXX3/common_files/src/VescToSTM.c
+          grep -q 'g30_shud4' SOURCE_KOXX3/common_files/src/terminal.c
+          grep -q 'g30_drv126_final_q_slew_mc=qtarget' SOURCE_KOXX3/common_files/src/mc_tasks.c
+          sha256sum SOURCE_KOXX3/common_files/MotorControl/MCSDK/MCLib/F1xx/Src/r3_2_f1xx_pwm_curr_fdbk.c | tee OUTPUT/PWM_BACKEND_SHA256.txt
+          printf 'DPC_0x08001E00_MODEL=PASS\nBRAKE_RELEASE_0x08001CA0_MODEL=PASS\nVESC_DRIVE_BLOCKED=PASS\nSESC_SPEED_PI_BYPASSED=PASS\nHSYNC_BEHAVIOR_EXCLUDED=PASS\nPROTECTION_SHELL_RETAINED=PASS\n' > OUTPUT/POST_BUILD_INVARIANTS.txt
+
+      - name: Upload compiled artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: G30D_SHUD4_STRICT_DRIVE_V1_COMPILED
+          retention-days: 30
+          if-no-files-found: error
+          path: |
+            OUTPUT/SmartESC_v2_G30D_SHUD4_STRICT_DRIVE_V1_STLINK_APP_0x08001000.bin
+            OUTPUT/SmartESC_v2_G30D_SHUD4_STRICT_DRIVE_V1.hex
+            OUTPUT/SmartESC_v2_G30D_SHUD4_STRICT_DRIVE_V1.elf
+            OUTPUT/SmartESC_v2_G30D_SHUD4_STRICT_DRIVE_V1.map
+            OUTPUT/SHA256_BIN.txt
+            OUTPUT/SIZE.txt
+            OUTPUT/MEMORY_GATE.txt
+            OUTPUT/LARGEST_SYMBOLS.txt
+            OUTPUT/validation.log
+            OUTPUT/build.log
+            OUTPUT/PARENT_PROVENANCE.txt
+            OUTPUT/HSYNC_PARENT_HASHES.txt
+            OUTPUT/HALL14S_V1_STATIC_TESTS.txt
+            OUTPUT/SHUD4_BMS_V1_STATIC_TESTS.txt
+            OUTPUT/HSYNC_PARENT_STATIC_TESTS.txt
+            OUTPUT/SHUD4_STRICT_STATIC_TESTS.txt
+            OUTPUT/PWM_BACKEND_SHA256.txt
+            OUTPUT/POST_BUILD_INVARIANTS.txt
+            OUTPUT/SOURCE_KOXX3_SHUD4_STRICT_DRIVE_V1_EXACT.tgz
+            ci/shud4_strict_drivetrain_v1.patch
+            ci/test_shud4_strict_drivetrain_v1.py
