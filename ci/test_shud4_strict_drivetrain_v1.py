@@ -15,7 +15,7 @@ t=text('common_files/src/terminal.c')
 ck('IDENTITY','SHUD4-STRICT-DRIVE-V1' in d and 'G30_SHUD4_STRICT_DRIVETRAIN_V1 1' in d and 'G30_HALL_ROLLING_SYNC_V1 1' not in d)
 ck('STRICT_DPC_CONSTANTS',all(x in g for x in ['55000*n*n)/(110*110)','shud4_slew(d->shud4.request_ma,d->shud4.target_ma,6500)','kph*313.0f']))
 ck('STRICT_BRAKE_CONSTANTS',all(x in g for x in ['rate>945','5000 + b*(30000-5000)/130','target,500)','rate>500','request_ma,0,1500','rate>400']))
-strict=g[g.index('/* STRICT SHUD4 slow-drive reconstruction.'):g.index('static unsigned rx_pos')]
+strict_start=g.index('/* STRICT SHUD4 slow-drive reconstruction.')\nstrict=g[strict_start:g.index('#else',strict_start)]
 ck('NO_SESC_DRIVE_SETTER_IN_STRICT','VescToSTM_set_current_rel_int' not in strict and 'g30_dash_r2_step' not in strict)
 ck('DIRECT_REQUEST_ADAPTER',all(x in v for x in ['VescToSTM_g30_shud4_apply_request','MCI_SetCurrentReferences','PWMC_SwitchOffPWM']))
 ck('HALL_STATE_PRESERVED_ON_REENABLE','Native SHUD4 keeps the Hall timing/interpolator alive' in v)
