@@ -1,0 +1,99 @@
+--- a/common_files/src/defines.h
++++ b/common_files/src/defines.h
+@@ -2,7 +2,7 @@
+ #define DEFINES_H_
+ 
+ #ifdef G30P
+-#define HW_NAME "SHUD4-STRICT-DRIVE-V1"
++#define HW_NAME "SHUD4-STRICT-DRIVE-V2"
+ #define G30_HALL14S_V1 1
+ #define G30_SHUD4_BMS_V1 1
+ #define G30_SHUD4_STRICT_DRIVETRAIN_V1 1
+--- a/common_files/src/VescToSTM.c
++++ b/common_files/src/VescToSTM.c
+@@ -739,23 +739,40 @@
+         ref.q=0;
+         MCI_SetCurrentReferences(pMCI[M1],ref);
+         FOCVars[M1].hTeref=0;
+-        if(!PWM_Handle_M1._Super.PWM_off){
+-            PWMC_SwitchOffPWM(&PWM_Handle_M1._Super);
+-            PIDIqHandle_M1.wIntegralTerm=0;
+-            PIDIdHandle_M1.wIntegralTerm=0;
+-            FOCVars[M1].Vqd.q=0;
+-            FOCVars[M1].Vqd.d=0;
+-            extern void g30_drv126_final_reset(void);
+-            g30_drv126_final_reset();
+-        }
++        /* STRICT SHUD4 output-OFF semantics, translated for the proven
++         * ARR=2000 hardware adapter. Native DRV126 0x080045A0 writes
++         * CCER=0x1000 and CCR4=3800 of ARR=4000, and does NOT clear MOE.
++         * The equivalent sample point here is CCR4=1900. Keep TIM1/ADC/Hall
++         * timing alive; only CH1/2/3 phase outputs are disconnected. */
++        PWM_Handle_M1._Super.PWM_off=true;
++        TIM1->CCER=0x1000u;
++        TIM1->CCR4=1900u;
++        PIDIqHandle_M1.wIntegralTerm=0;
++        PIDIdHandle_M1.wIntegralTerm=0;
++        FOCVars[M1].Vqd.q=0;
++        FOCVars[M1].Vqd.d=0;
++        extern void g30_drv126_final_reset(void);
++        g30_drv126_final_reset();
+         return;
+     }
+     if(!VescToSTM_g30_hall_feedback_valid()) return;
+     if(STM_GetState(&STM[M1])==IDLE){
++        /* First power-up still uses the proven MCSDK boot-cap/current-offset
++         * startup shell. Once RUN, all release/re-engage transitions use the
++         * native SHUD4 CCER gate below and never the SESC PWM restart helper. */
+         MCI_ExecSpeedRamp(pMCI[M1],0,0);
+         (void)MCI_StartMotor(pMCI[M1]);
+     }else if(STM_GetState(&STM[M1])==RUN && PWM_Handle_M1._Super.PWM_off){
+-        VescToSTM_pwm_start();
++        /* Native SHUD4 re-enable: arm the fast FOC without a 50%% PWM vector,
++         * without Hall reseed and without touching MOE. The first completed
++         * strict FOC/SVPWM cycle writes CCER=0x1555. */
++        PIDIqHandle_M1.wIntegralTerm=0;
++        PIDIdHandle_M1.wIntegralTerm=0;
++        FOCVars[M1].Vqd.q=0;
++        FOCVars[M1].Vqd.d=0;
++        extern void g30_drv126_final_reset(void);
++        g30_drv126_final_reset();
++        PWM_Handle_M1._Super.PWM_off=false;
+     }
+ }
+ #endif
+--- a/common_files/src/mc_tasks.c
++++ b/common_files/src/mc_tasks.c
+@@ -294,9 +294,20 @@
+   /* Cheap live Hall guard on every current ISR. The medium-frequency Hall
+    * fault path still owns fault latching/recovery policy. */
+   uint8_t raw=HALL_read(&HALL_M1);
++#ifdef G30_SHUD4_STRICT_DRIVETRAIN_V1
++  if(pHdl->PWM_off){
++    /* STRICT SHUD4 0x080045A0 motor_off(): CH1/2/3 disconnected while
++     * CH4, TIM1, ADC timing and MOE remain alive. 3800/4000 -> 1900/2000. */
++    TIM1->CCER=0x1000u;
++    TIM1->CCR4=1900u;
++    return MC_NO_ERROR;
++  }
++#endif
+   if(pHdl->PWM_off ||
+      (hall_guard &&
+       (raw==0u || raw==7u || HALL_M1.lut[raw]==255u || !HALL_M1.SensorIsReliable))){
++    /* Invalid Hall is a safety fault, not a normal SHUD release transition:
++     * retain the proven SESC full gate kill here. */
+     PWMC_SwitchOffPWM(pHdl);
+     return MC_NO_ERROR;
+   }
+@@ -379,6 +390,11 @@
+   pHdl->highDuty=hi;
+   pHdl->midDuty=(uint16_t)((uint32_t)c1+(uint32_t)c2+(uint32_t)c3-lo-hi);
+ 
++#ifdef G30_SHUD4_STRICT_DRIVETRAIN_V1
++  /* Native DRV126 SVPWM tail 0x08005510 re-connects all complementary phase
++   * channels only after the fresh vector exists. Preserve that ordering. */
++  TIM1->CCER=0x1555u;
++#endif
+   return pHdl->pFctSetADCSampPointSectX(pHdl);
+ }
+ 
